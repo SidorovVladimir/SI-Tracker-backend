@@ -27,4 +27,5 @@ input UpdateUserInput {
 type Mutation {
   updateUser(id: ID!, input: UpdateUserInput!): User!
   deleteUser(id: ID!): Boolean!
+  createUser(input: CreateUserInput!): User!
 }
