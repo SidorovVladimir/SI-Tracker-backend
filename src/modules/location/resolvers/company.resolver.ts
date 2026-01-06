@@ -3,7 +3,7 @@ import { CreateCompanyInputSchema } from '../dto/CreateCompanyDto';
 import { CompanyService } from '../service/company.service';
 import { formatZodErrors } from '../../../utils/errors';
 import { Context } from '../../../context';
-import { UpdateCompanyInputSchema } from '../dto/UpdateCpmpanyDto';
+import { UpdateCompanyInputSchema } from '../dto/UpdateCompanyDto';
 
 export const Query = {
   companies: async (_: unknown, __: unknown, { db }: Context) => {

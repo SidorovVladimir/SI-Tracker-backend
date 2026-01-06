@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { CreateCompanyInput } from '../dto/CreateCompanyDto';
 import { companies } from '../models/company.model';
 import { CompanyEntity, NewCompany } from '../types/company.types';
-import { UpdateCompanyInput } from '../dto/UpdateCpmpanyDto';
+import { UpdateCompanyInput } from '../dto/UpdateCompanyDto';
 
 export class CompanyService {
   constructor(private db: DrizzleDB) {}
