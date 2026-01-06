@@ -1,6 +1,9 @@
 type Company {
   id: ID!
   name: String!
+  address: String
+  createdAt: String!
+  updatedAt: String!
 }
 
 type Query {
@@ -10,8 +13,16 @@ type Query {
 
 input CreateCompanyInput {
   name: String!
+  address: String
+}
+
+input UpdateCompanyInput {
+  name: String!
+  address: String
 }
 
 type Mutation {
   createCompany(input: CreateCompanyInput!): Company!
+  updateCompany(id: ID!, input: UpdateCompanyInput!): Company!
+  deleteCompany(id: ID!): Boolean!
 }
