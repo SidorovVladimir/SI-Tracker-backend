@@ -1,5 +1,5 @@
-import { productionSites } from "../models/productionSites.model";
+import { productionSites } from '../models/productionSites.model';
 
 export type ProductionSiteEntity = typeof productionSites.$inferSelect;
 
-export type NewProdictionSite = typeof productionSites.$inferInsert;
+export type NewProductionSite = typeof productionSites.$inferInsert;

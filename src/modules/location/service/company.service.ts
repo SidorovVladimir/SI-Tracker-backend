@@ -21,12 +21,12 @@ export class CompanyService {
     return company;
   }
   async createCompany(input: CreateCompanyInput): Promise<CompanyEntity> {
-    const CompanyData: NewCompany = {
+    const companyData: NewCompany = {
       ...input,
     };
     const [company] = await this.db
       .insert(companies)
-      .values(CompanyData)
+      .values(companyData)
       .returning();
     if (!company) {
       throw new Error('Failed to create company');

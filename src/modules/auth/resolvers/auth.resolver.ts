@@ -1,7 +1,6 @@
 import { ZodError } from 'zod';
 import { CreateUserInputSchema } from '../../user/dto/CreateUserDto';
 import { AuthenticationError, formatZodErrors } from '../../../utils/errors';
-import { LoginInputSchema } from '../dto/LoginDto';
 import { AuthService } from '../service/auth.service';
 import { setAuthCookie } from '../../../utils/auth';
 import { Context } from '../../../context';
@@ -42,12 +41,11 @@ export const Mutation = {
   },
   login: async (
     _: unknown,
-    { input }: { input: unknown },
+    { input }: { input: { email: string; password: string } },
     { res, db }: Context
   ) => {
     try {
-      const validatedInput = LoginInputSchema.parse(input);
-      const user = await new AuthService(db).Login(validatedInput);
+      const user = await new AuthService(db).Login(input);
       setAuthCookie(res, user);
       return {
         success: true,

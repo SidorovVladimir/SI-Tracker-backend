@@ -5,7 +5,7 @@ import { cities } from './city.model';
 // Производственная площадка (Участок)
 export const productionSites = pgTable('production_sites', {
   id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name', { length: 255 }).notNull().unique(),
+  name: varchar('name', { length: 255 }).notNull(),
   companyId: uuid('company_id')
     .notNull()
     .references(() => companies.id),
