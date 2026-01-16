@@ -1,11 +1,20 @@
 import { DrizzleDB } from '../../../db/client';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { CreateProductionSiteInput } from '../dto/CreateProductionSiteDto';
 import { productionSites } from '../models/productionSites.model';
 import {
   NewProductionSite,
   ProductionSiteEntity,
 } from '../types/productionSite.types';
+import { cities } from '../models/city.model';
+import { companies } from '../models/company.model';
+
+interface ProductionSiteSelect {
+  id: string;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 export class ProductionSiteService {
   constructor(private db: DrizzleDB) {}
@@ -34,5 +43,27 @@ export class ProductionSiteService {
       throw new Error('Ошибка создания производственного участка');
     }
     return productionSite;
+  }
+
+  async deleteProductionSite(id: string) {
+    await this.db.delete(productionSites).where(eq(productionSites.id, id));
+    return true;
+  }
+
+  async getProductionSitesForSelect(): Promise<ProductionSiteSelect[]> {
+    return await this.db
+      .select({
+        id: productionSites.id,
+        name: sql<string>`
+
+        ${productionSites.name} || ' (' || ${cities.name} || ' | ' || ${companies.name} || ')'
+      `.as('name'),
+        createdAt: productionSites.createdAt,
+        updatedAt: productionSites.updatedAt,
+      })
+      .from(productionSites)
+      .innerJoin(cities, eq(productionSites.cityId, cities.id))
+      .innerJoin(companies, eq(productionSites.companyId, companies.id))
+      .orderBy(productionSites.name);
   }
 }

@@ -18,6 +18,13 @@ export const Query = {
   ) => {
     return await new ProductionSiteService(db).getProductionSite(id);
   },
+  getProductionSitesForSelect: async (
+    _: unknown,
+    __: unknown,
+    { db }: Context
+  ) => {
+    return await new ProductionSiteService(db).getProductionSitesForSelect();
+  },
 };
 
 export const Mutation = {
@@ -37,5 +44,12 @@ export const Mutation = {
       }
       throw err;
     }
+  },
+  deleteProductionSite: async (
+    _: unknown,
+    { id }: { id: string },
+    { db }: Context
+  ) => {
+    return await new ProductionSiteService(db).deleteProductionSite(id);
   },
 };

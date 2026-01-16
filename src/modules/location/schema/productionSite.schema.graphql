@@ -1,13 +1,14 @@
 type ProductionSite {
   id: ID!
   name: String!
-  companyId: ID!
-  cityId: ID!
+  createdAt: String!
+  updatedAt: String!
 }
 
 type Query {
   productionSites: [ProductionSite!]!
   productionSite(id: ID!): ProductionSite!
+  getProductionSitesForSelect: [ProductionSite!]!
 }
 
 input CreateProductionSiteInput {
@@ -18,4 +19,5 @@ input CreateProductionSiteInput {
 
 type Mutation {
   createProductionSite(input: CreateProductionSiteInput!): ProductionSite!
+  deleteProductionSite(id: ID!): Boolean!
 }
