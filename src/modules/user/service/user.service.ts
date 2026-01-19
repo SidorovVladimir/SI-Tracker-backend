@@ -46,8 +46,8 @@ export class UserService {
         'Пользователь с таким почтовым адресом существует'
       );
     const userData: NewUser = {
-      firstName: input.firstName,
-      lastName: input.lastName,
+      firstName: input.firstName.toLowerCase(),
+      lastName: input.lastName.toLowerCase(),
       email: input.email,
       passwordHash: await hashPassword(input.password),
     };
@@ -62,9 +62,13 @@ export class UserService {
   }
 
   async updateUser(userId: string, input: UpdateUserInput): Promise<User> {
+    const newUser = {
+      firstName: input.firstName.toLowerCase(),
+      lastName: input.lastName.toLowerCase(),
+    };
     const [user] = await this.db
       .update(users)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ ...newUser, updatedAt: new Date() })
       .where(eq(users.id, userId))
       .returning();
     if (!user) {

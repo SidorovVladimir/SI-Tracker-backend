@@ -23,6 +23,7 @@ export class CompanyService {
   async createCompany(input: CreateCompanyInput): Promise<CompanyEntity> {
     const companyData: NewCompany = {
       ...input,
+      name: input.name.toLowerCase(),
     };
     const [company] = await this.db
       .insert(companies)
@@ -40,7 +41,7 @@ export class CompanyService {
   ): Promise<CompanyEntity> {
     const [company] = await this.db
       .update(companies)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ ...input, name: input.name.toLowerCase(), updatedAt: new Date() })
       .where(eq(companies.id, id))
       .returning();
     if (!company) {

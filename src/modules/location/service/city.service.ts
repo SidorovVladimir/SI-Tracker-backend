@@ -21,7 +21,7 @@ export class CityService {
 
   async createCity(input: CreateCityInput): Promise<CityEntity> {
     const cityData: NewCity = {
-      name: input.name,
+      name: input.name.toLowerCase(),
     };
     const [city] = await this.db.insert(cities).values(cityData).returning();
     if (!city) {
@@ -33,7 +33,7 @@ export class CityService {
   async updateCity(id: string, input: UpdateCityInput): Promise<CityEntity> {
     const [city] = await this.db
       .update(cities)
-      .set({ ...input, updatedAt: new Date() })
+      .set({ name: input.name.toLowerCase(), updatedAt: new Date() })
       .where(eq(cities.id, id))
       .returning();
 

@@ -34,6 +34,7 @@ export class ProductionSiteService {
   async createProductionSite(input: CreateProductionSiteInput) {
     const productionSiteData: NewProductionSite = {
       ...input,
+      name: input.name.toLowerCase(),
     };
     const [productionSite] = await this.db
       .insert(productionSites)
