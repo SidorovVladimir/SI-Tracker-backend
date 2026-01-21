@@ -17,7 +17,14 @@ input CreateProductionSiteInput {
   cityId: ID!
 }
 
+input UpdateProductionSiteInput {
+  name: String!
+  companyId: ID!
+  cityId: ID!
+}
+
 type Mutation {
   createProductionSite(input: CreateProductionSiteInput!): ProductionSite!
+  updateProductionSite(input: UpdateProductionSiteInput!): ProductionSite!
   deleteProductionSite(id: ID!): Boolean!
 }

@@ -5,16 +5,11 @@ import { productionSites } from '../models/productionSites.model';
 import {
   NewProductionSite,
   ProductionSiteEntity,
+  ProductionSiteSelect,
 } from '../types/productionSite.types';
 import { cities } from '../models/city.model';
 import { companies } from '../models/company.model';
-
-interface ProductionSiteSelect {
-  id: string;
-  name: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { UpdateProductionSiteInput } from '../dto/UpdateProductionSiteDto';
 
 export class ProductionSiteService {
   constructor(private db: DrizzleDB) {}
@@ -66,5 +61,20 @@ export class ProductionSiteService {
       .innerJoin(cities, eq(productionSites.cityId, cities.id))
       .innerJoin(companies, eq(productionSites.companyId, companies.id))
       .orderBy(productionSites.name);
+  }
+
+  async updateProductionSite(
+    id: string,
+    input: UpdateProductionSiteInput
+  ): Promise<ProductionSiteEntity> {
+    const [productionSite] = await this.db
+      .update(productionSites)
+      .set({ ...input, name: input.name.toLowerCase(), updatedAt: new Date() })
+      .where(eq(productionSites.id, id))
+      .returning();
+    if (!productionSite) {
+      throw new Error('Failed to update production site');
+    }
+    return productionSite;
   }
 }

@@ -1,0 +1,25 @@
+type EquipmentType {
+  id: ID!
+  name: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Query {
+  equipmentTypes: [EquipmentType!]!
+  equipmentType(id: ID!): EquipmentType!
+}
+
+input CreateEquipmentTypeInput {
+  name: String!
+}
+
+input UpdateEquipmentTypeInput {
+  name: String!
+}
+
+type Mutation {
+  createEquipmentType(input: CreateEquipmentTypeInput!): EquipmentType!
+  updateEquipmentType(id: ID!, input: UpdateEquipmentTypeInput!): EquipmentType!
+  deleteEquipmentType(id: ID!): Boolean!
+}
