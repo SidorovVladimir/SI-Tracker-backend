@@ -43,5 +43,7 @@ export const Mutation = {
     _: unknown,
     { id }: { id: string },
     { db }: Context
-  ) => {},
+  ) => {
+    return await new EquipmentTypeService(db).deleteEquipmentType(id);
+  },
 };

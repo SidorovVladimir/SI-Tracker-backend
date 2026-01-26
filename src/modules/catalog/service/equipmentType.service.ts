@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateEquipmentTypeInput } from '../dto/CreateEquipmentTypeDto';
 import { equipmentTypes } from '../models/equipmentType.model';
@@ -25,5 +26,10 @@ export class EquipmentTypeService {
       throw new Error('Failed to create equipmentType');
     }
     return equipmentType;
+  }
+
+  async deleteEquipmentType(id: string) {
+    await this.db.delete(equipmentTypes).where(eq(equipmentTypes.id, id));
+    return true;
   }
 }
