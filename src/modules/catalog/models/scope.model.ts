@@ -10,7 +10,7 @@ import { devices } from '../../device/models/device.model';
 // Сферы применения (ГРОЕИ и прочие) (ОТ, учет ресурсов, ПБ, сертификация продукции, аккредитация ИЛ, правовое поле, добровольно)
 export const scopes = pgTable('scopes', {
   id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name', { length: 255 }).notNull(),
+  name: varchar('name', { length: 255 }).notNull().unique(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

@@ -1,0 +1,28 @@
+type MeasurementType {
+  id: ID!
+  name: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Query {
+  measurementTypes: [MeasurementType!]!
+  measurementType(id: ID!): MeasurementType!
+}
+
+input CreateMeasurementTypeInput {
+  name: String!
+}
+
+input UpdateMeasurementTypeInput {
+  name: String!
+}
+
+type Mutation {
+  createMeasurementType(input: CreateMeasurementTypeInput!): MeasurementType!
+  updateMeasurementType(
+    id: ID!
+    input: UpdateMeasurementTypeInput!
+  ): MeasurementType!
+  deleteMeasurementType(id: ID!): Boolean!
+}

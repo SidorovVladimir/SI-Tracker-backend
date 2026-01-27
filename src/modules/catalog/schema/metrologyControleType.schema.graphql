@@ -1,0 +1,30 @@
+type MetrologyControlType {
+  id: ID!
+  name: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Query {
+  metrologyControlTypes: [MetrologyControlType!]!
+  metrologyControlType(id: ID!): MetrologyControlType!
+}
+
+input CreateMetrologyControlTypeInput {
+  name: String!
+}
+
+input UpdateMetrologyControlTypeInput {
+  name: String!
+}
+
+type Mutation {
+  createMetrologyControlType(
+    input: CreateMetrologyControlTypeInput!
+  ): MetrologyControlType!
+  updateMetrologyControlType(
+    id: ID!
+    input: UpdateMetrologyControlTypeInput!
+  ): MetrologyControlType!
+  deleteMetrologyControlType(id: ID!): Boolean!
+}
