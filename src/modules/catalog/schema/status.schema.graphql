@@ -1,0 +1,25 @@
+type Status {
+  id: ID!
+  name: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Query {
+  statuses: [Status!]!
+  status(id: ID!): Status!
+}
+
+input CreateStatusInput {
+  name: String!
+}
+
+input UpdateStatusInput {
+  name: String!
+}
+
+type Mutation {
+  createStatus(input: CreateStatusInput!): Status!
+  updateStatus(id: ID!, input: UpdateStatusInput!): Status!
+  deleteStatus(id: ID!): Boolean!
+}

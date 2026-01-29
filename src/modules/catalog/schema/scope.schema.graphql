@@ -1,0 +1,25 @@
+type Scope {
+  id: ID!
+  name: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Query {
+  scopes: [Scope!]!
+  scope(id: ID!): Scope!
+}
+
+input CreateScopeInput {
+  name: String!
+}
+
+input UpdateScopeInput {
+  name: String!
+}
+
+type Mutation {
+  createScope(input: CreateScopeInput!): Scope!
+  updateScope(id: ID!, input: UpdateScopeInput!): Scope!
+  deleteScope(id: ID!): Boolean!
+}

@@ -1,8 +1,6 @@
 import { ZodError } from 'zod';
 import { Context } from '../../../context';
 import { formatZodErrors } from '../../../utils/errors';
-import { MeasurementTypeService } from '../service/measurementType.service';
-import { CreateMeasurementTypeInputSchema } from '../dto/CreateMeasurementTypeDto';
 import { MetrologyControlTypeService } from '../service/metrologyControlType.sevice';
 import { CreateMetrologyControlTypeInputSchema } from '../dto/CreateMetrologyControlTypeDto';
 
