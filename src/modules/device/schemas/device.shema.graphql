@@ -4,16 +4,17 @@ type Device {
   model: String!
   serialNumber: String!
   releaseDate: String
-  grsiNumber: String!
-  measurementRange: String!
-  accuracy: String!
+  grsiNumber: String
+  measurementRange: String
+  accuracy: String
   inventoryNumber: String!
   receiptDate: String
   manufacturer: String
-  verificationInterval: String
+  verificationInterval: Int
   archived: Boolean!
   nomenclature: String
   createdAt: String!
+  updatedAt: String!
   statusId: ID!
   productionSiteId: ID!
   equipmentTypeId: ID!
@@ -30,19 +31,20 @@ input CreateDeviceInput {
   model: String!
   serialNumber: String!
   releaseDate: String
-  grsiNumber: String!
-  measurementRange: String!
-  accuracy: String!
+  grsiNumber: String
+  measurementRange: String
+  accuracy: String
   inventoryNumber: String!
   receiptDate: String
   manufacturer: String
-  verificationInterval: String
+  verificationInterval: Int
   archived: Boolean!
   nomenclature: String
   statusId: ID!
   productionSiteId: ID!
   equipmentTypeId: ID!
   measurementTypeId: ID!
+  scopes: [ID!]!
 }
 
 type Mutation {
