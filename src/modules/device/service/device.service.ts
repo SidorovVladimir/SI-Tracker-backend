@@ -19,7 +19,7 @@ export class DeviceService {
   //   return city;
   // }
 
-  async createCity(input: CreateDeviceInput) {
+  async createDevice(input: CreateDeviceInput) {
     const deviceData = {
       name: input.name.toLowerCase(),
       model: input.model.toLowerCase(),
@@ -39,7 +39,8 @@ export class DeviceService {
       equipmentTypeId: input.equipmentTypeId,
       measurementTypeId: input.measurementTypeId,
     };
-    await this.db.transaction(async (tx) => {
+
+    const result = await this.db.transaction(async (tx) => {
       const [newDevice] = await tx
         .insert(devices)
         .values(deviceData)
@@ -50,14 +51,16 @@ export class DeviceService {
       }
 
       if (input.scopes && input.scopes.length > 0) {
-        const relations = input.scopes.map((sId) => ({
+        const scopesData = input.scopes.map((sId) => ({
           deviceId: newDevice.id,
           scopeId: sId,
         }));
 
-        await tx.insert(scopesToDevices).values(relations);
+        await tx.insert(scopesToDevices).values(scopesData);
       }
+      return newDevice;
     });
+    return result;
   }
 
   // async updateCity(id: string, input: UpdateCityInput): Promise<CityEntity> {

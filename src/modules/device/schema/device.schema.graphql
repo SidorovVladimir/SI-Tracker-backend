@@ -13,12 +13,12 @@ type Device {
   verificationInterval: Int
   archived: Boolean!
   nomenclature: String
-  createdAt: String!
-  updatedAt: String!
   statusId: ID!
   productionSiteId: ID!
   equipmentTypeId: ID!
   measurementTypeId: ID!
+  createdAt: String!
+  updatedAt: String!
 }
 
 type Query {

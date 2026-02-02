@@ -5,6 +5,7 @@ import { formatZodErrors } from '../../../utils/errors';
 import { Context } from '../../../context';
 import { DeviceEntity } from '../types/device.types';
 import { CreateDeviceInputSchema } from '../dto/CreateDeviceDto';
+import { DeviceService } from '../service/device.service';
 
 export const Query = {
   // cities: async (_: unknown, __: unknown, { db }: Context) => {
@@ -16,14 +17,14 @@ export const Query = {
 };
 
 export const Mutation = {
-  createCity: async (
+  createDevice: async (
     _: unknown,
     { input }: { input: unknown },
     { db }: Context
   ) => {
     try {
       const validatedInput = CreateDeviceInputSchema.parse(input);
-      // return await new CityService(db).createCity(validatedInput);
+      return await new DeviceService(db).createDevice(validatedInput);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new Error(JSON.stringify(formatZodErrors(err)));
