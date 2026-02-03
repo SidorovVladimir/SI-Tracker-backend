@@ -7,9 +7,9 @@ import { scopesToDevices } from '../../catalog/models/scope.model';
 
 export class DeviceService {
   constructor(private db: DrizzleDB) {}
-  // async getCities(): Promise<CityEntity[]> {
-  //   return await this.db.select().from(cities);
-  // }
+  async getDevices(): Promise<DeviceEntity[]> {
+    return await this.db.select().from(devices);
+  }
 
   // async getCity(id: string): Promise<CityEntity> {
   //   const [city] = await this.db.select().from(cities).where(eq(cities.id, id));

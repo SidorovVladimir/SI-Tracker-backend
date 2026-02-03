@@ -8,9 +8,9 @@ import { CreateDeviceInputSchema } from '../dto/CreateDeviceDto';
 import { DeviceService } from '../service/device.service';
 
 export const Query = {
-  // cities: async (_: unknown, __: unknown, { db }: Context) => {
-  //   return await new CityService(db).getCities();
-  // },
+  devices: async (_: unknown, __: unknown, { db }: Context) => {
+    return await new DeviceService(db).getDevices();
+  },
   // city: async (_: unknown, { id }: { id: string }, { db }: Context) => {
   //   return await new CityService(db).getCity(id);
   // },
