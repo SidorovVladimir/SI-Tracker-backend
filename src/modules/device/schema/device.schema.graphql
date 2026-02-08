@@ -21,9 +21,31 @@ type Device {
   updatedAt: String!
 }
 
+type DeviceWithRelations {
+  id: ID!
+  name: String!
+  model: String!
+  serialNumber: String!
+  releaseDate: String
+  grsiNumber: String
+  measurementRange: String
+  accuracy: String
+  inventoryNumber: String!
+  receiptDate: String
+  manufacturer: String
+  verificationInterval: Int
+  archived: Boolean!
+  nomenclature: String
+  status: String!
+  city: String!
+  company: String!
+  productionSite: String!
+}
+
 type Query {
   devices: [Device!]!
   device(id: ID!): Device!
+  devicesWithRelations: [DeviceWithRelations!]!
 }
 
 input CreateDeviceInput {

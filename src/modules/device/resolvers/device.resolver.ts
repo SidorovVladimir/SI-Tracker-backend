@@ -11,6 +11,10 @@ export const Query = {
   devices: async (_: unknown, __: unknown, { db }: Context) => {
     return await new DeviceService(db).getDevices();
   },
+
+  devicesWithRelations: async (_: unknown, __: unknown, { db }: Context) => {
+    return await new DeviceService(db).getDevicesWithRelations();
+  },
   // city: async (_: unknown, { id }: { id: string }, { db }: Context) => {
   //   return await new CityService(db).getCity(id);
   // },

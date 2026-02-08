@@ -4,11 +4,47 @@ import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity, NewDevice } from '../types/device.types';
 import { devices } from '../models/device.model';
 import { scopesToDevices } from '../../catalog/models/scope.model';
+import { productionSites } from '../../location/models/productionSites.model';
+import { cities } from '../../location/models/city.model';
+import { companies } from '../../location/models/company.model';
+import { statuses } from '../../catalog/models/status.model';
 
 export class DeviceService {
   constructor(private db: DrizzleDB) {}
   async getDevices(): Promise<DeviceEntity[]> {
     return await this.db.select().from(devices);
+  }
+
+  async getDevicesWithRelations() {
+    return await this.db
+      .select({
+        id: devices.id,
+        name: devices.name,
+        model: devices.model,
+        serialNumber: devices.serialNumber,
+        releaseDate: devices.releaseDate,
+        grsiNumber: devices.grsiNumber,
+        measurementRange: devices.measurementRange,
+        accuracy: devices.accuracy,
+        inventoryNumber: devices.inventoryNumber,
+        receiptDate: devices.receiptDate,
+        manufacturer: devices.manufacturer,
+        verificationInterval: devices.verificationInterval,
+        archived: devices.archived,
+        nomenclature: devices.nomenclature,
+        city: cities.name,
+        company: companies.name,
+        status: statuses.name,
+        productionSite: productionSites.name,
+      })
+      .from(devices)
+      .innerJoin(
+        productionSites,
+        eq(devices.productionSiteId, productionSites.id)
+      )
+      .innerJoin(cities, eq(productionSites.cityId, cities.id))
+      .innerJoin(companies, eq(productionSites.companyId, companies.id))
+      .innerJoin(statuses, eq(devices.statusId, statuses.id));
   }
 
   // async getCity(id: string): Promise<CityEntity> {
