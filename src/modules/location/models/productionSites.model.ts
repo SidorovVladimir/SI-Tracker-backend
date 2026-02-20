@@ -7,6 +7,8 @@ import {
 } from 'drizzle-orm/pg-core';
 import { companies } from './company.model';
 import { cities } from './city.model';
+import { relations } from 'drizzle-orm';
+import { devices } from '../../device/models/device.model';
 
 // Производственная площадка (Участок)
 export const productionSites = pgTable(
@@ -26,4 +28,21 @@ export const productionSites = pgTable(
   (t) => [
     uniqueIndex('idx_site_unique_constraint').on(t.name, t.companyId, t.cityId),
   ]
+);
+
+export const productionSitesRelations = relations(
+  productionSites,
+  ({ one, many }) => ({
+    city: one(cities, {
+      fields: [productionSites.cityId],
+      references: [cities.id],
+    }),
+
+    company: one(companies, {
+      fields: [productionSites.companyId],
+      references: [companies.id],
+    }),
+
+    devices: many(devices),
+  })
 );

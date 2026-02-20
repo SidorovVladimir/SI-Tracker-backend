@@ -5,6 +5,13 @@ type ProductionSite {
   updatedAt: String!
 }
 
+type ProductionSiteRelation {
+  id: ID!
+  name: String!
+  city: City!
+  company: Company!
+}
+
 type Query {
   productionSites: [ProductionSite!]!
   productionSite(id: ID!): ProductionSite!

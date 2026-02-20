@@ -1,6 +1,7 @@
 import { pgTable, text, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
 import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
 import { devices } from './device.model';
+import { relations } from 'drizzle-orm';
 
 // Данные о поверках
 export const verifications = pgTable('verifications', {
@@ -21,3 +22,14 @@ export const verifications = pgTable('verifications', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+export const verificationsRelations = relations(verifications, ({ one }) => ({
+  device: one(devices, {
+    fields: [verifications.deviceId],
+    references: [devices.id],
+  }),
+  metrologyControleType: one(metrologyControleTypes, {
+    fields: [verifications.metrologyControleTypeId],
+    references: [metrologyControleTypes.id],
+  }),
+}));

@@ -12,6 +12,20 @@ type Verification {
   createdAt: String!
   updatedAt: String!
 }
+type VerificationRelation {
+  id: ID!
+  date: String
+  validUntil: String
+  result: String
+  protocolNumber: String
+  organization: String
+  comment: String
+  documentUrl: String
+  metrologyControleType: MetrologyControlType!
+  deviceId: ID!
+  createdAt: String!
+  updatedAt: String!
+}
 
 input VerificationInput {
   date: String

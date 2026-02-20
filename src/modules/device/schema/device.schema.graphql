@@ -36,10 +36,10 @@ type DeviceWithRelations {
   verificationInterval: Int
   archived: Boolean!
   nomenclature: String
-  status: String!
-  city: String!
-  company: String!
-  productionSite: String!
+  status: Status!
+  productionSite: ProductionSiteRelation!
+  verifications: [VerificationRelation!]!
+  scopes: [Scope!]!
 }
 
 type Query {

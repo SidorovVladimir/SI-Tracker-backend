@@ -6,10 +6,13 @@ import {
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 import { statuses } from '../../catalog/models/status.model';
 import { productionSites } from '../../location/models/productionSites.model';
 import { equipmentTypes } from '../../catalog/models/equipmentType.model';
 import { measurementTypes } from '../../catalog/models/measurementType.model';
+import { scopesToDevices } from '../../catalog/models/scope.model';
+import { verifications } from './verification.model';
 
 // Прибор (Инструмент)
 export const devices = pgTable('devices', {
@@ -42,3 +45,24 @@ export const devices = pgTable('devices', {
     .references(() => measurementTypes.id),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+export const devicesRelations = relations(devices, ({ one, many }) => ({
+  status: one(statuses, {
+    fields: [devices.statusId],
+    references: [statuses.id],
+  }),
+  productionSite: one(productionSites, {
+    fields: [devices.productionSiteId],
+    references: [productionSites.id],
+  }),
+  equipmentType: one(equipmentTypes, {
+    fields: [devices.equipmentTypeId],
+    references: [equipmentTypes.id],
+  }),
+  measurementType: one(measurementTypes, {
+    fields: [devices.measurementTypeId],
+    references: [measurementTypes.id],
+  }),
+  verifications: many(verifications),
+  scopesToDevices: many(scopesToDevices),
+}));

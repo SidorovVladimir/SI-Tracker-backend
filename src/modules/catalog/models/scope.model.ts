@@ -6,6 +6,7 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { devices } from '../../device/models/device.model';
+import { relations } from 'drizzle-orm';
 
 // Сферы применения (ГРОЕИ и прочие) (ОТ, учет ресурсов, ПБ, сертификация продукции, аккредитация ИЛ, правовое поле, добровольно)
 export const scopes = pgTable('scopes', {
@@ -29,4 +30,23 @@ export const scopesToDevices = pgTable(
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.scopeId, t.deviceId] })]
+);
+
+export const scopesRelations = relations(scopes, ({ many }) => ({
+  scopesToDevices: many(scopesToDevices),
+}));
+
+export const scopesToDevicesRelations = relations(
+  scopesToDevices,
+  ({ one }) => ({
+    scope: one(scopes, {
+      fields: [scopesToDevices.scopeId],
+      references: [scopes.id],
+    }),
+
+    device: one(devices, {
+      fields: [scopesToDevices.deviceId],
+      references: [devices.id],
+    }),
+  })
 );

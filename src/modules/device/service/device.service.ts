@@ -1,9 +1,9 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity, NewDevice } from '../types/device.types';
 import { devices } from '../models/device.model';
-import { scopesToDevices } from '../../catalog/models/scope.model';
+import { scopes, scopesToDevices } from '../../catalog/models/scope.model';
 import { productionSites } from '../../location/models/productionSites.model';
 import { cities } from '../../location/models/city.model';
 import { companies } from '../../location/models/company.model';
@@ -18,35 +18,32 @@ export class DeviceService {
   }
 
   async getDevicesWithRelations() {
-    return await this.db
-      .select({
-        id: devices.id,
-        name: devices.name,
-        model: devices.model,
-        serialNumber: devices.serialNumber,
-        releaseDate: devices.releaseDate,
-        grsiNumber: devices.grsiNumber,
-        measurementRange: devices.measurementRange,
-        accuracy: devices.accuracy,
-        inventoryNumber: devices.inventoryNumber,
-        receiptDate: devices.receiptDate,
-        manufacturer: devices.manufacturer,
-        verificationInterval: devices.verificationInterval,
-        archived: devices.archived,
-        nomenclature: devices.nomenclature,
-        city: cities.name,
-        company: companies.name,
-        status: statuses.name,
-        productionSite: productionSites.name,
-      })
-      .from(devices)
-      .innerJoin(
-        productionSites,
-        eq(devices.productionSiteId, productionSites.id)
-      )
-      .innerJoin(cities, eq(productionSites.cityId, cities.id))
-      .innerJoin(companies, eq(productionSites.companyId, companies.id))
-      .innerJoin(statuses, eq(devices.statusId, statuses.id));
+    const data = await this.db.query.devices.findMany({
+      with: {
+        status: true,
+        productionSite: {
+          with: {
+            city: true,
+            company: true,
+          },
+        },
+        scopesToDevices: {
+          with: {
+            scope: true,
+          },
+        },
+        verifications: {
+          with: {
+            metrologyControleType: true,
+          },
+        },
+      },
+    });
+
+    return data.map((device) => ({
+      ...device,
+      scopes: device.scopesToDevices.map((sd) => sd.scope),
+    }));
   }
 
   // async getCity(id: string): Promise<CityEntity> {
