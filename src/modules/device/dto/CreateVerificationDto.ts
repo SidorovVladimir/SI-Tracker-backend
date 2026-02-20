@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 export const CreateVerificationInputSchema = z.object({
-  date: z.coerce.date(),
-  validUntil: z.coerce.date(),
+  date: z.coerce.date().nullable(),
+  validUntil: z.coerce.date().nullable(),
   result: z.string().nullable(),
-  protocolNumber: z.string(),
+  protocolNumber: z.string().nullable(),
   organization: z.string().nullable(),
   comment: z.string().nullable(),
   documentUrl: z.string().nullable(),

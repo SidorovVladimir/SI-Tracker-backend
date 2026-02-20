@@ -8,6 +8,8 @@ import { productionSites } from '../../location/models/productionSites.model';
 import { cities } from '../../location/models/city.model';
 import { companies } from '../../location/models/company.model';
 import { statuses } from '../../catalog/models/status.model';
+import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
+import { verifications } from '../models/verification.model';
 
 export class DeviceService {
   constructor(private db: DrizzleDB) {}
@@ -94,6 +96,16 @@ export class DeviceService {
 
         await tx.insert(scopesToDevices).values(scopesData);
       }
+
+      if (input.verifications && input.verifications.length > 0) {
+        const verificationsData = input.verifications.map((verification) => ({
+          ...verification,
+          deviceId: newDevice.id,
+        }));
+
+        await tx.insert(verifications).values(verificationsData);
+      }
+
       return newDevice;
     });
     return result;

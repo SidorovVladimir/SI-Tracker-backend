@@ -1,5 +1,15 @@
 import { z } from 'zod';
 
+const VerificationInput = z.object({
+  date: z.coerce.date().nullable(),
+  validUntil: z.coerce.date().nullable(),
+  result: z.string().nullable(),
+  protocolNumber: z.string().nullable(),
+  organization: z.string().nullable(),
+  comment: z.string().nullable(),
+  documentUrl: z.string().nullable(),
+  metrologyControleTypeId: z.uuid(),
+});
 export const CreateDeviceInputSchema = z.object({
   name: z.string().min(1, 'Name is required').max(50),
   model: z.string().min(1, 'Model is required').max(50),
@@ -19,6 +29,7 @@ export const CreateDeviceInputSchema = z.object({
   equipmentTypeId: z.uuid(),
   measurementTypeId: z.uuid(),
   scopes: z.array(z.uuid()),
+  verifications: z.array(VerificationInput),
 });
 
 export type CreateDeviceInput = z.infer<typeof CreateDeviceInputSchema>;

@@ -1,0 +1,25 @@
+type Verification {
+  id: ID!
+  date: String
+  validUntil: String
+  result: String
+  protocolNumber: String
+  organization: String
+  comment: String
+  documentUrl: String
+  metrologyControleTypeId: ID!
+  deviceId: ID!
+  createdAt: String!
+  updatedAt: String!
+}
+
+input VerificationInput {
+  date: String
+  validUntil: String
+  result: String
+  protocolNumber: String
+  organization: String
+  comment: String
+  documentUrl: String
+  metrologyControleTypeId: ID!
+}

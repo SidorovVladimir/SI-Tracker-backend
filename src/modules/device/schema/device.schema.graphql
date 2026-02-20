@@ -67,6 +67,7 @@ input CreateDeviceInput {
   equipmentTypeId: ID!
   measurementTypeId: ID!
   scopes: [ID!]!
+  verifications: [VerificationInput!]!
 }
 
 type Mutation {
