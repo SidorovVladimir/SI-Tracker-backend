@@ -46,13 +46,34 @@ export class DeviceService {
     }));
   }
 
-  // async getCity(id: string): Promise<CityEntity> {
-  //   const [city] = await this.db.select().from(cities).where(eq(cities.id, id));
-  //   if (!city) {
-  //     throw new Error(`Город с ID ${id} не найден`);
-  //   }
-  //   return city;
-  // }
+  async getDevice(id: string) {
+    const data = await this.db.query.devices.findFirst({
+      where: eq(devices.id, id),
+      with: {
+        status: true,
+        measurementType: true,
+        equipmentType: true,
+        productionSite: {
+          with: {
+            city: true,
+            company: true,
+          },
+        },
+        scopesToDevices: {
+          with: {
+            scope: true,
+          },
+        },
+        verifications: {
+          with: {
+            metrologyControleType: true,
+          },
+        },
+      },
+    });
+    const scopes = data?.scopesToDevices.map((sd) => sd.scope);
+    return { ...data, scopes };
+  }
 
   async createDevice(input: CreateDeviceInput) {
     const deviceData = {

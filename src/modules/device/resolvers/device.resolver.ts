@@ -15,9 +15,9 @@ export const Query = {
   devicesWithRelations: async (_: unknown, __: unknown, { db }: Context) => {
     return await new DeviceService(db).getDevicesWithRelations();
   },
-  // city: async (_: unknown, { id }: { id: string }, { db }: Context) => {
-  //   return await new CityService(db).getCity(id);
-  // },
+  device: async (_: unknown, { id }: { id: string }, { db }: Context) => {
+    return await new DeviceService(db).getDevice(id);
+  },
 };
 
 export const Mutation = {
