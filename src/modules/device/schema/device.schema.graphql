@@ -72,6 +72,30 @@ input CreateDeviceInput {
   verifications: [VerificationInput!]!
 }
 
+input UpdateDeviceInput {
+  name: String!
+  model: String!
+  serialNumber: String!
+  releaseDate: String
+  grsiNumber: String
+  measurementRange: String
+  accuracy: String
+  inventoryNumber: String!
+  receiptDate: String
+  manufacturer: String
+  verificationInterval: Int
+  archived: Boolean!
+  nomenclature: String
+  statusId: ID!
+  productionSiteId: ID!
+  equipmentTypeId: ID!
+  measurementTypeId: ID!
+  scopes: [ID!]!
+  verifications: [VerificationInput!]!
+}
+
 type Mutation {
   createDevice(input: CreateDeviceInput!): Device!
+  deleteDevice(id: ID!): Boolean!
+  updateDevice(id: ID!, input: UpdateDeviceInput!): Device!
 }

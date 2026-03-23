@@ -6,6 +6,7 @@ import { Context } from '../../../context';
 import { DeviceEntity } from '../types/device.types';
 import { CreateDeviceInputSchema } from '../dto/CreateDeviceDto';
 import { DeviceService } from '../service/device.service';
+import { UpdateDeviceInputSchema } from '../dto/UpdateDeviceDto';
 
 export const Query = {
   devices: async (_: unknown, __: unknown, { db }: Context) => {
@@ -51,11 +52,26 @@ export const Mutation = {
   //     throw err;
   //   }
   // },
-  // deleteCity: async (
-  //   _: unknown,
-  //   { id }: { id: string },
-  //   { db }: Context
-  // ): Promise<boolean> => {
-  //   return await new CityService(db).deleteCity(id);
-  // },
+  updateDevice: async (
+    _: unknown,
+    { id, input }: { id: string; input: unknown },
+    { db }: Context
+  ) => {
+    try {
+      const validatedInput = UpdateDeviceInputSchema.parse(input);
+      return await new DeviceService(db).updateDevice(id, validatedInput);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new Error(JSON.stringify(formatZodErrors(err)));
+      }
+      throw err;
+    }
+  },
+  deleteDevice: async (
+    _: unknown,
+    { id }: { id: string },
+    { db }: Context
+  ): Promise<boolean> => {
+    return await new DeviceService(db).deleteDevice(id);
+  },
 };
