@@ -21,6 +21,8 @@ export class DeviceService {
     const data = await this.db.query.devices.findMany({
       with: {
         status: true,
+        equipmentType: true,
+        measurementType: true,
         productionSite: {
           with: {
             city: true,

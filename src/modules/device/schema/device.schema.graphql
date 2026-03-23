@@ -29,8 +29,8 @@ type DeviceWithRelations {
   releaseDate: String
   grsiNumber: String
   measurementRange: String
-  measurementType: MeasurementType
-  equimentType: EquipmentType
+  measurementType: MeasurementType!
+  equipmentType: EquipmentType!
   accuracy: String
   inventoryNumber: String!
   receiptDate: String
