@@ -7,7 +7,7 @@ type Device {
   grsiNumber: String
   measurementRange: String
   accuracy: String
-  inventoryNumber: String!
+  inventoryNumber: String
   receiptDate: String
   manufacturer: String
   verificationInterval: Int
@@ -15,8 +15,8 @@ type Device {
   nomenclature: String
   statusId: ID!
   productionSiteId: ID!
-  equipmentTypeId: ID!
-  measurementTypeId: ID!
+  equipmentTypeId: ID
+  measurementTypeId: ID
   createdAt: String!
   updatedAt: String!
 }
@@ -29,10 +29,10 @@ type DeviceWithRelations {
   releaseDate: String
   grsiNumber: String
   measurementRange: String
-  measurementType: MeasurementType!
-  equipmentType: EquipmentType!
+  measurementType: MeasurementType
+  equipmentType: EquipmentType
   accuracy: String
-  inventoryNumber: String!
+  inventoryNumber: String
   receiptDate: String
   manufacturer: String
   verificationInterval: Int
@@ -58,7 +58,7 @@ input CreateDeviceInput {
   grsiNumber: String
   measurementRange: String
   accuracy: String
-  inventoryNumber: String!
+  inventoryNumber: String
   receiptDate: String
   manufacturer: String
   verificationInterval: Int
@@ -66,10 +66,10 @@ input CreateDeviceInput {
   nomenclature: String
   statusId: ID!
   productionSiteId: ID!
-  equipmentTypeId: ID!
-  measurementTypeId: ID!
-  scopes: [ID!]!
-  verifications: [VerificationInput!]!
+  equipmentTypeId: ID
+  measurementTypeId: ID
+  scopes: [ID!]
+  verifications: [VerificationInput!]
 }
 
 input UpdateDeviceInput {
@@ -80,7 +80,7 @@ input UpdateDeviceInput {
   grsiNumber: String
   measurementRange: String
   accuracy: String
-  inventoryNumber: String!
+  inventoryNumber: String
   receiptDate: String
   manufacturer: String
   verificationInterval: Int
@@ -88,10 +88,10 @@ input UpdateDeviceInput {
   nomenclature: String
   statusId: ID!
   productionSiteId: ID!
-  equipmentTypeId: ID!
-  measurementTypeId: ID!
-  scopes: [ID!]!
-  verifications: [VerificationInput!]!
+  equipmentTypeId: ID
+  measurementTypeId: ID
+  scopes: [ID!]
+  verifications: [VerificationInput!]
 }
 
 type Mutation {

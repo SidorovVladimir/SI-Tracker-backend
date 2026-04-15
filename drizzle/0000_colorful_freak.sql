@@ -48,24 +48,24 @@ CREATE TABLE "statuses" (
 --> statement-breakpoint
 CREATE TABLE "devices" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"name" varchar(50) NOT NULL,
-	"model" varchar(50) NOT NULL,
-	"serial_number" varchar(100) NOT NULL,
+	"name" varchar NOT NULL,
+	"model" varchar NOT NULL,
+	"serial_number" varchar NOT NULL,
 	"release_date" timestamp,
 	"grsi_number" varchar(100),
-	"measurement_range" varchar(100),
-	"accuracy" varchar(100),
-	"inventory_number" varchar(100) NOT NULL,
+	"measurement_range" varchar,
+	"accuracy" varchar,
+	"inventory_number" varchar(100),
 	"receipt_date" timestamp,
-	"manufacturer" varchar(100),
+	"manufacturer" varchar,
 	"verification_interval" integer,
 	"archived" boolean DEFAULT false NOT NULL,
-	"nomenclature" varchar(50),
+	"nomenclature" varchar,
 	"created_at" timestamp DEFAULT now(),
 	"status_id" uuid NOT NULL,
 	"production_site_id" uuid NOT NULL,
-	"equipment_type_id" uuid NOT NULL,
-	"measurement_type_id" uuid NOT NULL,
+	"equipment_type_id" uuid,
+	"measurement_type_id" uuid,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -78,7 +78,7 @@ CREATE TABLE "verifications" (
 	"organization" varchar(255),
 	"comment" text,
 	"document_url" text,
-	"metrology_controle_type_id" uuid NOT NULL,
+	"metrology_controle_type_id" uuid,
 	"device_id" uuid NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL

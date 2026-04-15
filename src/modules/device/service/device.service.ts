@@ -88,7 +88,7 @@ export class DeviceService {
       grsiNumber: input.grsiNumber?.toLowerCase() ?? null,
       measurementRange: input.measurementRange?.toLowerCase() ?? null,
       accuracy: input.accuracy?.toLowerCase() ?? null,
-      inventoryNumber: input.inventoryNumber.toLowerCase(),
+      inventoryNumber: input.inventoryNumber?.toLowerCase() ?? null,
       receiptDate: input.receiptDate,
       manufacturer: input.manufacturer?.toLowerCase() ?? null,
       verificationInterval: input.verificationInterval,
@@ -96,8 +96,8 @@ export class DeviceService {
       nomenclature: input.nomenclature?.toLowerCase() ?? null,
       statusId: input.statusId,
       productionSiteId: input.productionSiteId,
-      equipmentTypeId: input.equipmentTypeId,
-      measurementTypeId: input.measurementTypeId,
+      equipmentTypeId: input.equipmentTypeId ?? null,
+      measurementTypeId: input.measurementTypeId ?? null,
     };
 
     const result = await this.db.transaction(async (tx) => {
@@ -122,6 +122,7 @@ export class DeviceService {
       if (input.verifications && input.verifications.length > 0) {
         const verificationsData = input.verifications.map((verification) => ({
           ...verification,
+          metrologyControleTypeId: verification.metrologyControleTypeId ?? null,
           deviceId: newDevice.id,
         }));
 
@@ -145,7 +146,7 @@ export class DeviceService {
       grsiNumber: input.grsiNumber?.toLowerCase() ?? null,
       measurementRange: input.measurementRange?.toLowerCase() ?? null,
       accuracy: input.accuracy?.toLowerCase() ?? null,
-      inventoryNumber: input.inventoryNumber.toLowerCase(),
+      inventoryNumber: input.inventoryNumber?.toLowerCase() ?? null,
       receiptDate: input.receiptDate,
       manufacturer: input.manufacturer?.toLowerCase() ?? null,
       verificationInterval: input.verificationInterval,
@@ -153,8 +154,8 @@ export class DeviceService {
       nomenclature: input.nomenclature?.toLowerCase() ?? null,
       statusId: input.statusId,
       productionSiteId: input.productionSiteId,
-      equipmentTypeId: input.equipmentTypeId,
-      measurementTypeId: input.measurementTypeId,
+      equipmentTypeId: input.equipmentTypeId ?? null,
+      measurementTypeId: input.measurementTypeId ?? null,
     };
 
     const result = await this.db.transaction(async (tx) => {
@@ -184,6 +185,7 @@ export class DeviceService {
       if (input.verifications && input.verifications.length > 0) {
         const verificationsData = input.verifications.map((verification) => ({
           ...verification,
+          metrologyControleTypeId: verification.metrologyControleTypeId ?? null,
           deviceId: id,
         }));
 

@@ -8,7 +8,7 @@ const VerificationInput = z.object({
   organization: z.string().nullable(),
   comment: z.string().nullable(),
   documentUrl: z.string().nullable(),
-  metrologyControleTypeId: z.uuid(),
+  metrologyControleTypeId: z.uuid().nullable(),
 });
 export const CreateDeviceInputSchema = z.object({
   name: z.string().min(1, 'Name is required').max(50),
@@ -18,7 +18,7 @@ export const CreateDeviceInputSchema = z.object({
   grsiNumber: z.string().nullable(),
   measurementRange: z.string().nullable(),
   accuracy: z.string().nullable(),
-  inventoryNumber: z.string().min(1, 'Inventory number is required').max(100),
+  inventoryNumber: z.string().nullable(),
   receiptDate: z.coerce.date().nullable(),
   manufacturer: z.string().nullable(),
   verificationInterval: z.number().int().nullable(),
@@ -26,9 +26,9 @@ export const CreateDeviceInputSchema = z.object({
   nomenclature: z.string().nullable(),
   statusId: z.uuid(),
   productionSiteId: z.uuid(),
-  equipmentTypeId: z.uuid(),
-  measurementTypeId: z.uuid(),
-  scopes: z.array(z.uuid()),
+  equipmentTypeId: z.uuid().nullable(),
+  measurementTypeId: z.uuid().nullable(),
+  scopes: z.array(z.uuid()).nullable(),
   verifications: z.array(VerificationInput),
 });
 

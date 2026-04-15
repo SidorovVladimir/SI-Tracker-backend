@@ -8,7 +8,7 @@ export const CreateVerificationInputSchema = z.object({
   organization: z.string().nullable(),
   comment: z.string().nullable(),
   documentUrl: z.string().nullable(),
-  metrologyControleTypeId: z.uuid(),
+  metrologyControleTypeId: z.uuid().nullable(),
   deviceId: z.uuid(),
 });
 

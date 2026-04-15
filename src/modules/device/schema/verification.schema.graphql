@@ -7,7 +7,7 @@ type Verification {
   organization: String
   comment: String
   documentUrl: String
-  metrologyControleTypeId: ID!
+  metrologyControleTypeId: ID
   deviceId: ID!
   createdAt: String!
   updatedAt: String!
@@ -21,7 +21,7 @@ type VerificationRelation {
   organization: String
   comment: String
   documentUrl: String
-  metrologyControleType: MetrologyControlType!
+  metrologyControleType: MetrologyControlType
   deviceId: ID!
   createdAt: String!
   updatedAt: String!
@@ -35,5 +35,5 @@ input VerificationInput {
   organization: String
   comment: String
   documentUrl: String
-  metrologyControleTypeId: ID!
+  metrologyControleTypeId: ID
 }

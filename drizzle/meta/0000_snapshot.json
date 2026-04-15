@@ -1,5 +1,5 @@
 {
-  "id": "3227c669-3dc4-4887-a6df-750d274379db",
+  "id": "f4582815-890f-4f9d-b32e-1133cff2a50b",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -331,19 +331,19 @@
         },
         "name": {
           "name": "name",
-          "type": "varchar(50)",
+          "type": "varchar",
           "primaryKey": false,
           "notNull": true
         },
         "model": {
           "name": "model",
-          "type": "varchar(50)",
+          "type": "varchar",
           "primaryKey": false,
           "notNull": true
         },
         "serial_number": {
           "name": "serial_number",
-          "type": "varchar(100)",
+          "type": "varchar",
           "primaryKey": false,
           "notNull": true
         },
@@ -361,13 +361,13 @@
         },
         "measurement_range": {
           "name": "measurement_range",
-          "type": "varchar(100)",
+          "type": "varchar",
           "primaryKey": false,
           "notNull": false
         },
         "accuracy": {
           "name": "accuracy",
-          "type": "varchar(100)",
+          "type": "varchar",
           "primaryKey": false,
           "notNull": false
         },
@@ -375,7 +375,7 @@
           "name": "inventory_number",
           "type": "varchar(100)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "receipt_date": {
           "name": "receipt_date",
@@ -385,7 +385,7 @@
         },
         "manufacturer": {
           "name": "manufacturer",
-          "type": "varchar(100)",
+          "type": "varchar",
           "primaryKey": false,
           "notNull": false
         },
@@ -404,7 +404,7 @@
         },
         "nomenclature": {
           "name": "nomenclature",
-          "type": "varchar(50)",
+          "type": "varchar",
           "primaryKey": false,
           "notNull": false
         },
@@ -431,13 +431,13 @@
           "name": "equipment_type_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "measurement_type_id": {
           "name": "measurement_type_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",
@@ -565,7 +565,7 @@
           "name": "metrology_controle_type_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "device_id": {
           "name": "device_id",

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "dev-work": "cross-env DB_MODE=local tsx watch ./src/index.ts",
+    "load-dump": "cross-env DB_MODE=local tsx ./src/db/migration.ts migration",
     "start": "node dist/index.js",
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
