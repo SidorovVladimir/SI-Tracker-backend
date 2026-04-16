@@ -155,6 +155,7 @@ async function start() {
           ...verification,
           date: parseSafeDate(verification.date),
           validUntil: parseSafeDate(verification.valid_until),
+          protocolNumber: verification.protocol_number,
           deviceId: currentDevice?.id!,
         }));
 

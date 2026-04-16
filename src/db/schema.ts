@@ -8,3 +8,4 @@ export * from '../modules/device/models/verification.model';
 export * from '../modules/location/models/city.model';
 export * from '../modules/location/models/company.model';
 export * from '../modules/location/models/productionSites.model';
+export * from '../modules/user/user.model';

@@ -35,12 +35,21 @@ export const createContext = async ({
         token,
         process.env.JWT_SECRET!
       ) as TokenPayload;
-      currentUser = {
-        id: payload.id,
-        firstName: payload.firstName,
-        lastName: payload.lastName,
-        email: payload.email,
-      };
+
+      const userExists = await db.query.users.findFirst({
+        where: (users, { eq }) => eq(users.id, payload.id),
+      });
+      if (userExists) {
+        currentUser = {
+          id: payload.id,
+          firstName: payload.firstName,
+          lastName: payload.lastName,
+          email: payload.email,
+        };
+      } else {
+        console.warn('User from token not found in DB');
+        res.clearCookie('auth_token');
+      }
     } catch (err) {
       console.warn('invalid auth token', err);
     }
