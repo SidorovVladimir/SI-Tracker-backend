@@ -9,21 +9,31 @@ import { Context } from '../../../context';
 import { UpdateProductionSiteInputSchema } from '../dto/UpdateProductionSiteDto';
 
 export const Query = {
-  productionSites: async (_: unknown, __: unknown, { db }: Context) => {
+  productionSites: async (
+    _: unknown,
+    __: unknown,
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
     return await new ProductionSiteService(db).getProductionSites();
   },
   productionSite: async (
     _: unknown,
     { id }: { id: string },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
     return await new ProductionSiteService(db).getProductionSite(id);
   },
   getProductionSitesForSelect: async (
     _: unknown,
     __: unknown,
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
     return await new ProductionSiteService(db).getProductionSitesForSelect();
   },
 };
@@ -32,8 +42,13 @@ export const Mutation = {
   createProductionSite: async (
     _: unknown,
     { input }: { input: CreateProductionSiteInput },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     try {
       const validatedInput = CreateProductionSiteInputSchema.parse(input);
       return await new ProductionSiteService(db).createProductionSite(
@@ -49,8 +64,13 @@ export const Mutation = {
   updateProductionSite: async (
     _: unknown,
     { id, input }: { id: string; input: unknown },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     try {
       const validateInput = UpdateProductionSiteInputSchema.parse(input);
       return await new ProductionSiteService(db).updateProductionSite(
@@ -67,8 +87,13 @@ export const Mutation = {
   deleteProductionSite: async (
     _: unknown,
     { id }: { id: string },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     return await new ProductionSiteService(db).deleteProductionSite(id);
   },
 };

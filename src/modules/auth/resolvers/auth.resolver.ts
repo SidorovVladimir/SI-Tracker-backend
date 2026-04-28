@@ -1,5 +1,5 @@
 import { ZodError } from 'zod';
-import { CreateUserInputSchema } from '../../user/dto/CreateUserDto';
+// import { CreateUserInputSchema } from '../../user/dto/CreateUserDto';
 import { AuthenticationError, formatZodErrors } from '../../../utils/errors';
 import { AuthService } from '../service/auth.service';
 import { setAuthCookie } from '../../../utils/auth';
@@ -15,30 +15,30 @@ export const Query = {
 };
 
 export const Mutation = {
-  register: async (
-    _: unknown,
-    {
-      input,
-    }: {
-      input: unknown;
-    },
-    { db, res }: Context
-  ) => {
-    try {
-      const validatedInput = CreateUserInputSchema.parse(input);
-      const user = await new AuthService(db).register(validatedInput);
-      setAuthCookie(res, user);
-      return {
-        success: true,
-        user,
-      };
-    } catch (err) {
-      if (err instanceof ZodError) {
-        throw new Error(JSON.stringify(formatZodErrors(err)));
-      }
-      throw err;
-    }
-  },
+  // register: async (
+  //   _: unknown,
+  //   {
+  //     input,
+  //   }: {
+  //     input: unknown;
+  //   },
+  //   { db, res }: Context
+  // ) => {
+  //   try {
+  //     const validatedInput = CreateUserInputSchema.parse(input);
+  //     const user = await new AuthService(db).register(validatedInput);
+  //     setAuthCookie(res, user);
+  //     return {
+  //       success: true,
+  //       user,
+  //     };
+  //   } catch (err) {
+  //     if (err instanceof ZodError) {
+  //       throw new Error(JSON.stringify(formatZodErrors(err)));
+  //     }
+  //     throw err;
+  //   }
+  // },
   login: async (
     _: unknown,
     { input }: { input: { email: string; password: string } },

@@ -23,6 +23,7 @@ export const setAuthCookie = (res: Response, user: User) => {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      role: user.role,
     },
     process.env.JWT_SECRET!,
     { expiresIn: '7d' }

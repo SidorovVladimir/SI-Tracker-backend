@@ -5,7 +5,13 @@ import { MeasurementTypeService } from '../service/measurementType.service';
 import { CreateMeasurementTypeInputSchema } from '../dto/CreateMeasurementTypeDto';
 
 export const Query = {
-  measurementTypes: async (_: unknown, __: unknown, { db }: Context) => {
+  measurementTypes: async (
+    _: unknown,
+    __: unknown,
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
     return await new MeasurementTypeService(db).getMeasurementTypes();
   },
   measurementType: async (
@@ -19,8 +25,13 @@ export const Mutation = {
   createMeasurementType: async (
     _: unknown,
     { id, input }: { id: string; input: unknown },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     try {
       const validatedInput = CreateMeasurementTypeInputSchema.parse(input);
 
@@ -42,8 +53,13 @@ export const Mutation = {
   deleteMeasurementType: async (
     _: unknown,
     { id }: { id: string },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     return await new MeasurementTypeService(db).deleteMeasurementType(id);
   },
 };

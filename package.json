@@ -11,7 +11,8 @@
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "db:seed": "cross-env DB_MODE=local tsx src/db/seed.ts"
   },
   "repository": {
     "type": "git",

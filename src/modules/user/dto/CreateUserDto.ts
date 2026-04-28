@@ -13,6 +13,7 @@ export const CreateUserInputSchema = z.object({
   password: z
     .string()
     .min(8, 'Пароль должен состоять как минимум из 8 символов'),
+  role: z.enum(['admin', 'user']),
 });
 
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;

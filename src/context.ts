@@ -7,6 +7,7 @@ interface TokenPayload extends JwtPayload {
   email: string;
   firstName: string;
   lastName: string;
+  role: 'admin' | 'user';
 }
 
 export interface Context {
@@ -18,6 +19,7 @@ export interface Context {
     email: string;
     firstName: string;
     lastName: string;
+    role: string;
   } | null;
 }
 export const createContext = async ({
@@ -41,10 +43,11 @@ export const createContext = async ({
       });
       if (userExists) {
         currentUser = {
-          id: payload.id,
-          firstName: payload.firstName,
-          lastName: payload.lastName,
-          email: payload.email,
+          id: userExists.id,
+          firstName: userExists.firstName,
+          lastName: userExists.lastName,
+          email: userExists.email,
+          role: userExists.role,
         };
       } else {
         console.warn('User from token not found in DB');

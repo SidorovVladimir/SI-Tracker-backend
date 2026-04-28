@@ -50,6 +50,8 @@ export class UserService {
       lastName: input.lastName.toLowerCase(),
       email: input.email,
       passwordHash: await hashPassword(input.password),
+      // role: input.email === process.env.ADMIN_EMAIL ? 'admin' : 'user',
+      role: input.role,
     };
 
     const [user] = await this.db.insert(users).values(userData).returning();
@@ -65,6 +67,7 @@ export class UserService {
     const newUser = {
       firstName: input.firstName.toLowerCase(),
       lastName: input.lastName.toLowerCase(),
+      role: input.role,
     };
     const [user] = await this.db
       .update(users)

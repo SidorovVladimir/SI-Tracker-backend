@@ -6,11 +6,19 @@ import { Context } from '../../../context';
 import { UpdateCompanyInputSchema } from '../dto/UpdateCompanyDto';
 
 export const Query = {
-  companies: async (_: unknown, __: unknown, { db }: Context) => {
+  companies: async (_: unknown, __: unknown, { db, currentUser }: Context) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
     return await new CompanyService(db).getCompanies();
   },
 
-  company: async (_: unknown, { id }: { id: string }, { db }: Context) => {
+  company: async (
+    _: unknown,
+    { id }: { id: string },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
     return await new CompanyService(db).getCompany(id);
   },
 };
@@ -19,8 +27,13 @@ export const Mutation = {
   createCompany: async (
     _: unknown,
     { input }: { input: unknown },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     try {
       const validatedInput = CreateCompanyInputSchema.parse(input);
 
@@ -36,8 +49,13 @@ export const Mutation = {
   updateCompany: async (
     _: unknown,
     { id, input }: { id: string; input: unknown },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     try {
       const validatedInput = UpdateCompanyInputSchema.parse(input);
 
@@ -53,8 +71,13 @@ export const Mutation = {
   deleteCompany: async (
     _: unknown,
     { id }: { id: string },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     return await new CompanyService(db).deleteCompany(id);
   },
 };

@@ -7,10 +7,18 @@ import { Context } from '../../../context';
 import { UpdateCityInputSchema } from '../dto/UpdateCityDto';
 
 export const Query = {
-  cities: async (_: unknown, __: unknown, { db }: Context) => {
+  cities: async (_: unknown, __: unknown, { db, currentUser }: Context) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
     return await new CityService(db).getCities();
   },
-  city: async (_: unknown, { id }: { id: string }, { db }: Context) => {
+  city: async (
+    _: unknown,
+    { id }: { id: string },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
     return await new CityService(db).getCity(id);
   },
 };
@@ -19,8 +27,13 @@ export const Mutation = {
   createCity: async (
     _: unknown,
     { input }: { input: unknown },
-    { db }: Context
+    { db, currentUser }: Context
   ): Promise<CityEntity> => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     try {
       const validatedInput = CreateCityInputSchema.parse(input);
       return await new CityService(db).createCity(validatedInput);
@@ -34,8 +47,13 @@ export const Mutation = {
   updateCity: async (
     _: unknown,
     { id, input }: { id: string; input: unknown },
-    { db }: Context
+    { db, currentUser }: Context
   ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     try {
       const validatedInput = UpdateCityInputSchema.parse(input);
       return await new CityService(db).updateCity(id, validatedInput);
@@ -49,8 +67,13 @@ export const Mutation = {
   deleteCity: async (
     _: unknown,
     { id }: { id: string },
-    { db }: Context
+    { db, currentUser }: Context
   ): Promise<boolean> => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'admin') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
     return await new CityService(db).deleteCity(id);
   },
 };
