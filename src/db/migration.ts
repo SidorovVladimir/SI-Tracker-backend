@@ -9,7 +9,7 @@ import {
   statuses,
   verifications,
 } from './schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
 // const parseSafeDate = (value: any) => {
 //   if (!value) return null;
@@ -89,7 +89,11 @@ async function start() {
       const productionSite = `${d.production_site.toLowerCase()} `;
 
       const existProductionSite = await tx.query.productionSites.findFirst({
-        where: eq(productionSites.name, productionSite),
+        where: and(
+          eq(productionSites.name, productionSite),
+          eq(productionSites.cityId, currentCity?.id!),
+          eq(productionSites.companyId, currentCompany?.id!)
+        ),
       });
 
       currentProductionSite = existProductionSite;
