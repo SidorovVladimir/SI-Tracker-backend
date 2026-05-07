@@ -11,8 +11,8 @@ const VerificationInput = z.object({
   metrologyControleTypeId: z.uuid().nullable(),
 });
 export const CreateDeviceInputSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(50),
-  model: z.string().min(1, 'Model is required').max(50),
+  name: z.string().min(1, 'Name is required'),
+  model: z.string().min(1, 'Model is required'),
   serialNumber: z.string(),
   releaseDate: z.coerce.date().nullable(),
   grsiNumber: z.string().nullable(),
@@ -24,6 +24,7 @@ export const CreateDeviceInputSchema = z.object({
   verificationInterval: z.number().int().nullable(),
   archived: z.boolean(),
   nomenclature: z.string().nullable(),
+  comment: z.string().nullable(),
   statusId: z.uuid(),
   productionSiteId: z.uuid(),
   equipmentTypeId: z.uuid().nullable(),

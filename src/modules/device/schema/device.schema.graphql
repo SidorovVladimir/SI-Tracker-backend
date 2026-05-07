@@ -13,6 +13,7 @@ type Device {
   verificationInterval: Int
   archived: Boolean!
   nomenclature: String
+  comment: String
   statusId: ID!
   productionSiteId: ID!
   equipmentTypeId: ID
@@ -38,6 +39,7 @@ type DeviceWithRelations {
   verificationInterval: Int
   archived: Boolean!
   nomenclature: String
+  comment: String
   status: Status!
   productionSite: ProductionSiteRelation!
   verifications: [VerificationRelation!]!
@@ -64,6 +66,7 @@ input CreateDeviceInput {
   verificationInterval: Int
   archived: Boolean!
   nomenclature: String
+  comment: String
   statusId: ID!
   productionSiteId: ID!
   equipmentTypeId: ID
@@ -86,6 +89,7 @@ input UpdateDeviceInput {
   verificationInterval: Int
   archived: Boolean!
   nomenclature: String
+  comment: String
   statusId: ID!
   productionSiteId: ID!
   equipmentTypeId: ID

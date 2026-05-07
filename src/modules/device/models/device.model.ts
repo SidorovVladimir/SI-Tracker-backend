@@ -2,6 +2,7 @@ import {
   boolean,
   integer,
   pgTable,
+  text,
   timestamp,
   uuid,
   varchar,
@@ -30,6 +31,7 @@ export const devices = pgTable('devices', {
   verificationInterval: integer('verification_interval'), // МПИ (межповерочный интервал)
   archived: boolean('archived').notNull().default(false), // В архиве
   nomenclature: varchar('nomenclature'), // Номенклатура по 1С
+  comment: text('comment'),
   createdAt: timestamp('created_at').defaultNow(),
   statusId: uuid('status_id')
     .notNull()
