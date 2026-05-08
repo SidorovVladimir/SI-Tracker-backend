@@ -1,0 +1,28 @@
+type PrimaryStandart {
+  id: ID!
+  name: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Query {
+  primaryStandarts: [PrimaryStandart!]!
+  primaryStandart(id: ID!): PrimaryStandart!
+}
+
+input CreatePrimaryStandartInput {
+  name: String!
+}
+
+input UpdatePrimaryStandartInput {
+  name: String!
+}
+
+type Mutation {
+  createPrimaryStandart(input: CreatePrimaryStandartInput!): PrimaryStandart!
+  updatePrimaryStandart(
+    id: ID!
+    input: UpdatePrimaryStandartInput!
+  ): PrimaryStandart!
+  deletePrimaryStandart(id: ID!): Boolean!
+}

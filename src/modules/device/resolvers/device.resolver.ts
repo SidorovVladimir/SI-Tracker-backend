@@ -55,21 +55,7 @@ export const Mutation = {
       throw err;
     }
   },
-  // updateCity: async (
-  //   _: unknown,
-  //   { id, input }: { id: string; input: unknown },
-  //   { db }: Context
-  // ) => {
-  //   try {
-  //     const validatedInput = UpdateCityInputSchema.parse(input);
-  //     return await new CityService(db).updateCity(id, validatedInput);
-  //   } catch (err) {
-  //     if (err instanceof ZodError) {
-  //       throw new Error(JSON.stringify(formatZodErrors(err)));
-  //     }
-  //     throw err;
-  //   }
-  // },
+
   updateDevice: async (
     _: unknown,
     { id, input }: { id: string; input: unknown },

@@ -2,6 +2,7 @@ export * from '../modules/catalog/models/equipmentType.model';
 export * from '../modules/catalog/models/measurementType.model';
 export * from '../modules/catalog/models/metrologyControlType.model';
 export * from '../modules/catalog/models/scope.model';
+export * from '../modules/catalog/models/primaryStandarts.model';
 export * from '../modules/catalog/models/status.model';
 export * from '../modules/device/models/device.model';
 export * from '../modules/device/models/verification.model';

@@ -23,7 +23,7 @@ export class MetrologyControlTypeService {
       .values(metrologyControlTypeData)
       .returning();
     if (!metrologyControlType) {
-      throw new Error('Failed to create measurementType');
+      throw new Error('Failed to create metrology control type');
     }
     return metrologyControlType;
   }

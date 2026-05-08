@@ -14,6 +14,7 @@ import { equipmentTypes } from '../../catalog/models/equipmentType.model';
 import { measurementTypes } from '../../catalog/models/measurementType.model';
 import { scopesToDevices } from '../../catalog/models/scope.model';
 import { verifications } from './verification.model';
+import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
 
 // Прибор (Инструмент)
 export const devices = pgTable('devices', {
@@ -67,4 +68,5 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
   }),
   verifications: many(verifications),
   scopesToDevices: many(scopesToDevices),
+  primaryStandartsToDevices: many(primaryStandartsToDevices),
 }));

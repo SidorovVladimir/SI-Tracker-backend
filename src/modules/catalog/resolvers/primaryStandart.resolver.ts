@@ -1,28 +1,23 @@
 import { ZodError } from 'zod';
 import { Context } from '../../../context';
 import { formatZodErrors } from '../../../utils/errors';
-import { MetrologyControlTypeService } from '../service/metrologyControlType.service';
-import { CreateMetrologyControlTypeInputSchema } from '../dto/CreateMetrologyControlTypeDto';
+import { PrimaryStandartService } from '../service/primaryStandart.service';
+import { CreatePrimaryStandartInputSchema } from '../dto/CreatePrimaryStandartDto';
 
 export const Query = {
-  metrologyControlTypes: async (
+  primaryStandarts: async (
     _: unknown,
     __: unknown,
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    return await new MetrologyControlTypeService(db).getMetrologyControlTypes();
+    return await new PrimaryStandartService(db).getPrimaryStandarts();
   },
-  metrologyControlType: async (
-    _: unknown,
-    { id }: { id: string },
-    { db }: Context
-  ) => {},
 };
 
 export const Mutation = {
-  createMetrologyControlType: async (
+  createPrimaryStandart: async (
     _: unknown,
     { id, input }: { id: string; input: unknown },
     { db, currentUser }: Context
@@ -33,11 +28,11 @@ export const Mutation = {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
     try {
-      const validatedInput = CreateMetrologyControlTypeInputSchema.parse(input);
+      const validatedInput = CreatePrimaryStandartInputSchema.parse(input);
 
-      return await new MetrologyControlTypeService(
-        db
-      ).createMetrologyControlType(validatedInput);
+      return await new PrimaryStandartService(db).createPrimaryStandart(
+        validatedInput
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new Error(JSON.stringify(formatZodErrors(err)));
@@ -45,12 +40,12 @@ export const Mutation = {
       throw err;
     }
   },
-  updateMetrologyControlType: async (
+  updatePrimaryStandart: async (
     _: unknown,
     { id, input }: { id: string; input: unknown },
     { db }: Context
   ) => {},
-  deleteMetrologyControlType: async (
+  deletePrimaryStandart: async (
     _: unknown,
     { id }: { id: string },
     { db, currentUser }: Context
@@ -60,8 +55,6 @@ export const Mutation = {
     if (currentUser.role !== 'admin') {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
-    return await new MetrologyControlTypeService(db).deleteMetrologyControlType(
-      id
-    );
+    return await new PrimaryStandartService(db).deletePrimaryStandart(id);
   },
 };

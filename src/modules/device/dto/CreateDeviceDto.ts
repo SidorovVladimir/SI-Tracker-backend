@@ -30,6 +30,7 @@ export const CreateDeviceInputSchema = z.object({
   equipmentTypeId: z.uuid().nullable(),
   measurementTypeId: z.uuid().nullable(),
   scopes: z.array(z.uuid()).nullable(),
+  primaryStandarts: z.array(z.uuid()).nullable(),
   verifications: z.array(VerificationInput),
 });
 

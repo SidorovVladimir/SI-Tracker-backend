@@ -15,6 +15,13 @@
       "when": 1778135233400,
       "tag": "0001_overconfident_exiles",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778210869563,
+      "tag": "0002_daily_the_call",
+      "breakpoints": true
     }
   ]
 }

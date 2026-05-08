@@ -44,6 +44,7 @@ type DeviceWithRelations {
   productionSite: ProductionSiteRelation!
   verifications: [VerificationRelation!]!
   scopes: [Scope!]!
+  primaryStandarts: [PrimaryStandart!]!
 }
 
 type Query {
@@ -72,6 +73,7 @@ input CreateDeviceInput {
   equipmentTypeId: ID
   measurementTypeId: ID
   scopes: [ID!]
+  primaryStandarts: [ID!]
   verifications: [VerificationInput!]
 }
 
@@ -95,6 +97,7 @@ input UpdateDeviceInput {
   equipmentTypeId: ID
   measurementTypeId: ID
   scopes: [ID!]
+  primaryStandarts: [ID!]
   verifications: [VerificationInput!]
 }
 

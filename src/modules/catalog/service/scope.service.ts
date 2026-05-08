@@ -17,7 +17,7 @@ export class ScopeService {
     };
     const [scope] = await this.db.insert(scopes).values(scopeData).returning();
     if (!scope) {
-      throw new Error('Failed to create measurementType');
+      throw new Error('Failed to create scope');
     }
     return scope;
   }

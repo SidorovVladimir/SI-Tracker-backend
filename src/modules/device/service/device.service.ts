@@ -1,17 +1,13 @@
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity, NewDevice } from '../types/device.types';
 import { devices } from '../models/device.model';
-import { scopes, scopesToDevices } from '../../catalog/models/scope.model';
-import { productionSites } from '../../location/models/productionSites.model';
+import { scopesToDevices } from '../../catalog/models/scope.model';
 import { cities } from '../../location/models/city.model';
-import { companies } from '../../location/models/company.model';
-import { statuses } from '../../catalog/models/status.model';
-import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
 import { verifications } from '../models/verification.model';
-import { messages } from '@electric-sql/pglite';
 import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
+import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
 
 export class DeviceService {
   constructor(private db: DrizzleDB) {}
@@ -36,6 +32,11 @@ export class DeviceService {
             scope: true,
           },
         },
+        primaryStandartsToDevices: {
+          with: {
+            primaryStandart: true,
+          },
+        },
         verifications: {
           with: {
             metrologyControleType: true,
@@ -47,6 +48,9 @@ export class DeviceService {
     return data.map((device) => ({
       ...device,
       scopes: device.scopesToDevices.map((sd) => sd.scope),
+      primaryStandarts: device.primaryStandartsToDevices.map(
+        (psd) => psd.primaryStandart
+      ),
     }));
   }
 
@@ -68,6 +72,11 @@ export class DeviceService {
             scope: true,
           },
         },
+        primaryStandartsToDevices: {
+          with: {
+            primaryStandart: true,
+          },
+        },
         verifications: {
           with: {
             metrologyControleType: true,
@@ -76,7 +85,10 @@ export class DeviceService {
       },
     });
     const scopes = data?.scopesToDevices.map((sd) => sd.scope);
-    return { ...data, scopes };
+    const primaryStandarts = data?.primaryStandartsToDevices.map(
+      (psd) => psd.primaryStandart
+    );
+    return { ...data, scopes, primaryStandarts };
   }
 
   async createDevice(input: CreateDeviceInput) {
@@ -118,6 +130,15 @@ export class DeviceService {
         }));
 
         await tx.insert(scopesToDevices).values(scopesData);
+      }
+
+      if (input.primaryStandarts && input.primaryStandarts.length > 0) {
+        const primaryStandartsData = input.primaryStandarts.map((psId) => ({
+          deviceId: newDevice.id,
+          primaryStandartId: psId,
+        }));
+
+        await tx.insert(primaryStandartsToDevices).values(primaryStandartsData);
       }
 
       if (input.verifications && input.verifications.length > 0) {
@@ -182,6 +203,19 @@ export class DeviceService {
         await tx.insert(scopesToDevices).values(valuesToInsert);
       }
 
+      await tx
+        .delete(primaryStandartsToDevices)
+        .where(eq(primaryStandartsToDevices.deviceId, id));
+
+      if (input.primaryStandarts && input.primaryStandarts.length > 0) {
+        const valuesToInsert = input.primaryStandarts.map((psId) => ({
+          deviceId: id,
+          primaryStandartId: psId,
+        }));
+
+        await tx.insert(primaryStandartsToDevices).values(valuesToInsert);
+      }
+
       await tx.delete(verifications).where(eq(verifications.deviceId, id));
 
       if (input.verifications && input.verifications.length > 0) {
@@ -199,17 +233,16 @@ export class DeviceService {
     return result;
   }
 
-  async deleteCity(id: string): Promise<boolean> {
-    await this.db.delete(cities).where(eq(cities.id, id));
-    return true;
-  }
-
   async deleteDevice(id: string): Promise<boolean> {
     try {
       await this.db.transaction(async (tx) => {
         await tx
           .delete(scopesToDevices)
           .where(eq(scopesToDevices.deviceId, id));
+
+        await tx
+          .delete(primaryStandartsToDevices)
+          .where(eq(primaryStandartsToDevices.deviceId, id));
 
         await tx.delete(verifications).where(eq(verifications.deviceId, id));
 
