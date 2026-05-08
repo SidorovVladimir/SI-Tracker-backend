@@ -17,7 +17,6 @@ type Device {
   statusId: ID!
   productionSiteId: ID!
   equipmentTypeId: ID
-  measurementTypeId: ID
   createdAt: String!
   updatedAt: String!
 }
@@ -30,7 +29,6 @@ type DeviceWithRelations {
   releaseDate: String
   grsiNumber: String
   measurementRange: String
-  measurementType: MeasurementType
   equipmentType: EquipmentType
   accuracy: String
   inventoryNumber: String
@@ -45,6 +43,7 @@ type DeviceWithRelations {
   verifications: [VerificationRelation!]!
   scopes: [Scope!]!
   primaryStandarts: [PrimaryStandart!]!
+  measurementTypes: [MeasurementType!]!
 }
 
 type Query {
@@ -71,9 +70,9 @@ input CreateDeviceInput {
   statusId: ID!
   productionSiteId: ID!
   equipmentTypeId: ID
-  measurementTypeId: ID
   scopes: [ID!]
   primaryStandarts: [ID!]
+  measurementTypes: [ID!]
   verifications: [VerificationInput!]
 }
 
@@ -95,9 +94,9 @@ input UpdateDeviceInput {
   statusId: ID!
   productionSiteId: ID!
   equipmentTypeId: ID
-  measurementTypeId: ID
   scopes: [ID!]
   primaryStandarts: [ID!]
+  measurementTypes: [ID!]
   verifications: [VerificationInput!]
 }
 

@@ -4,10 +4,10 @@ import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity, NewDevice } from '../types/device.types';
 import { devices } from '../models/device.model';
 import { scopesToDevices } from '../../catalog/models/scope.model';
-import { cities } from '../../location/models/city.model';
 import { verifications } from '../models/verification.model';
 import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
 import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
+import { measurementTypesToDevices } from '../../catalog/models/measurementType.model';
 
 export class DeviceService {
   constructor(private db: DrizzleDB) {}
@@ -20,7 +20,6 @@ export class DeviceService {
       with: {
         status: true,
         equipmentType: true,
-        measurementType: true,
         productionSite: {
           with: {
             city: true,
@@ -35,6 +34,11 @@ export class DeviceService {
         primaryStandartsToDevices: {
           with: {
             primaryStandart: true,
+          },
+        },
+        measurementTypesToDevices: {
+          with: {
+            measurementType: true,
           },
         },
         verifications: {
@@ -51,6 +55,9 @@ export class DeviceService {
       primaryStandarts: device.primaryStandartsToDevices.map(
         (psd) => psd.primaryStandart
       ),
+      measurementTypes: device.measurementTypesToDevices.map(
+        (mt) => mt.measurementType
+      ),
     }));
   }
 
@@ -59,7 +66,6 @@ export class DeviceService {
       where: eq(devices.id, id),
       with: {
         status: true,
-        measurementType: true,
         equipmentType: true,
         productionSite: {
           with: {
@@ -77,6 +83,11 @@ export class DeviceService {
             primaryStandart: true,
           },
         },
+        measurementTypesToDevices: {
+          with: {
+            measurementType: true,
+          },
+        },
         verifications: {
           with: {
             metrologyControleType: true,
@@ -88,7 +99,10 @@ export class DeviceService {
     const primaryStandarts = data?.primaryStandartsToDevices.map(
       (psd) => psd.primaryStandart
     );
-    return { ...data, scopes, primaryStandarts };
+    const measurementTypes = data?.measurementTypesToDevices.map(
+      (mt) => mt.measurementType
+    );
+    return { ...data, scopes, primaryStandarts, measurementTypes };
   }
 
   async createDevice(input: CreateDeviceInput) {
@@ -110,7 +124,6 @@ export class DeviceService {
       statusId: input.statusId,
       productionSiteId: input.productionSiteId,
       equipmentTypeId: input.equipmentTypeId ?? null,
-      measurementTypeId: input.measurementTypeId ?? null,
     };
 
     const result = await this.db.transaction(async (tx) => {
@@ -139,6 +152,15 @@ export class DeviceService {
         }));
 
         await tx.insert(primaryStandartsToDevices).values(primaryStandartsData);
+      }
+
+      if (input.measurementTypes && input.measurementTypes.length > 0) {
+        const measurementTypesData = input.measurementTypes.map((mtId) => ({
+          deviceId: newDevice.id,
+          measurementTypeId: mtId,
+        }));
+
+        await tx.insert(measurementTypesToDevices).values(measurementTypesData);
       }
 
       if (input.verifications && input.verifications.length > 0) {
@@ -178,7 +200,6 @@ export class DeviceService {
       statusId: input.statusId,
       productionSiteId: input.productionSiteId,
       equipmentTypeId: input.equipmentTypeId ?? null,
-      measurementTypeId: input.measurementTypeId ?? null,
     };
 
     const result = await this.db.transaction(async (tx) => {
@@ -216,6 +237,19 @@ export class DeviceService {
         await tx.insert(primaryStandartsToDevices).values(valuesToInsert);
       }
 
+      await tx
+        .delete(measurementTypesToDevices)
+        .where(eq(measurementTypesToDevices.deviceId, id));
+
+      if (input.measurementTypes && input.measurementTypes.length > 0) {
+        const valuesToInsert = input.measurementTypes.map((mtId) => ({
+          deviceId: id,
+          measurementTypeId: mtId,
+        }));
+
+        await tx.insert(measurementTypesToDevices).values(valuesToInsert);
+      }
+
       await tx.delete(verifications).where(eq(verifications.deviceId, id));
 
       if (input.verifications && input.verifications.length > 0) {
@@ -243,6 +277,10 @@ export class DeviceService {
         await tx
           .delete(primaryStandartsToDevices)
           .where(eq(primaryStandartsToDevices.deviceId, id));
+
+        await tx
+          .delete(measurementTypesToDevices)
+          .where(eq(measurementTypesToDevices.deviceId, id));
 
         await tx.delete(verifications).where(eq(verifications.deviceId, id));
 

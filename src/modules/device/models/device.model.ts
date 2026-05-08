@@ -11,7 +11,10 @@ import { relations } from 'drizzle-orm';
 import { statuses } from '../../catalog/models/status.model';
 import { productionSites } from '../../location/models/productionSites.model';
 import { equipmentTypes } from '../../catalog/models/equipmentType.model';
-import { measurementTypes } from '../../catalog/models/measurementType.model';
+import {
+  measurementTypes,
+  measurementTypesToDevices,
+} from '../../catalog/models/measurementType.model';
 import { scopesToDevices } from '../../catalog/models/scope.model';
 import { verifications } from './verification.model';
 import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
@@ -43,9 +46,6 @@ export const devices = pgTable('devices', {
   equipmentTypeId: uuid('equipment_type_id').references(
     () => equipmentTypes.id
   ),
-  measurementTypeId: uuid('measurement_type_id').references(
-    () => measurementTypes.id
-  ),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
@@ -62,11 +62,8 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
     fields: [devices.equipmentTypeId],
     references: [equipmentTypes.id],
   }),
-  measurementType: one(measurementTypes, {
-    fields: [devices.measurementTypeId],
-    references: [measurementTypes.id],
-  }),
   verifications: many(verifications),
   scopesToDevices: many(scopesToDevices),
   primaryStandartsToDevices: many(primaryStandartsToDevices),
+  measurementTypesToDevices: many(measurementTypesToDevices),
 }));
