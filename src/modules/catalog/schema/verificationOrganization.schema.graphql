@@ -1,0 +1,30 @@
+type VerificationOrganization {
+  id: ID!
+  name: String!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Query {
+  verificationOrganizations: [VerificationOrganization!]!
+  verificationOrganization(id: ID!): VerificationOrganization!
+}
+
+input CreateVerificationOrganizationInput {
+  name: String!
+}
+
+input UpdateVerificationOrganizationInput {
+  name: String!
+}
+
+type Mutation {
+  createVerificationOrganization(
+    input: CreateVerificationOrganizationInput!
+  ): VerificationOrganization!
+  updateVerificationOrganization(
+    id: ID!
+    input: UpdateVerificationOrganizationInput!
+  ): VerificationOrganization!
+  deleteVerificationOrganization(id: ID!): Boolean!
+}

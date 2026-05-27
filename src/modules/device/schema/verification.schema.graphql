@@ -8,6 +8,7 @@ type Verification {
   comment: String
   documentUrl: String
   metrologyControleTypeId: ID
+  verificationOrganizationId: ID
   deviceId: ID!
   createdAt: String!
   updatedAt: String!
@@ -22,6 +23,7 @@ type VerificationRelation {
   comment: String
   documentUrl: String
   metrologyControleType: MetrologyControlType
+  verificationOrganization: VerificationOrganization
   deviceId: ID!
   createdAt: String!
   updatedAt: String!
@@ -36,4 +38,5 @@ input VerificationInput {
   comment: String
   documentUrl: String
   metrologyControleTypeId: ID
+  verificationOrganizationId: ID
 }

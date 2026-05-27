@@ -9,6 +9,7 @@ const VerificationInput = z.object({
   comment: z.string().nullable(),
   documentUrl: z.string().nullable(),
   metrologyControleTypeId: z.uuid().nullable(),
+  verificationOrganizationId: z.uuid().nullable(),
 });
 export const CreateDeviceInputSchema = z.object({
   name: z.string().min(1, 'Name is required'),

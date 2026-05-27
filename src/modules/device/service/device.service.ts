@@ -44,6 +44,7 @@ export class DeviceService {
         verifications: {
           with: {
             metrologyControleType: true,
+            verificationOrganization: true,
           },
         },
       },
@@ -89,8 +90,10 @@ export class DeviceService {
           },
         },
         verifications: {
+          orderBy: (verifications, { asc }) => [asc(verifications.validUntil)],
           with: {
             metrologyControleType: true,
+            verificationOrganization: true,
           },
         },
       },
@@ -167,6 +170,8 @@ export class DeviceService {
         const verificationsData = input.verifications.map((verification) => ({
           ...verification,
           metrologyControleTypeId: verification.metrologyControleTypeId ?? null,
+          verificationOrganizationId:
+            verification.verificationOrganizationId ?? null,
           deviceId: newDevice.id,
         }));
 
@@ -256,6 +261,8 @@ export class DeviceService {
         const verificationsData = input.verifications.map((verification) => ({
           ...verification,
           metrologyControleTypeId: verification.metrologyControleTypeId ?? null,
+          verificationOrganizationId:
+            verification.verificationOrganizationId ?? null,
           deviceId: id,
         }));
 
