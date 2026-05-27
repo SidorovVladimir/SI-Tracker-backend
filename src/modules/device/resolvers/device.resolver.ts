@@ -6,6 +6,7 @@ import { Context } from '../../../context';
 import { CreateDeviceInputSchema } from '../dto/CreateDeviceDto';
 import { DeviceService } from '../service/device.service';
 import { UpdateDeviceInputSchema } from '../dto/UpdateDeviceDto';
+import { DeviceAuditLogService } from '../../audit/auditLog.service';
 
 export const Query = {
   devices: async (_: unknown, __: unknown, { db, currentUser }: Context) => {
@@ -47,7 +48,10 @@ export const Mutation = {
     }
     try {
       const validatedInput = CreateDeviceInputSchema.parse(input);
-      return await new DeviceService(db).createDevice(validatedInput);
+      const auditLogService = new DeviceAuditLogService(db);
+      const deviceService = new DeviceService(db, auditLogService);
+
+      return await deviceService.createDevice(validatedInput, currentUser.id);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new Error(JSON.stringify(formatZodErrors(err)));
@@ -68,7 +72,14 @@ export const Mutation = {
     }
     try {
       const validatedInput = UpdateDeviceInputSchema.parse(input);
-      return await new DeviceService(db).updateDevice(id, validatedInput);
+      const auditLogService = new DeviceAuditLogService(db);
+      const deviceService = new DeviceService(db, auditLogService);
+
+      return await deviceService.updateDevice(
+        id,
+        validatedInput,
+        currentUser.id
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new Error(JSON.stringify(formatZodErrors(err)));
@@ -86,6 +97,10 @@ export const Mutation = {
     if (currentUser.role !== 'admin') {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
-    return await new DeviceService(db).deleteDevice(id);
+    const auditLogService = new DeviceAuditLogService(db);
+    return await new DeviceService(db, auditLogService).deleteDevice(
+      id,
+      currentUser.id
+    );
   },
 };

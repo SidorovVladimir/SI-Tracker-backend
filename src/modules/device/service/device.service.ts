@@ -8,9 +8,13 @@ import { verifications } from '../models/verification.model';
 import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
 import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
 import { measurementTypesToDevices } from '../../catalog/models/measurementType.model';
+import { DeviceAuditLogService } from '../../audit/auditLog.service';
 
 export class DeviceService {
-  constructor(private db: DrizzleDB) {}
+  constructor(
+    private db: DrizzleDB,
+    private auditLogService?: DeviceAuditLogService
+  ) {}
   async getDevices(): Promise<DeviceEntity[]> {
     return await this.db.select().from(devices);
   }
@@ -108,7 +112,7 @@ export class DeviceService {
     return { ...data, scopes, primaryStandarts, measurementTypes };
   }
 
-  async createDevice(input: CreateDeviceInput) {
+  async createDevice(input: CreateDeviceInput, userId: string) {
     const deviceData = {
       name: input.name.toLowerCase(),
       model: input.model.toLowerCase(),
@@ -180,13 +184,62 @@ export class DeviceService {
 
       return newDevice;
     });
+
+    if (this.auditLogService) {
+      await this.auditLogService.logAction({
+        deviceId: result.id,
+        action: 'create',
+        newData: {
+          ...result,
+          scopes: input.scopes || [],
+          primaryStandarts: input.primaryStandarts || [],
+          measurementTypes: input.measurementTypes || [],
+          verifications: input.verifications || [],
+        },
+        userId,
+      });
+    }
+
     return result;
   }
 
   async updateDevice(
     id: string,
-    input: UpdateDeviceInput
+    input: UpdateDeviceInput,
+    userId: string
   ): Promise<DeviceEntity> {
+    const [oldDevice] = await this.db
+      .select()
+      .from(devices)
+      .where(eq(devices.id, id));
+    if (!oldDevice) throw new Error('Device not found');
+
+    const currentScopes = await this.db
+      .select({ id: scopesToDevices.scopeId })
+      .from(scopesToDevices)
+      .where(eq(scopesToDevices.deviceId, id));
+    const currentTypes = await this.db
+      .select({ id: measurementTypesToDevices.measurementTypeId })
+      .from(measurementTypesToDevices)
+      .where(eq(measurementTypesToDevices.deviceId, id));
+    const currentStandards = await this.db
+      .select({ id: primaryStandartsToDevices.primaryStandartId })
+      .from(primaryStandartsToDevices)
+      .where(eq(primaryStandartsToDevices.deviceId, id));
+
+    const currentVerifications = await this.db
+      .select()
+      .from(verifications)
+      .where(eq(verifications.deviceId, id));
+
+    const oldDataSnapshot = {
+      ...oldDevice,
+      scopes: currentScopes.map((s) => s.id),
+      measurementTypes: currentTypes.map((t) => t.id),
+      primaryStandarts: currentStandards.map((st) => st.id),
+      verifications: currentVerifications,
+    };
+
     const deviceData = {
       name: input.name.toLowerCase(),
       model: input.model.toLowerCase(),
@@ -271,10 +324,36 @@ export class DeviceService {
 
       return updateDevice;
     });
+
+    if (this.auditLogService) {
+      await this.auditLogService.logAction({
+        deviceId: id,
+        action: 'update',
+        oldData: oldDataSnapshot,
+        newData: {
+          ...result,
+          scopes: input.scopes || [],
+          primaryStandarts: input.primaryStandarts || [],
+          measurementTypes: input.measurementTypes || [],
+          verifications: input.verifications || [],
+        },
+        userId,
+      });
+    }
+
     return result;
   }
 
-  async deleteDevice(id: string): Promise<boolean> {
+  async deleteDevice(id: string, userId: string): Promise<boolean> {
+    const [oldDevice] = await this.db
+      .select()
+      .from(devices)
+      .where(eq(devices.id, id));
+
+    if (!oldDevice) {
+      throw new Error('Прибор для удаления не найден');
+    }
+
     try {
       await this.db.transaction(async (tx) => {
         await tx
@@ -294,6 +373,14 @@ export class DeviceService {
         await tx.delete(devices).where(eq(devices.id, id));
       });
 
+      if (this.auditLogService) {
+        await this.auditLogService.logAction({
+          deviceId: id,
+          action: 'delete',
+          oldData: oldDevice,
+          userId,
+        });
+      }
       return true;
     } catch (error) {
       console.error(`[DeviceService] Failed to delete device ${id}:`, error);

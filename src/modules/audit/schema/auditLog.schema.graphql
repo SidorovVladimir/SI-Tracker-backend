@@ -1,0 +1,35 @@
+enum AuditAction {
+  create
+  update
+  delete
+}
+
+type AuditLog {
+  id: ID!
+  deviceId: ID!
+  action: AuditAction!
+  description: String!
+  oldData: String
+  newData: String
+  createdAt: String!
+  user: User
+}
+
+input AuditLogFilter {
+  deviceId: ID
+  userId: ID
+  action: AuditAction
+}
+
+type AuditLogsResponse {
+  items: [AuditLog!]!
+  totalCount: Int!
+}
+
+type Query {
+  deviceAuditLogs(
+    filter: AuditLogFilter
+    limit: Int
+    offset: Int
+  ): AuditLogsResponse!
+}
