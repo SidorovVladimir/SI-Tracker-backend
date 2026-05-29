@@ -43,7 +43,7 @@ export const Mutation = {
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'admin') {
+    if (currentUser.role === 'user') {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
     try {
@@ -67,7 +67,7 @@ export const Mutation = {
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'admin') {
+    if (currentUser.role === 'user') {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
     try {
@@ -94,7 +94,7 @@ export const Mutation = {
   ): Promise<boolean> => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'admin') {
+    if (currentUser.role === 'user') {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
     const auditLogService = new DeviceAuditLogService(db);

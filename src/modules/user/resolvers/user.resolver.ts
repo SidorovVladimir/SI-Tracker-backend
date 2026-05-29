@@ -14,7 +14,7 @@ export const Query = {
   ): Promise<User[]> => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'admin') {
+    if (currentUser.role === 'user') {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
     return await new UserService(db).getUsers();
@@ -37,7 +37,7 @@ export const Mutation = {
   ): Promise<User> => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'admin') {
+    if (currentUser.role !== 'superadmin') {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
     try {
@@ -57,7 +57,7 @@ export const Mutation = {
   ): Promise<User> => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'admin') {
+    if (currentUser.role !== 'superadmin') {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
     try {
@@ -77,7 +77,7 @@ export const Mutation = {
   ): Promise<boolean> => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'admin') {
+    if (currentUser.role !== 'superadmin') {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
     return await new UserService(db).deleteUser(id);

@@ -13,7 +13,7 @@ export const Query = {
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'admin' && !filter?.deviceId) {
+    if (currentUser.role === 'user') {
       throw new Error(
         'Доступ запрещен: просматривать общий журнал аудита могут только администраторы'
       );
@@ -32,8 +32,8 @@ export const Mutation = {
   ): Promise<boolean> => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'admin') {
-      throw new Error('Доступ запрещен: нужны права администратора');
+    if (currentUser.role !== 'superadmin') {
+      throw new Error('Доступ запрещен: нужны права суперадминистратора');
     }
     const auditService = new DeviceAuditLogService(db);
     return await auditService.deleteLog(id);
