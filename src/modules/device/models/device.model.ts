@@ -15,6 +15,7 @@ import { measurementTypesToDevices } from '../../catalog/models/measurementType.
 import { scopesToDevices } from '../../catalog/models/scope.model';
 import { verifications } from './verification.model';
 import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
+import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
 
 // Прибор (Инструмент)
 export const devices = pgTable('devices', {
@@ -33,6 +34,7 @@ export const devices = pgTable('devices', {
   archived: boolean('archived').notNull().default(false), // В архиве
   nomenclature: varchar('nomenclature'), // Номенклатура по 1С
   comment: text('comment'),
+  leadTimeDays: integer('lead_time_days'),
   createdAt: timestamp('created_at').defaultNow(),
   statusId: uuid('status_id')
     .notNull()
@@ -45,6 +47,57 @@ export const devices = pgTable('devices', {
   ),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+export const verificationBatches = pgTable('verification_batches', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  number: varchar('number', { length: 100 }).notNull(), // Номер заявки
+  plannedDate: timestamp('planned_date').notNull(), // Планируемый месяц/дата отправки
+  verificationOrganizationId: uuid('verification_organization_id').references(
+    () => verificationOrganizations.id
+  ), // Куда везем (ссылка на вашу таблицу)
+  status: text('status').notNull().default('draft'), // 'draft' | 'sent' | 'completed'
+  comment: text('comment'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// 3. Промежуточная таблица связей приборов и партий
+export const devicesToBatches = pgTable('devices_to_batches', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  deviceId: uuid('device_id')
+    .notNull()
+    .references(() => devices.id, { onDelete: 'cascade' }),
+  batchId: uuid('batch_id')
+    .notNull()
+    .references(() => verificationBatches.id, { onDelete: 'cascade' }),
+  deviceStatus: text('device_status').notNull().default('selected'), // 'selected' | 'dismantled' | 'returned'
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const verificationBatchesRelations = relations(
+  verificationBatches,
+  ({ one, many }) => ({
+    verificationOrganization: one(verificationOrganizations, {
+      fields: [verificationBatches.verificationOrganizationId],
+      references: [verificationOrganizations.id],
+    }),
+    devicesToBatches: many(devicesToBatches),
+  })
+);
+
+export const devicesToBatchesRelations = relations(
+  devicesToBatches,
+  ({ one }) => ({
+    device: one(devices, {
+      fields: [devicesToBatches.deviceId],
+      references: [devices.id],
+    }),
+    batch: one(verificationBatches, {
+      fields: [devicesToBatches.batchId],
+      references: [verificationBatches.id],
+    }),
+  })
+);
 
 export const devicesRelations = relations(devices, ({ one, many }) => ({
   status: one(statuses, {
@@ -63,4 +116,5 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
   scopesToDevices: many(scopesToDevices),
   primaryStandartsToDevices: many(primaryStandartsToDevices),
   measurementTypesToDevices: many(measurementTypesToDevices),
+  devicesToBatches: many(devicesToBatches),
 }));

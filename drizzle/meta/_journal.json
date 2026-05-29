@@ -50,6 +50,13 @@
       "when": 1780039223788,
       "tag": "0006_rich_songbird",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780048185356,
+      "tag": "0007_deep_sabretooth",
+      "breakpoints": true
     }
   ]
 }
