@@ -43,6 +43,13 @@
       "when": 1779869374367,
       "tag": "0005_mean_starhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780039223788,
+      "tag": "0006_rich_songbird",
+      "breakpoints": true
     }
   ]
 }
