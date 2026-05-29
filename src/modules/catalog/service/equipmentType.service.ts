@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateEquipmentTypeInput } from '../dto/CreateEquipmentTypeDto';
 import { equipmentTypes } from '../models/equipmentType.model';
@@ -11,7 +11,10 @@ export class EquipmentTypeService {
   constructor(private db: DrizzleDB) {}
 
   async getEquipmentTypes(): Promise<EquipmentTypeEntity[]> {
-    return await this.db.select().from(equipmentTypes);
+    return await this.db
+      .select()
+      .from(equipmentTypes)
+      .orderBy(asc(equipmentTypes.name));
   }
 
   async createEquipmentType(input: CreateEquipmentTypeInput) {

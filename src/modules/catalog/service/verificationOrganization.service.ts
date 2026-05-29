@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateVerificationOrganizationInput } from '../dto/CreateVerificationOrganizationDto';
 import {
@@ -13,7 +13,10 @@ export class VerificationOrganizationService {
   async getVerificationOrganizations(): Promise<
     VerificationOrganizationEntity[]
   > {
-    return await this.db.select().from(verificationOrganizations);
+    return await this.db
+      .select()
+      .from(verificationOrganizations)
+      .orderBy(asc(verificationOrganizations.name));
   }
 
   async createVerificationOrganization(

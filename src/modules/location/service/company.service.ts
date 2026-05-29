@@ -1,5 +1,5 @@
 import { DrizzleDB } from '../../../db/client';
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { CreateCompanyInput } from '../dto/CreateCompanyDto';
 import { companies } from '../models/company.model';
 import { CompanyEntity, NewCompany } from '../types/company.types';
@@ -8,7 +8,7 @@ import { UpdateCompanyInput } from '../dto/UpdateCompanyDto';
 export class CompanyService {
   constructor(private db: DrizzleDB) {}
   async getCompanies(): Promise<CompanyEntity[]> {
-    return await this.db.select().from(companies);
+    return await this.db.select().from(companies).orderBy(asc(companies.name));
   }
   async getCompany(id: string): Promise<CompanyEntity> {
     const [company] = await this.db

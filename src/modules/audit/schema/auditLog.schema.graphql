@@ -33,3 +33,7 @@ type Query {
     offset: Int
   ): AuditLogsResponse!
 }
+
+type Mutation {
+  deleteLog(id: ID!): Boolean!
+}

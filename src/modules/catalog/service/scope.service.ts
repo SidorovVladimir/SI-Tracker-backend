@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { NewScope, ScopeEntity } from '../types/scope.types';
 import { scopes } from '../models/scope.model';
@@ -8,7 +8,7 @@ export class ScopeService {
   constructor(private db: DrizzleDB) {}
 
   async getScopes(): Promise<ScopeEntity[]> {
-    return await this.db.select().from(scopes);
+    return await this.db.select().from(scopes).orderBy(asc(scopes.name));
   }
 
   async createScope(input: CreateScopeInput) {

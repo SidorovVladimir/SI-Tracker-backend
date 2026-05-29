@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateCityInput } from '../dto/CreateCityDto';
 import { cities } from '../models/city.model';
@@ -8,7 +8,7 @@ import { UpdateCityInput } from '../dto/UpdateCityDto';
 export class CityService {
   constructor(private db: DrizzleDB) {}
   async getCities(): Promise<CityEntity[]> {
-    return await this.db.select().from(cities);
+    return await this.db.select().from(cities).orderBy(asc(cities.name));
   }
 
   async getCity(id: string): Promise<CityEntity> {

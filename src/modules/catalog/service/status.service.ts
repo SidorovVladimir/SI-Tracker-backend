@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { statuses } from '../models/status.model';
 import { CreateStatusInput } from '../dto/CreateStatusDto';
@@ -8,7 +8,7 @@ export class StatusService {
   constructor(private db: DrizzleDB) {}
 
   async getAllStatuses(): Promise<StatusEntity[]> {
-    return await this.db.select().from(statuses);
+    return await this.db.select().from(statuses).orderBy(asc(statuses.name));
   }
 
   async createStatus(input: CreateStatusInput) {

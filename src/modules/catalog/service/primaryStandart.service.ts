@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import {
   NewPrimaryStandart,
@@ -11,7 +11,10 @@ export class PrimaryStandartService {
   constructor(private db: DrizzleDB) {}
 
   async getPrimaryStandarts(): Promise<PrimaryStandartEntity[]> {
-    return await this.db.select().from(primaryStandarts);
+    return await this.db
+      .select()
+      .from(primaryStandarts)
+      .orderBy(asc(primaryStandarts.name));
   }
 
   async createPrimaryStandart(input: CreatePrimaryStandartInput) {

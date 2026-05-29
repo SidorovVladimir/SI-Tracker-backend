@@ -186,16 +186,12 @@ export class DeviceService {
     });
 
     if (this.auditLogService) {
+      const fullDeviceSnapshot = await this.getDevice(result.id);
+
       await this.auditLogService.logAction({
         deviceId: result.id,
         action: 'create',
-        newData: {
-          ...result,
-          scopes: input.scopes || [],
-          primaryStandarts: input.primaryStandarts || [],
-          measurementTypes: input.measurementTypes || [],
-          verifications: input.verifications || [],
-        },
+        newData: fullDeviceSnapshot,
         userId,
       });
     }
@@ -208,37 +204,8 @@ export class DeviceService {
     input: UpdateDeviceInput,
     userId: string
   ): Promise<DeviceEntity> {
-    const [oldDevice] = await this.db
-      .select()
-      .from(devices)
-      .where(eq(devices.id, id));
-    if (!oldDevice) throw new Error('Device not found');
-
-    const currentScopes = await this.db
-      .select({ id: scopesToDevices.scopeId })
-      .from(scopesToDevices)
-      .where(eq(scopesToDevices.deviceId, id));
-    const currentTypes = await this.db
-      .select({ id: measurementTypesToDevices.measurementTypeId })
-      .from(measurementTypesToDevices)
-      .where(eq(measurementTypesToDevices.deviceId, id));
-    const currentStandards = await this.db
-      .select({ id: primaryStandartsToDevices.primaryStandartId })
-      .from(primaryStandartsToDevices)
-      .where(eq(primaryStandartsToDevices.deviceId, id));
-
-    const currentVerifications = await this.db
-      .select()
-      .from(verifications)
-      .where(eq(verifications.deviceId, id));
-
-    const oldDataSnapshot = {
-      ...oldDevice,
-      scopes: currentScopes.map((s) => s.id),
-      measurementTypes: currentTypes.map((t) => t.id),
-      primaryStandarts: currentStandards.map((st) => st.id),
-      verifications: currentVerifications,
-    };
+    const oldDataSnapshot = await this.getDevice(id);
+    if (!oldDataSnapshot) throw new Error('Device not found');
 
     const deviceData = {
       name: input.name.toLowerCase(),
@@ -326,17 +293,12 @@ export class DeviceService {
     });
 
     if (this.auditLogService) {
+      const newDataSnapshot = await this.getDevice(id);
       await this.auditLogService.logAction({
         deviceId: id,
         action: 'update',
         oldData: oldDataSnapshot,
-        newData: {
-          ...result,
-          scopes: input.scopes || [],
-          primaryStandarts: input.primaryStandarts || [],
-          measurementTypes: input.measurementTypes || [],
-          verifications: input.verifications || [],
-        },
+        newData: newDataSnapshot,
         userId,
       });
     }
@@ -345,12 +307,9 @@ export class DeviceService {
   }
 
   async deleteDevice(id: string, userId: string): Promise<boolean> {
-    const [oldDevice] = await this.db
-      .select()
-      .from(devices)
-      .where(eq(devices.id, id));
+    const oldDataSnapshot = await this.getDevice(id);
 
-    if (!oldDevice) {
+    if (!oldDataSnapshot) {
       throw new Error('Прибор для удаления не найден');
     }
 
@@ -377,7 +336,7 @@ export class DeviceService {
         await this.auditLogService.logAction({
           deviceId: id,
           action: 'delete',
-          oldData: oldDevice,
+          oldData: oldDataSnapshot,
           userId,
         });
       }

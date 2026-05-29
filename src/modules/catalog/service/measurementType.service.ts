@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import {
   MeasurementTypeEntity,
@@ -11,7 +11,10 @@ export class MeasurementTypeService {
   constructor(private db: DrizzleDB) {}
 
   async getMeasurementTypes(): Promise<MeasurementTypeEntity[]> {
-    return await this.db.select().from(measurementTypes);
+    return await this.db
+      .select()
+      .from(measurementTypes)
+      .orderBy(asc(measurementTypes.name));
   }
 
   async createMeasurementType(input: CreateMeasurementTypeInput) {

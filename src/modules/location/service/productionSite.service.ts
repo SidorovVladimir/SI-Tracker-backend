@@ -1,5 +1,5 @@
 import { DrizzleDB } from '../../../db/client';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, asc } from 'drizzle-orm';
 import { CreateProductionSiteInput } from '../dto/CreateProductionSiteDto';
 import { productionSites } from '../models/productionSites.model';
 import {
@@ -14,7 +14,10 @@ import { UpdateProductionSiteInput } from '../dto/UpdateProductionSiteDto';
 export class ProductionSiteService {
   constructor(private db: DrizzleDB) {}
   async getProductionSites(): Promise<ProductionSiteEntity[]> {
-    return await this.db.select().from(productionSites);
+    return await this.db
+      .select()
+      .from(productionSites)
+      .orderBy(asc(productionSites.name));
   }
   async getProductionSite(id: string): Promise<ProductionSiteEntity> {
     const [productionSite] = await this.db

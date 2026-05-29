@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import {
   MetrologyControlTypeEntity,
@@ -11,7 +11,10 @@ export class MetrologyControlTypeService {
   constructor(private db: DrizzleDB) {}
 
   async getMetrologyControlTypes(): Promise<MetrologyControlTypeEntity[]> {
-    return await this.db.select().from(metrologyControleTypes);
+    return await this.db
+      .select()
+      .from(metrologyControleTypes)
+      .orderBy(asc(metrologyControleTypes.name));
   }
 
   async createMetrologyControlType(input: CreateMetrologyControlTypeInput) {
