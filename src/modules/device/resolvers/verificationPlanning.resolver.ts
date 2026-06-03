@@ -24,6 +24,9 @@ export const Query = {
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
 
     const planningService = new VerificationPlanningService(db);
     return await planningService.getPlanningPoolByMonth(
@@ -45,6 +48,9 @@ export const Query = {
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
 
     const planningService = new VerificationPlanningService(db);
     return await planningService.getYearlyCalendarSummary(
@@ -72,6 +78,9 @@ export const Query = {
   ) => {
     // 1. Проверяем авторизацию
     if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
 
     // 2. Вызываем облегченный метод сервиса
     const planningService = new VerificationPlanningService(db);
