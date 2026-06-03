@@ -1,5 +1,6 @@
 import {
   boolean,
+  index,
   integer,
   pgTable,
   text,
@@ -62,17 +63,24 @@ export const verificationBatches = pgTable('verification_batches', {
 });
 
 // 3. Промежуточная таблица связей приборов и партий
-export const devicesToBatches = pgTable('devices_to_batches', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  deviceId: uuid('device_id')
-    .notNull()
-    .references(() => devices.id, { onDelete: 'cascade' }),
-  batchId: uuid('batch_id')
-    .notNull()
-    .references(() => verificationBatches.id, { onDelete: 'cascade' }),
-  deviceStatus: text('device_status').notNull().default('selected'), // 'selected' | 'dismantled' | 'returned'
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
+export const devicesToBatches = pgTable(
+  'devices_to_batches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => devices.id, { onDelete: 'cascade' }),
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => verificationBatches.id, { onDelete: 'cascade' }),
+    deviceStatus: text('device_status').notNull().default('selected'), // 'selected' | 'dismantled' | 'returned'
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    deviceIdIdx: index('dtb_device_id_idx').on(table.deviceId),
+    batchIdIdx: index('dtb_batch_id_idx').on(table.batchId),
+  })
+);
 
 export const verificationBatchesRelations = relations(
   verificationBatches,

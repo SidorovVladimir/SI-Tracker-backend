@@ -57,6 +57,20 @@
       "when": 1780048185356,
       "tag": "0007_deep_sabretooth",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780374476304,
+      "tag": "0008_watery_silhouette",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780394270107,
+      "tag": "0009_fantastic_karnak",
+      "breakpoints": true
     }
   ]
 }

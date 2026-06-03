@@ -1,0 +1,116 @@
+# 1. Объект для элемента пула планирования
+type PlanningPoolItem {
+  id: ID!
+  name: String!
+  model: String!
+  serialNumber: String!
+  validUntil: String # Может быть null, если нет поверок
+  suggestedMonth: String! # Формат "YYYY-MM"
+  targetBatchId: ID # ID партии, если закреплен вручную
+  isManualPlacement: Boolean! # Флаг для интерфейса
+  controlType: String! # Тип контроля для фильтров ("Поверка", "Индикатор")
+  isOverdue: Boolean!
+}
+
+type PoolMetaTypeCounts {
+  typeName: String!
+  count: Int!
+}
+
+type PoolMeta {
+  unassignedCount: Int!
+  typeCounts: [PoolMetaTypeCounts!]!
+}
+
+type PlanningPoolResponse {
+  items: [PlanningPoolItem!]!
+  totalCount: Int!
+  meta: PoolMeta!
+}
+
+# 2. Объект сводной статистики за месяц
+type MonthlySummary {
+  month: String! # Формат "YYYY-MM"
+  autoCount: Int!
+  manualCount: Int!
+}
+type ShortVerification {
+  id: ID!
+  batchId: ID
+}
+
+type DeviceInBatch {
+  id: ID!
+  name: String!
+  model: String!
+  serialNumber: String!
+  verifications: [ShortVerification!]
+}
+
+type DeviceToBatchRelation {
+  id: ID!
+  deviceStatus: String!
+  device: DeviceInBatch! # Связь со сжатыми данными прибора
+}
+
+# 3. Объект самой партии (экспедиции)
+type VerificationBatch {
+  id: ID!
+  number: String!
+  plannedDate: String!
+  verificationOrganizationId: ID
+  status: String! # 'draft' | 'sent' | 'completed'
+  comment: String
+  createdAt: String!
+  updatedAt: String!
+  devicesToBatches: [DeviceToBatchRelation!]!
+}
+
+# Входные данные для создания партии
+input CreateBatchInput {
+  number: String!
+  plannedDate: String! # ISO дата или строка
+  verificationOrganizationId: ID
+  comment: String
+}
+type DraftBatchOption {
+  id: ID!
+  number: String!
+}
+
+type Query {
+  # Получить пул приборов для конкретного месяца (например, "2026-06")
+  getPlanningPoolByMonth(
+    targetMonth: String!
+    companyDefaultLeadTime: Int
+    limit: Int
+    offset: Int
+    controlTypeId: String
+  ): PlanningPoolResponse!
+
+  # Получить статистику по месяцам на весь год
+  getYearlyCalendarSummary(
+    year: Int!
+    companyDefaultLeadTime: Int
+  ): [MonthlySummary!]!
+
+  getVerificationBatches(year: Int, status: String): [VerificationBatch!]!
+  getDraftBatchesByMonth(plannedMonth: String!): [DraftBatchOption!]!
+}
+
+type Mutation {
+  # Создать новую партию
+  createVerificationBatch(input: CreateBatchInput!): VerificationBatch!
+
+  # Добавить приборы в партию
+  addDevicesToBatch(batchId: ID!, deviceIds: [ID!]!): Boolean!
+
+  # Удалить приборы из партии
+  removeDevicesFromBatch(batchId: ID!, deviceIds: [ID!]!): Boolean!
+
+  # Обновить статус партии ('draft' | 'sent' | 'completed')
+  updateBatchStatus(id: ID!, status: String!): VerificationBatch!
+
+  # Удалить партию
+  deleteVerificationBatch(id: ID!): Boolean!
+}

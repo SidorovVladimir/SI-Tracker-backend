@@ -7,6 +7,7 @@ import { CreateDeviceInputSchema } from '../dto/CreateDeviceDto';
 import { DeviceService } from '../service/device.service';
 import { UpdateDeviceInputSchema } from '../dto/UpdateDeviceDto';
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
+import { CreateVerificationModalInputSchema } from '../dto/CreateVerificationDto';
 
 export const Query = {
   devices: async (_: unknown, __: unknown, { db, currentUser }: Context) => {
@@ -102,5 +103,35 @@ export const Mutation = {
       id,
       currentUser.id
     );
+  },
+
+  createVerification: async (
+    _: unknown,
+    { input }: { input: unknown },
+    { db, currentUser }: Context
+  ) => {
+    // 1. Проверка авторизации
+    if (!currentUser) throw new Error('Не авторизован');
+
+    // 2. Ограничение прав (только админы и метрологи могут вносить поверки)
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: требуются права администратора/метролога'
+      );
+    }
+
+    try {
+      // 3. Валидация входных данных через Zod
+      const validatedInput = CreateVerificationModalInputSchema.parse(input);
+
+      // 4. Вызов сервиса
+      const verificationService = new DeviceService(db);
+      return await verificationService.createVerification(validatedInput);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new Error(JSON.stringify(formatZodErrors(err)));
+      }
+      throw err;
+    }
   },
 };

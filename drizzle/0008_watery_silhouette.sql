@@ -1,0 +1,2 @@
+ALTER TABLE "verifications" ADD COLUMN "batch_id" uuid;--> statement-breakpoint
+ALTER TABLE "verifications" ADD CONSTRAINT "verifications_batch_id_verification_batches_id_fk" FOREIGN KEY ("batch_id") REFERENCES "public"."verification_batches"("id") ON DELETE no action ON UPDATE no action;

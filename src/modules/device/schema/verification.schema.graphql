@@ -40,3 +40,34 @@ input VerificationInput {
   metrologyControleTypeId: ID
   verificationOrganizationId: ID
 }
+
+type VerificationModal {
+  id: ID!
+  deviceId: ID!
+  batchId: ID
+  protocolNumber: String!
+  result: String!
+  date: String!
+  validUntil: String
+  metrologyControleTypeId: ID!
+  verificationOrganizationId: ID!
+  comment: String
+  createdAt: String!
+  updatedAt: String!
+}
+
+input CreateVerificationInput {
+  deviceId: ID!
+  batchId: ID
+  protocolNumber: String!
+  result: String!
+  date: String!
+  validUntil: String
+  metrologyControleTypeId: ID!
+  verificationOrganizationId: ID!
+  comment: String
+}
+
+type Mutation {
+  createVerification(input: CreateVerificationInput!): VerificationModal!
+}

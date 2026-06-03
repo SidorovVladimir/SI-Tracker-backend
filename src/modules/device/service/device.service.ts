@@ -9,6 +9,7 @@ import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
 import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
 import { measurementTypesToDevices } from '../../catalog/models/measurementType.model';
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
+import { CreateVerificationDto } from '../dto/CreateVerificationDto';
 
 export class DeviceService {
   constructor(
@@ -348,5 +349,44 @@ export class DeviceService {
         'Не удалось удалить устройство. Попробуйте обновить страницу.'
       );
     }
+  }
+
+  async createVerification(input: CreateVerificationDto) {
+    return await this.db.transaction(async (tx) => {
+      const [deviceExists] = await tx
+        .select()
+        .from(devices)
+        .where(eq(devices.id, input.deviceId));
+
+      if (!deviceExists) {
+        throw new Error('Указанное оборудование не найдено в системе');
+      }
+
+      const [newVerification] = await tx
+        .insert(verifications)
+        .values({
+          deviceId: input.deviceId,
+          batchId: input.batchId ?? null,
+          protocolNumber: input.protocolNumber,
+          result: input.result,
+          date: input.date,
+          validUntil: input.validUntil ?? null,
+          metrologyControleTypeId: input.metrologyControleTypeId,
+          verificationOrganizationId: input.verificationOrganizationId,
+          comment: input.comment ?? null,
+        })
+        .returning();
+
+      if (!newVerification) {
+        throw new Error('Не удалось сохранить данные поверки');
+      }
+
+      await tx
+        .update(devices)
+        .set({ updatedAt: new Date() })
+        .where(eq(devices.id, input.deviceId));
+
+      return newVerification;
+    });
   }
 }
