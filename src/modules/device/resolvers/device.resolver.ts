@@ -16,15 +16,15 @@ export const Query = {
     return await new DeviceService(db).getDevices();
   },
 
-  devicesWithRelations: async (
-    _: unknown,
-    __: unknown,
-    { db, currentUser }: Context
-  ) => {
-    if (!currentUser) throw new Error('Не авторизован');
+  //   devicesWithRelations: async (
+  //     _: unknown,
+  //     __: unknown,
+  //     { db, currentUser }: Context
+  //   ) => {
+  //     if (!currentUser) throw new Error('Не авторизован');
 
-    return await new DeviceService(db).getDevicesWithRelations();
-  },
+  //     return await new DeviceService(db).getDevicesWithRelations();
+  //   },
   device: async (
     _: unknown,
     { id }: { id: string },
@@ -33,6 +33,37 @@ export const Query = {
     if (!currentUser) throw new Error('Не авторизован');
 
     return await new DeviceService(db).getDevice(id);
+  },
+  devicesWithRelations: async (
+    _: unknown,
+    {
+      limit,
+      offset,
+      filter,
+    }: {
+      limit: number;
+      offset: number;
+      filter?: {
+        city?: string;
+        company?: string;
+        productionSite?: string;
+        deviceName?: string;
+        serialNumber?: string;
+        status?: string;
+        metrologyControle?: string;
+        dateStart?: string;
+        dateEnd?: string;
+      };
+    },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    return await new DeviceService(db).getDevicesWithRelations({
+      limit,
+      offset,
+      filter,
+    });
   },
 };
 
@@ -125,8 +156,12 @@ export const Mutation = {
       const validatedInput = CreateVerificationModalInputSchema.parse(input);
 
       // 4. Вызов сервиса
-      const verificationService = new DeviceService(db);
-      return await verificationService.createVerification(validatedInput);
+      const auditLogService = new DeviceAuditLogService(db);
+      const verificationService = new DeviceService(db, auditLogService);
+      return await verificationService.createVerification(
+        validatedInput,
+        currentUser.id
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new Error(JSON.stringify(formatZodErrors(err)));

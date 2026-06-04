@@ -5,7 +5,13 @@ import { users } from '../user/user.model';
 
 interface LogActionArgs {
   deviceId: string;
-  action: 'create' | 'update' | 'delete';
+  action:
+    | 'create'
+    | 'update'
+    | 'delete'
+    | 'assign_batch'
+    | 'remove_batch'
+    | 'verify';
   oldData?: any | null;
   newData?: any | null;
   userId?: string | null;
@@ -35,6 +41,22 @@ export class DeviceAuditLogService {
       if (action === 'update')
         description = `Обновлены данные прибора: ${deviceIdent}`;
 
+      if (action === 'assign_batch') {
+        const batchNumber = newData?.batchNumber
+          ? ` №${newData.batchNumber}`
+          : '';
+        description = `Прибор ${deviceIdent} запланирован на отправку и добавлен в партию поверок${batchNumber}`;
+      }
+      if (action === 'remove_batch') {
+        description = `Прибор ${deviceIdent} исключен из партии отправки и вернулся в автоматический пул`;
+      }
+      if (action === 'verify') {
+        const docNum = newData?.protocolNumber
+          ? ` (Свидетельство/Протокол: ${newData.protocolNumber})`
+          : '';
+        description = `Успешно зафиксированы результаты контроля прибора ${deviceIdent}. Статус просрочки снят${docNum}`;
+      }
+
       await this.db.insert(deviceAuditLogs).values({
         deviceId,
         userId: userId ?? null,
@@ -51,7 +73,13 @@ export class DeviceAuditLogService {
     filter?: {
       deviceId?: string;
       userId?: string;
-      action?: 'create' | 'update' | 'delete';
+      action?:
+        | 'create'
+        | 'update'
+        | 'delete'
+        | 'assign_batch'
+        | 'remove_batch'
+        | 'verify';
     };
     limit: number;
     offset: number;

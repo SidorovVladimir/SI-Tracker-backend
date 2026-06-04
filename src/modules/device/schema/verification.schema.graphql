@@ -30,6 +30,7 @@ type VerificationRelation {
 }
 
 input VerificationInput {
+  id: ID
   date: String
   validUntil: String
   result: String

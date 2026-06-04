@@ -3,6 +3,7 @@ import { Context } from '../../../context';
 import { formatZodErrors } from '../../../utils/errors';
 import { VerificationPlanningService } from '../service/verificationPlanningService'; // Укажите ваш путь к сервису
 import { CreateVerificationBatchSchema } from '../dto/CreateVerificationBatchDto';
+import { DeviceAuditLogService } from '../../audit/auditLog.service';
 
 export const Query = {
   // 1. Получить пул приборов для конкретного месяца (доступно всем авторизованным)
@@ -124,8 +125,17 @@ export const Mutation = {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
 
-    const planningService = new VerificationPlanningService(db);
-    return await planningService.addDevicesToBatch(batchId, deviceIds);
+    const auditLogService = new DeviceAuditLogService(db);
+
+    const planningService = new VerificationPlanningService(
+      db,
+      auditLogService
+    );
+    return await planningService.addDevicesToBatch(
+      batchId,
+      deviceIds,
+      currentUser.id
+    );
   },
 
   // 5. Удалить приборы из партии (только для админов/метрологов)
@@ -139,8 +149,17 @@ export const Mutation = {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
 
-    const planningService = new VerificationPlanningService(db);
-    return await planningService.removeDevicesFromBatch(batchId, deviceIds);
+    const auditLogService = new DeviceAuditLogService(db);
+
+    const planningService = new VerificationPlanningService(
+      db,
+      auditLogService
+    );
+    return await planningService.removeDevicesFromBatch(
+      batchId,
+      deviceIds,
+      currentUser.id
+    );
   },
 
   // 6. Изменить статус партии (только для админов/метрологов)

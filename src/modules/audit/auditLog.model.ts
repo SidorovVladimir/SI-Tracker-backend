@@ -8,7 +8,16 @@ export const deviceAuditLogs = pgTable('device_audit_logs', {
 
   userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
 
-  action: text('action', { enum: ['create', 'update', 'delete'] }).notNull(),
+  action: text('action', {
+    enum: [
+      'create',
+      'update',
+      'delete',
+      'assign_batch',
+      'remove_batch',
+      'verify',
+    ],
+  }).notNull(),
 
   description: text('description').notNull(),
 

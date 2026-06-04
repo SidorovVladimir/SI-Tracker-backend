@@ -3,6 +3,7 @@ import { expressMiddleware } from '@as-integrations/express4';
 import express from 'express';
 import { createServer } from 'http';
 import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
+import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 
@@ -17,7 +18,10 @@ async function startApolloServer() {
   const server = new ApolloServer({
     typeDefs,
     resolvers,
-    plugins: [ApolloServerPluginDrainHttpServer({ httpServer })],
+    plugins: [
+      ApolloServerPluginDrainHttpServer({ httpServer }),
+      ApolloServerPluginLandingPageDisabled(),
+    ],
   });
 
   await server.start();

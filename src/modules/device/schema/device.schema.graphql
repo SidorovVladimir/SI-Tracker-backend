@@ -21,6 +21,23 @@ type Device {
   updatedAt: String!
 }
 
+input DeviceFilterInput {
+  city: String
+  company: String
+  productionSite: String
+  deviceName: String
+  serialNumber: String
+  status: String
+  metrologyControle: String
+  dateStart: String
+  dateEnd: String
+}
+
+type DevicesWithRelationsResponse {
+  items: [DeviceTableItem!]!
+  totalCount: Int!
+}
+
 type DeviceWithRelations {
   id: ID!
   name: String!
@@ -46,10 +63,40 @@ type DeviceWithRelations {
   measurementTypes: [MeasurementType!]!
 }
 
+type DeviceTableItem {
+  id: ID!
+  name: String!
+  model: String!
+  serialNumber: String!
+  releaseDate: String
+  receiptDate: String
+  grsiNumber: String
+  inventoryNumber: String
+  manufacturer: String
+  verificationInterval: Int
+  status: Status!
+  productionSite: ProductionSiteRelation!
+  latestVerification: VerificationTableItem
+}
+
+type VerificationTableItem {
+  id: ID!
+  date: String
+  validUntil: String
+  protocolNumber: String
+  metrologyControleType: MetrologyControlType
+}
+
 type Query {
   devices: [Device!]!
-  device(id: ID!): DeviceWithRelations!
-  devicesWithRelations: [DeviceWithRelations!]!
+  device(id: ID!): DeviceWithRelations
+  # devicesWithRelations: [DeviceWithRelations!]!
+
+  devicesWithRelations(
+    limit: Int!
+    offset: Int!
+    filter: DeviceFilterInput
+  ): DevicesWithRelationsResponse!
 }
 
 input CreateDeviceInput {

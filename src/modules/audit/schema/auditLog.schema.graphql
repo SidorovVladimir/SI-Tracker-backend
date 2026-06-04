@@ -2,6 +2,9 @@ enum AuditAction {
   create
   update
   delete
+  assign_batch
+  remove_batch
+  verify
 }
 
 type AuditLog {

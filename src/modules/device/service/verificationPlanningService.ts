@@ -1,4 +1,5 @@
 import { DrizzleDB } from '../../../db/client'; // Замените на ваш путь к инстансу базы данных
+import { DeviceAuditLogService } from '../../audit/auditLog.service';
 import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
 import {
   verificationBatches,
@@ -28,7 +29,10 @@ export interface PlanningPoolItem {
 }
 
 export class VerificationPlanningService {
-  constructor(private db: DrizzleDB) {}
+  constructor(
+    private db: DrizzleDB,
+    private auditLogService?: DeviceAuditLogService
+  ) {}
 
   // 1. Создать новую партию на определенный месяц
   async createBatch(input: CreateBatchInput) {
@@ -53,9 +57,13 @@ export class VerificationPlanningService {
   // 2. Добавить приборы в партию
   async addDevicesToBatch(
     batchId: string,
-    deviceIds: string[]
+    deviceIds: string[],
+    userId: string
   ): Promise<boolean> {
     if (deviceIds.length === 0) return true;
+
+    const logsToRecord: any[] = [];
+    let recordedBatchNumber = '';
 
     await this.db.transaction(async (tx) => {
       const [batch] = await tx
@@ -70,6 +78,8 @@ export class VerificationPlanningService {
         throw new Error(
           'Нельзя добавлять приборы в отправленную/закрытую партию'
         );
+
+      recordedBatchNumber = batch.number;
 
       // Если эти приборы уже были привязаны К ДРУГИМ ЧЕРНОВИКАМ партий,
       // мы удаляем старые связи, чтобы не плодить дубли
@@ -96,7 +106,38 @@ export class VerificationPlanningService {
 
       // Массово вставляем приборы в новую партию
       await tx.insert(devicesToBatches).values(linksToInsert);
+
+      for (const dId of deviceIds) {
+        const [device] = await tx
+          .select()
+          .from(devices)
+          .where(eq(devices.id, dId));
+        if (device) {
+          logsToRecord.push({
+            deviceId: dId,
+            name: device.name,
+            model: device.model,
+            serialNumber: device.serialNumber,
+          });
+        }
+      }
     });
+    if (this.auditLogService && logsToRecord.length > 0) {
+      for (const logItem of logsToRecord) {
+        await this.auditLogService.logAction({
+          deviceId: logItem.deviceId,
+          action: 'assign_batch',
+          newData: {
+            batchId,
+            batchNumber: recordedBatchNumber,
+            name: logItem.name,
+            model: logItem.model,
+            serialNumber: logItem.serialNumber,
+          },
+          userId,
+        });
+      }
+    }
 
     return true;
   }
@@ -104,9 +145,28 @@ export class VerificationPlanningService {
   // 3. Удалить приборы из партии (Вернуть их обратно в автоматический пул)
   async removeDevicesFromBatch(
     batchId: string,
-    deviceIds: string[]
+    deviceIds: string[],
+    userId: string
   ): Promise<boolean> {
     if (deviceIds.length === 0) return true;
+
+    const logsToRecord: any[] = [];
+
+    for (const dId of deviceIds) {
+      const [device] = await this.db
+        .select()
+        .from(devices)
+        .where(eq(devices.id, dId));
+
+      if (device) {
+        logsToRecord.push({
+          deviceId: dId,
+          name: device.name,
+          model: device.model,
+          serialNumber: device.serialNumber,
+        });
+      }
+    }
 
     await this.db
       .delete(devicesToBatches)
@@ -116,6 +176,21 @@ export class VerificationPlanningService {
           inArray(devicesToBatches.deviceId, deviceIds)
         )
       );
+
+    if (this.auditLogService && logsToRecord.length > 0) {
+      for (const logItem of logsToRecord) {
+        await this.auditLogService.logAction({
+          deviceId: logItem.deviceId,
+          action: 'remove_batch',
+          oldData: {
+            name: logItem.name,
+            model: logItem.model,
+            serialNumber: logItem.serialNumber,
+          },
+          userId,
+        });
+      }
+    }
 
     return true;
   }
@@ -185,6 +260,9 @@ export class VerificationPlanningService {
         leadTimeDays: true,
       },
       with: {
+        status: {
+          columns: { name: true },
+        },
         devicesToBatches: { with: { batch: true } },
         verifications: {
           orderBy: (v, { desc }) => [desc(v.date), desc(v.createdAt)],
@@ -197,6 +275,10 @@ export class VerificationPlanningService {
     const pool: PlanningPoolItem[] = [];
 
     for (const device of allDevices) {
+      const statusName = device.status?.name?.toLowerCase().trim() ?? '';
+      if (statusName === 'длительное хранение') {
+        continue;
+      }
       const nextVerificationDate = this.calculateNextVerificationDate(device);
       if (!nextVerificationDate) continue;
 
@@ -374,6 +456,9 @@ export class VerificationPlanningService {
       },
 
       with: {
+        status: {
+          columns: { name: true },
+        },
         devicesToBatches: { with: { batch: true } },
         verifications: {
           orderBy: (v, { desc }) => [desc(v.date)],
@@ -383,6 +468,10 @@ export class VerificationPlanningService {
     });
 
     for (const device of allDevices) {
+      const statusName = device.status?.name?.toLowerCase().trim() ?? '';
+      if (statusName === 'длительное хранение') {
+        continue;
+      }
       const nextVerificationDate = this.calculateNextVerificationDate(device);
       if (!nextVerificationDate) continue;
 
