@@ -276,7 +276,13 @@ export class VerificationPlanningService {
 
     for (const device of allDevices) {
       const statusName = device.status?.name?.toLowerCase().trim() ?? '';
-      if (statusName === 'длительное хранение') {
+      if (
+        statusName === 'длительное хранение' ||
+        statusName === 'неисправен' ||
+        statusName === 'забракован' ||
+        statusName === 'утерян' ||
+        statusName === 'не годен'
+      ) {
         continue;
       }
       const nextVerificationDate = this.calculateNextVerificationDate(device);
