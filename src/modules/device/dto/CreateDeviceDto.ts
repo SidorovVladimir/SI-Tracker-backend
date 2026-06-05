@@ -10,6 +10,11 @@ const VerificationInput = z.object({
   documentUrl: z.string().nullable(),
   metrologyControleTypeId: z.uuid().nullable(),
   verificationOrganizationId: z.uuid().nullable(),
+  cost: z.coerce
+    .number('Стоимость должна быть числом')
+    .min(0, 'Стоимость не может быть отрицательной')
+    .default(0)
+    .optional(),
 });
 export const CreateDeviceInputSchema = z.object({
   name: z.string().min(1, 'Name is required'),

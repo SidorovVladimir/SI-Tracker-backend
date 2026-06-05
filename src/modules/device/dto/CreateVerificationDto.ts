@@ -10,6 +10,11 @@ export const CreateVerificationInputSchema = z.object({
   documentUrl: z.string().nullable(),
   metrologyControleTypeId: z.uuid().nullable(),
   deviceId: z.uuid(),
+  cost: z.coerce
+    .number('Стоимость должна быть числом')
+    .min(0, 'Стоимость не может быть отрицательной')
+    .default(0)
+    .optional(),
 });
 
 export type CreateVerificationInput = z.infer<
@@ -31,6 +36,11 @@ export const CreateVerificationModalInputSchema = z.object({
   metrologyControleTypeId: z.uuid('Невалидный ID типа контроля'),
   verificationOrganizationId: z.uuid('Невалидный ID организации'),
   comment: z.string().nullable().optional(),
+  cost: z.coerce
+    .number('Стоимость должна быть числом')
+    .min(0, 'Стоимость не может быть отрицательной')
+    .default(0)
+    .optional(),
 });
 
 // Типизация на основе Zod-схемы для сервиса

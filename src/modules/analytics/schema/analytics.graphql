@@ -1,0 +1,32 @@
+type FinancialMonthlyTimeline {
+  month: Int!
+  amount: Float!
+}
+
+type FinancialByCity {
+  cityName: String!
+  amount: Float!
+}
+
+type FinancialByCompany {
+  companyName: String!
+  amount: Float!
+}
+
+type FinancialByProductionSite {
+  siteId: ID!
+  fullSiteLabel: String!
+  amount: Float!
+}
+
+type FinancialAnalyticsResponse {
+  totalSpent: Float!
+  monthlyTimeline: [FinancialMonthlyTimeline!]!
+  byCities: [FinancialByCity!]!
+  byCompanies: [FinancialByCompany!]!
+  byProductionSites: [FinancialByProductionSite!]!
+}
+
+type Query {
+  getFinancialAnalytics(year: Int!, month: Int): FinancialAnalyticsResponse!
+}

@@ -316,6 +316,7 @@ export class DeviceService {
             result: true,
             protocolNumber: true,
             comment: true,
+            cost: true,
           },
           with: {
             metrologyControleType: { columns: { name: true } },
@@ -423,6 +424,10 @@ export class DeviceService {
           verificationOrganizationId:
             verification.verificationOrganizationId ?? null,
           deviceId: newDevice.id,
+          cost:
+            verification.cost !== undefined && verification.cost !== null
+              ? String(verification.cost)
+              : '0.00',
         }));
 
         await tx.insert(verifications).values(verificationsData);
@@ -681,6 +686,8 @@ export class DeviceService {
             metrologyControleTypeId: v.metrologyControleTypeId ?? null,
             verificationOrganizationId: v.verificationOrganizationId ?? null,
             deviceId: id,
+            cost:
+              v.cost !== undefined && v.cost !== null ? String(v.cost) : '0.00',
           };
 
           if (v.id) {
@@ -791,6 +798,10 @@ export class DeviceService {
           metrologyControleTypeId: input.metrologyControleTypeId,
           verificationOrganizationId: input.verificationOrganizationId,
           comment: input.comment ?? null,
+          cost:
+            input.cost !== undefined && input.cost !== null
+              ? String(input.cost)
+              : '0.00',
         })
         .returning();
 
@@ -829,6 +840,7 @@ export class DeviceService {
         name: deviceExists.name,
         model: deviceExists.model,
         serialNumber: deviceExists.serialNumber,
+        cost: verificationRecord.cost ? parseFloat(verificationRecord.cost) : 0,
       };
       return verificationRecord;
     });
@@ -844,6 +856,7 @@ export class DeviceService {
           name: logDeviceData.name,
           model: logDeviceData.model,
           serialNumber: logDeviceData.serialNumber,
+          cost: logDeviceData.cost,
         },
         userId,
       });

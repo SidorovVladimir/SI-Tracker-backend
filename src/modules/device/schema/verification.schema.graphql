@@ -10,6 +10,7 @@ type Verification {
   metrologyControleTypeId: ID
   verificationOrganizationId: ID
   deviceId: ID!
+  cost: Float
   createdAt: String!
   updatedAt: String!
 }
@@ -25,6 +26,7 @@ type VerificationRelation {
   metrologyControleType: MetrologyControlType
   verificationOrganization: VerificationOrganization
   deviceId: ID!
+  cost: Float
   createdAt: String!
   updatedAt: String!
 }
@@ -40,6 +42,7 @@ input VerificationInput {
   documentUrl: String
   metrologyControleTypeId: ID
   verificationOrganizationId: ID
+  cost: Float
 }
 
 type VerificationModal {
@@ -53,6 +56,7 @@ type VerificationModal {
   metrologyControleTypeId: ID!
   verificationOrganizationId: ID!
   comment: String
+  cost: Float
   createdAt: String!
   updatedAt: String!
 }
@@ -67,6 +71,7 @@ input CreateVerificationInput {
   metrologyControleTypeId: ID!
   verificationOrganizationId: ID!
   comment: String
+  cost: Float
 }
 
 type Mutation {

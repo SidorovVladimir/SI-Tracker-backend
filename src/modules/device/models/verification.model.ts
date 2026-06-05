@@ -1,5 +1,6 @@
 import {
   index,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -33,6 +34,8 @@ export const verifications = pgTable(
     deviceId: uuid('device_id')
       .notNull()
       .references(() => devices.id),
+    cost: numeric('cost', { precision: 10, scale: 2 }).default('0.00'),
+
     //   deviceId: uuid('device_id')
     // .notNull()
     // .references(() => devices.id, { onDelete: 'cascade' }),
