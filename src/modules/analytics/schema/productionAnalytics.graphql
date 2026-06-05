@@ -1,0 +1,17 @@
+type QuantitiveItem {
+  label: String!
+  count: Int!
+}
+
+type ProductionAnalyticsResponse {
+  totalVerified: Int! # Сколько всего успешно поверено (шт)
+  totalRejected: Int! # Сколько всего забраковано (шт)
+  totalCalibrated: Int! # Сколько всего откалибровано (шт)
+  byProductionSites: [QuantitiveItem!]! # Объемы по цехам (шт)
+  byCompanies: [QuantitiveItem!]! # Объемы по ЮЛ (шт)
+  byCities: [QuantitiveItem!]! # Объемы по городам (шт)
+}
+
+extend type Query {
+  getProductionAnalytics(year: Int!, month: Int): ProductionAnalyticsResponse!
+}

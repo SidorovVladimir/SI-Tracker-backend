@@ -110,4 +110,98 @@ export class AnalyticsService {
       byProductionSites,
     };
   }
+
+  async getProductionAnalytics(year: number, month?: number | null) {
+    let startCondition = new Date(`${year}-01-01T00:00:00.000Z`);
+    let endCondition = new Date(`${year}-12-31T23:59:59.999Z`);
+
+    if (month && month >= 1 && month <= 12) {
+      const paddedMonth = String(month).padStart(2, '0');
+      startCondition = new Date(`${year}-${paddedMonth}-01T00:00:00.000Z`);
+      endCondition = new Date(year, month, 0, 23, 59, 59, 999);
+    }
+
+    const dateCondition = and(
+      sql`${verifications.date} >= ${startCondition}`,
+      sql`${verifications.date} <= ${endCondition}`
+    );
+
+    // 1. ВЫЧИСЛЯЕМ ОБЩИЕ СЧЕТЧИКИ KPI (Успешно, Брак, Калибровка)
+    const [totals] = await this.db
+      .select({
+        verified: sql<number>`COUNT(CASE WHEN ${verifications.result} = 'Годен' THEN 1 END)::int`,
+        rejected: sql<number>`COUNT(CASE WHEN ${verifications.result} = 'Не годен' THEN 1 END)::int`,
+        calibrated: sql<number>`COUNT(CASE WHEN ${verifications.metrologyControleTypeId} IN (
+          SELECT id FROM metrology_controle_types WHERE lower(trim(name)) = 'калибровка'
+        ) THEN 1 END)::int`,
+      })
+      .from(verifications)
+      .where(dateCondition);
+
+    // 2. ОБЪЕМЫ ПО ЦЕХАМ (В ШТУКАХ СИ) С НАШЕЙ УНИКАЛЬНОЙ СКЛЕЙКОЙ НАЗВАНИЙ
+    const byProductionSites = await this.db
+      .select({
+        label: sql<string>`CONCAT(${companies.name}, ' (', ${cities.name}, ') — ', ${productionSites.name})`,
+        count: sql<number>`COUNT(DISTINCT ${verifications.id})::int`,
+      })
+      .from(verifications)
+      .innerJoin(devices, eq(verifications.deviceId, devices.id))
+      .innerJoin(
+        productionSites,
+        eq(devices.productionSiteId, productionSites.id)
+      )
+      .innerJoin(companies, eq(productionSites.companyId, companies.id))
+      .innerJoin(cities, eq(productionSites.cityId, cities.id))
+      .where(dateCondition)
+      .groupBy(
+        productionSites.id,
+        productionSites.name,
+        companies.name,
+        cities.name
+      )
+      .orderBy(sql`COUNT(DISTINCT ${verifications.id}) DESC`);
+
+    // 3. ОБЪЕМЫ ПО ЮРЛИЦАМ (ЮЛ)
+    const byCompanies = await this.db
+      .select({
+        label: companies.name,
+        count: sql<number>`COUNT(DISTINCT ${verifications.id})::int`,
+      })
+      .from(verifications)
+      .innerJoin(devices, eq(verifications.deviceId, devices.id))
+      .innerJoin(
+        productionSites,
+        eq(devices.productionSiteId, productionSites.id)
+      )
+      .innerJoin(companies, eq(productionSites.companyId, companies.id))
+      .where(dateCondition)
+      .groupBy(companies.name)
+      .orderBy(sql`COUNT(DISTINCT ${verifications.id}) DESC`);
+
+    // 4. ОБЪЕМЫ ПО ГОРОДАМ
+    const byCities = await this.db
+      .select({
+        label: cities.name,
+        count: sql<number>`COUNT(DISTINCT ${verifications.id})::int`,
+      })
+      .from(verifications)
+      .innerJoin(devices, eq(verifications.deviceId, devices.id))
+      .innerJoin(
+        productionSites,
+        eq(devices.productionSiteId, productionSites.id)
+      )
+      .innerJoin(cities, eq(productionSites.cityId, cities.id))
+      .where(dateCondition)
+      .groupBy(cities.name)
+      .orderBy(sql`COUNT(DISTINCT ${verifications.id}) DESC`);
+
+    return {
+      totalVerified: totals?.verified || 0,
+      totalRejected: totals?.rejected || 0,
+      totalCalibrated: totals?.calibrated || 0,
+      byProductionSites,
+      byCompanies,
+      byCities,
+    };
+  }
 }
