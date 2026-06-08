@@ -33,7 +33,7 @@ async function startApolloServer() {
       origin: true,
       credentials: true,
     }),
-    express.json(),
+    express.json({ limit: '50mb' }),
     cookieParser(),
     expressMiddleware(server, {
       context: createContext,

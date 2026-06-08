@@ -14,7 +14,7 @@ async function main() {
       firstName: process.env.ADMIN_FIRSTNAME!,
       lastName: process.env.ADMIN_LASTNAME!,
       passwordHash,
-      role: 'admin',
+      role: 'superadmin',
     })
     .onConflictDoNothing();
 

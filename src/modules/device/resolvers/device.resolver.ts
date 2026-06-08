@@ -8,6 +8,33 @@ import { DeviceService } from '../service/device.service';
 import { UpdateDeviceInputSchema } from '../dto/UpdateDeviceDto';
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
 import { CreateVerificationModalInputSchema } from '../dto/CreateVerificationDto';
+import { SyncDeviceWithArshinInputSchema } from '../../arshin/dto/SyncDeviceWithArshinDto';
+import { ImportDevicesExcelInputSchema } from '../dto/ImportDeviceItemDto';
+import { GraphQLScalarType, Kind } from 'graphql';
+
+const JSONScalar = new GraphQLScalarType({
+  name: 'JSON', // Внутри схемы GraphQL тип по-прежнему будет называться строго "JSON"
+  description:
+    'Кастомный скаляр для передачи произвольных JSON-объектов и массивов',
+  serialize(value) {
+    return value;
+  },
+  parseValue(value) {
+    return value;
+  },
+  parseLiteral(ast) {
+    if (ast.kind === Kind.STRING) {
+      try {
+        return globalThis.JSON.parse(ast.value);
+      } catch {
+        return ast.value;
+      }
+    }
+    return null;
+  },
+});
+
+export { JSONScalar as JSON };
 
 export const Query = {
   devices: async (_: unknown, __: unknown, { db, currentUser }: Context) => {
@@ -64,6 +91,21 @@ export const Query = {
       offset,
       filter,
     });
+  },
+
+  executeRawSql: async (
+    _: unknown,
+    { sqlQuery }: { sqlQuery: string },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: требуются права администратора');
+    }
+
+    const deviceService = new DeviceService(db);
+    return await deviceService.executeRawSql(sqlQuery);
   },
 };
 
@@ -159,6 +201,86 @@ export const Mutation = {
       const auditLogService = new DeviceAuditLogService(db);
       const verificationService = new DeviceService(db, auditLogService);
       return await verificationService.createVerification(
+        validatedInput,
+        currentUser.id
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new Error(JSON.stringify(formatZodErrors(err)));
+      }
+      throw err;
+    }
+  },
+
+  syncDeviceWithArshin: async (
+    _: unknown,
+    { input }: { input: unknown },
+    { db, currentUser }: Context
+  ) => {
+    // 1. Проверка авторизации
+    if (!currentUser) throw new Error('Не авторизован');
+
+    // 2. Ограничение прав доступа
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: требуются права администратора/метролога'
+      );
+    }
+
+    try {
+      const validatedInput = SyncDeviceWithArshinInputSchema.parse(input);
+
+      // 4. Инициализация сервисов и вызов бизнес-логики
+      const auditLogService = new DeviceAuditLogService(db);
+      const deviceService = new DeviceService(db, auditLogService);
+
+      return await deviceService.syncDeviceWithArshin(
+        validatedInput,
+        currentUser.id
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new Error(JSON.stringify(formatZodErrors(err)));
+      }
+      throw err;
+    }
+  },
+
+  syncBatchWithArshin: async (
+    _: unknown,
+    { batchId }: { batchId: string },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: требуются права администратора/метролога'
+      );
+    }
+
+    const auditLogService = new DeviceAuditLogService(db);
+    const deviceService = new DeviceService(db, auditLogService);
+
+    return await deviceService.syncBatchWithArshin(batchId, currentUser.id);
+  },
+
+  importDevicesFromExcel: async (
+    _: unknown,
+    { input }: { input: unknown },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: требуются права администратора');
+    }
+
+    try {
+      const validatedInput = ImportDevicesExcelInputSchema.parse(input);
+
+      const auditLogService = new DeviceAuditLogService(db);
+      const deviceService = new DeviceService(db, auditLogService);
+
+      return await deviceService.importDevicesFromExcel(
         validatedInput,
         currentUser.id
       );

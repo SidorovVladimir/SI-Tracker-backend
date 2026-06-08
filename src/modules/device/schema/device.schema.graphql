@@ -1,3 +1,5 @@
+scalar JSON
+
 type Device {
   id: ID!
   name: String!
@@ -87,6 +89,14 @@ type VerificationTableItem {
   metrologyControleType: MetrologyControlType
 }
 
+type RawSqlResponse {
+  success: Boolean!
+  columns: [String!]! # Список колонок для шапки таблицы на фронтенде
+  rows: [JSON!]! # Массив строк с данными
+  affectedRows: Int # Количество затронутых строк (для INSERT/UPDATE)
+  errorMessage: String # Текст ошибки, если запрос упал
+}
+
 type Query {
   devices: [Device!]!
   device(id: ID!): DeviceWithRelations
@@ -97,6 +107,8 @@ type Query {
     offset: Int!
     filter: DeviceFilterInput
   ): DevicesWithRelationsResponse!
+
+  executeRawSql(sqlQuery: String!): RawSqlResponse!
 }
 
 input CreateDeviceInput {
@@ -147,8 +159,52 @@ input UpdateDeviceInput {
   verifications: [VerificationInput!]
 }
 
+input SyncDeviceWithArshinInput {
+  deviceId: ID!
+  batchId: ID!
+}
+
+type DeviceBatchSyncResult {
+  deviceId: ID!
+  success: Boolean!
+  message: String
+}
+
+# Общий ответ пакетной синхронизации
+type BatchSyncResponse {
+  batchId: ID!
+  syncedCount: Int!
+  totalCount: Int!
+  details: [DeviceBatchSyncResult!]!
+}
+
+input ImportDeviceItemInput {
+  name: String!
+  model: String!
+  serialNumber: String!
+  grsiNumber: String
+  inventoryNumber: String
+  manufacturer: String
+  verificationInterval: String # МПИ (приведем к Int на бэке)
+  nomenclature: String
+  comment: String
+  cityName: String!
+  companyName: String!
+  productionSiteName: String!
+  statusName: String!
+  equipmentTypeName: String
+  scopesNames: String
+  measurementTypesNames: String
+  primaryStandardsNames: String
+  measurementRange: String
+  accuracy: String
+}
+
 type Mutation {
   createDevice(input: CreateDeviceInput!): Device!
   deleteDevice(id: ID!): Boolean!
   updateDevice(id: ID!, input: UpdateDeviceInput!): Device!
+  syncDeviceWithArshin(input: SyncDeviceWithArshinInput!): Device!
+  syncBatchWithArshin(batchId: ID!): BatchSyncResponse!
+  importDevicesFromExcel(input: [ImportDeviceItemInput!]!): Int!
 }

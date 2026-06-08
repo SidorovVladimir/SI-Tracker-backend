@@ -1,20 +1,36 @@
-import { and, eq, ilike, inArray, sql } from 'drizzle-orm';
+import { and, eq, ilike, inArray, ne, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity, NewDevice } from '../types/device.types';
-import { devices } from '../models/device.model';
-import { scopesToDevices } from '../../catalog/models/scope.model';
+import { devices, devicesToBatches } from '../models/device.model';
+import { scopes, scopesToDevices } from '../../catalog/models/scope.model';
 import { verifications } from '../models/verification.model';
 import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
-import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
-import { measurementTypesToDevices } from '../../catalog/models/measurementType.model';
+import {
+  primaryStandarts,
+  primaryStandartsToDevices,
+} from '../../catalog/models/primaryStandarts.model';
+import {
+  measurementTypes,
+  measurementTypesToDevices,
+} from '../../catalog/models/measurementType.model';
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
 import { CreateVerificationDto } from '../dto/CreateVerificationDto';
 import { statuses } from '../../catalog/models/status.model';
+import { SyncDeviceWithArshinInput } from '../../arshin/dto/SyncDeviceWithArshinDto';
+import { ArshinService } from '../../arshin/service/arshin.service';
+import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
+import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
+import { ImportDeviceItem } from '../dto/ImportDeviceItemDto';
+import { cities } from '../../location/models/city.model';
+import { companies } from '../../location/models/company.model';
+import { productionSites } from '../../location/models/productionSites.model';
+import { equipmentTypes } from '../../catalog/models/equipmentType.model';
 
 export class DeviceService {
   constructor(
     private db: DrizzleDB,
+    // private arshinService?: ArshinService,
     private auditLogService?: DeviceAuditLogService
   ) {}
   async getDevices(): Promise<DeviceEntity[]> {
@@ -872,5 +888,621 @@ export class DeviceService {
     }
 
     return newVerification;
+  }
+
+  async syncDeviceWithArshin(input: SyncDeviceWithArshinInput, userId: string) {
+    const { deviceId, batchId } = input;
+
+    // 1. Извлекаем прибор из базы для проверки номеров
+    const [device] = await this.db
+      .select()
+      .from(devices)
+      .where(eq(devices.id, deviceId))
+      .limit(1);
+    if (!device) {
+      throw new Error('Прибор не найден в системе');
+    }
+
+    if (!device.grsiNumber || !device.serialNumber) {
+      throw new Error(
+        'Синхронизация невозможна: у прибора в паспорте не заполнен номер ГРСИ или Серийный номер.'
+      );
+    }
+
+    const arshinService = new ArshinService();
+
+    const arshinData = await arshinService.fetchLatestVerificationFromArshin(
+      device.grsiNumber,
+      device.serialNumber
+    );
+
+    if (!arshinData) {
+      throw new Error(
+        `Сведения о поверке во ФГИС Аршин не найдены (Зав. №: ${device.serialNumber}, ГРСИ: ${device.grsiNumber}). Возможно, поверитель еще не опубликовал данные.`
+      );
+    }
+
+    const [controlType] = await this.db
+      .select()
+      .from(metrologyControleTypes)
+      .where(sql`lower(trim(${metrologyControleTypes.name})) = 'поверка'`)
+      .limit(1);
+
+    if (!controlType) {
+      throw new Error(
+        'В справочнике типов метрологического контроля не найден тип "Поверка". Проверьте наполнение базы.'
+      );
+    }
+
+    let orgId: string;
+    const [existingOrg] = await this.db
+      .select()
+      .from(verificationOrganizations)
+      .where(
+        eq(
+          verificationOrganizations.name,
+          arshinData.organizationName.toLowerCase()
+        )
+      )
+      .limit(1);
+
+    if (existingOrg) {
+      orgId = existingOrg.id;
+    } else {
+      const insertedOrgs = await this.db
+        .insert(verificationOrganizations)
+        .values({ name: arshinData.organizationName.toLowerCase() })
+        .returning();
+
+      const newOrg = insertedOrgs[0];
+      if (!newOrg) {
+        throw new Error(
+          'Не удалось сохранить поверяющую организацию в базу данных'
+        );
+      }
+      orgId = newOrg.id;
+    }
+
+    let validUntilDate: Date | null = null;
+    if (arshinData.validUntil) {
+      validUntilDate = new Date(arshinData.validUntil);
+    }
+
+    const verificationDto = {
+      deviceId: deviceId,
+      batchId: batchId,
+      protocolNumber: arshinData.protocolNumber,
+      result: arshinData.isApplicable ? 'Годен' : 'Не годен',
+      date: new Date(arshinData.date),
+      validUntil: validUntilDate,
+      metrologyControleTypeId: controlType.id,
+      verificationOrganizationId: orgId,
+      comment: `Автоматическая синхронизация ФГИС Аршин. ID записи: ${arshinData.arshinId}`,
+      cost: 0,
+    };
+
+    await this.createVerification(verificationDto, userId);
+
+    await this.db
+      .update(devicesToBatches)
+      .set({ deviceStatus: 'returned' })
+      .where(
+        and(
+          eq(devicesToBatches.deviceId, deviceId),
+          eq(devicesToBatches.batchId, batchId)
+        )
+      );
+
+    return device;
+  }
+
+  async syncBatchWithArshin(batchId: string, userId: string) {
+    const delay = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms));
+    const pendingLinks = await this.db
+      .select({
+        deviceId: devicesToBatches.deviceId,
+      })
+      .from(devicesToBatches)
+      .where(
+        and(
+          eq(devicesToBatches.batchId, batchId),
+          ne(devicesToBatches.deviceStatus, 'returned')
+        )
+      );
+
+    const totalCount = pendingLinks.length;
+
+    let syncedCount = 0;
+    const details = [];
+
+    if (totalCount === 0) {
+      return {
+        batchId,
+        syncedCount: 0,
+        totalCount: 0,
+        details: [],
+      };
+    }
+
+    // for (const link of pendingLinks) {
+    for (let i = 0; i < pendingLinks.length; i++) {
+      const link = pendingLinks[i]!;
+      try {
+        if (i > 0) {
+          await delay(600);
+        }
+        await this.syncDeviceWithArshin(
+          { deviceId: link.deviceId, batchId },
+          userId
+        );
+
+        syncedCount++;
+        details.push({
+          deviceId: link.deviceId,
+          success: true,
+          message: 'Успешно синхронизирован с ФГИС Аршин',
+        });
+      } catch (error: any) {
+        details.push({
+          deviceId: link.deviceId,
+          success: false,
+          message: error.message || 'Неизвестная ошибка при запросе к Аршин',
+        });
+      }
+    }
+
+    return {
+      batchId,
+      syncedCount,
+      totalCount,
+      details,
+    };
+  }
+
+  async importDevicesFromExcel(
+    items: ImportDeviceItem[],
+    userId: string
+  ): Promise<number> {
+    let importedCount = 0;
+
+    // const parseMultipleNames = (
+    //   rawString: string | null | undefined
+    // ): string[] => {
+    //   if (!rawString) return [];
+    //   return rawString
+    //     .split(/[,;/|]+/)
+    //     .map((name) => name.trim())
+    //     .filter((name) => name.length > 0);
+    // };
+    const parseMultipleNames = (
+      rawString: string | null | undefined
+    ): string[] => {
+      if (!rawString) return [];
+
+      return (
+        rawString
+          // 🎯 РЕГУЛЯРКА-ВСЕЯДНАЯ:
+          // [,;/|\n\r]+ означает деление по запятой, точке с запятой, косой черте, вертикальной черте или ЛЮБОМУ переносу строки
+          .split(/[,;/|\n\r]+/)
+          .map((name) => name.trim())
+          // Дополнительно отсекаем пустые элементы и пробельные строки
+          .filter((name) => name.length > 0)
+      );
+    };
+
+    await this.db.transaction(async (tx) => {
+      const cityCache = new Map<string, string>(); // name -> id
+      const companyCache = new Map<string, string>(); // name -> id
+      const siteCache = new Map<string, string>(); // "companyId_cityId_name" -> id
+      const statusCache = new Map<string, string>(); // name -> id
+      const typeCache = new Map<string, string>(); // name -> id
+      const scopeCache = new Map<string, string>(); // name -> id
+      const measTypeCache = new Map<string, string>(); // name -> id
+      const standardCache = new Map<string, string>(); // name -> id
+
+      for (const item of items) {
+        const normCity = item.cityName.trim();
+        const normCompany = item.companyName.trim();
+        const normSite = item.productionSiteName.trim();
+        const normStatus = item.statusName.trim();
+        const normType = item.equipmentTypeName?.trim();
+
+        // 1. Разруливаем Город (City)
+        let cityId = cityCache.get(normCity.toLowerCase());
+        if (!cityId) {
+          const [existing] = await tx
+            .select()
+            .from(cities)
+            .where(eq(sql`lower(${cities.name})`, normCity.toLowerCase()))
+            .limit(1);
+          if (existing) {
+            cityId = existing.id;
+          } else {
+            const insertedCities = await tx
+              .insert(cities)
+              .values({ name: normCity.toLowerCase() })
+              .returning();
+            // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+            const inserted = insertedCities[0];
+            if (!inserted)
+              throw new Error(`Не удалось создать город: ${normCity}`);
+            cityId = inserted.id;
+          }
+          cityCache.set(normCity.toLowerCase(), cityId);
+        }
+
+        // 2. Разруливаем Компания (Company)
+        let companyId = companyCache.get(normCompany.toLowerCase());
+        if (!companyId) {
+          const [existing] = await tx
+            .select()
+            .from(companies)
+            .where(eq(sql`lower(${companies.name})`, normCompany.toLowerCase()))
+            .limit(1);
+          if (existing) {
+            companyId = existing.id;
+          } else {
+            const insertedCompanies = await tx
+              .insert(companies)
+              .values({ name: normCompany.toLowerCase() })
+              .returning();
+            // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+            const inserted = insertedCompanies[0];
+            if (!inserted)
+              throw new Error(`Не удалось создать компанию: ${normCompany}`);
+            companyId = inserted.id;
+          }
+          companyCache.set(normCompany.toLowerCase(), companyId);
+        }
+
+        // 3. Разруливаем Площадку (Production Site)
+        const siteKey = `${companyId}_${cityId}_${normSite.toLowerCase()}`;
+        let siteId = siteCache.get(siteKey);
+        if (!siteId) {
+          const [existing] = await tx
+            .select()
+            .from(productionSites)
+            .where(
+              and(
+                eq(productionSites.companyId, companyId),
+                eq(productionSites.cityId, cityId),
+                eq(sql`lower(${productionSites.name})`, normSite.toLowerCase())
+              )
+            )
+            .limit(1);
+
+          if (existing) {
+            siteId = existing.id;
+          } else {
+            const insertedSites = await tx
+              .insert(productionSites)
+              .values({
+                name: normSite.toLowerCase(),
+                companyId,
+                cityId,
+              })
+              .returning();
+            // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+            const inserted = insertedSites[0];
+            if (!inserted)
+              throw new Error(`Не удалось создать площадку: ${normSite}`);
+            siteId = inserted.id;
+          }
+          siteCache.set(siteKey, siteId);
+        }
+
+        // 4. Разруливаем Статус (Status)
+        let statusId = statusCache.get(normStatus.toLowerCase());
+        if (!statusId) {
+          const [existing] = await tx
+            .select()
+            .from(statuses)
+            .where(eq(sql`lower(${statuses.name})`, normStatus.toLowerCase()))
+            .limit(1);
+          if (existing) {
+            statusId = existing.id;
+          } else {
+            const insertedStatuses = await tx
+              .insert(statuses)
+              .values({ name: normStatus.toLowerCase() })
+              .returning();
+            // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+            const inserted = insertedStatuses[0];
+            if (!inserted)
+              throw new Error(`Не удалось создать статус: ${normStatus}`);
+            statusId = inserted.id;
+          }
+          statusCache.set(normStatus.toLowerCase(), statusId);
+        }
+
+        // 5. Разруливаем Тип оборудования (Equipment Type) - опционально
+        let equipmentTypeId: string | null = null;
+        if (normType) {
+          equipmentTypeId = typeCache.get(normType.toLowerCase()) || null;
+          if (!equipmentTypeId) {
+            const [existing] = await tx
+              .select()
+              .from(equipmentTypes)
+              .where(
+                eq(sql`lower(${equipmentTypes.name})`, normType.toLowerCase())
+              )
+              .limit(1);
+            if (existing) {
+              equipmentTypeId = existing.id;
+            } else {
+              const insertedTypes = await tx
+                .insert(equipmentTypes)
+                .values({ name: normType.toLowerCase() })
+                .returning();
+              // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+              const inserted = insertedTypes[0];
+              if (!inserted)
+                throw new Error(
+                  `Не удалось создать тип оборудования: ${normType}`
+                );
+              equipmentTypeId = inserted.id;
+            }
+            if (equipmentTypeId)
+              typeCache.set(normType.toLowerCase(), equipmentTypeId);
+          }
+        }
+
+        // 6. Проверяем дубликат прибора по серийному номеру и модели, чтобы не плодить копии
+        const [duplicate] = await tx
+          .select()
+          .from(devices)
+          .where(
+            and(
+              eq(
+                sql`lower(${devices.serialNumber})`,
+                item.serialNumber.trim().toLowerCase()
+              ),
+              eq(sql`lower(${devices.model})`, item.model.trim().toLowerCase())
+            )
+          )
+          .limit(1);
+
+        if (duplicate) {
+          // Если такой прибор уже есть — просто пропускаем его, либо обновляем (мы пропустим)
+          continue;
+        }
+
+        // 7. Безопасный парсинг интервала поверки (МПИ)
+        const parsedInterval = item.verificationInterval
+          ? parseInt(item.verificationInterval, 10)
+          : null;
+
+        // 8. Вставляем прибор в базу
+        const [newDevice] = await tx
+          .insert(devices)
+          .values({
+            name: item.name.trim(),
+            model: item.model.trim(),
+            serialNumber: item.serialNumber.trim(),
+            grsiNumber: item.grsiNumber?.trim() || null,
+            inventoryNumber: item.inventoryNumber?.trim() || null,
+            manufacturer: item.manufacturer?.trim() || null,
+            verificationInterval: isNaN(parsedInterval as number)
+              ? null
+              : parsedInterval,
+            nomenclature: item.nomenclature?.trim() || null,
+            comment: item.comment?.trim() || null,
+            statusId: statusId!,
+            productionSiteId: siteId!,
+            equipmentTypeId: equipmentTypeId,
+            archived: false,
+            measurementRange: item.measurementRange?.trim() || null,
+            accuracy: item.accuracy?.trim() || null,
+          })
+          .returning();
+
+        if (!newDevice)
+          throw new Error(`Не удалось создать прибор: ${item.name}`);
+        const deviceId = newDevice.id;
+
+        // 🎯 2. РАЗРУЛИВАЕМ СФЕРЫ ГОСРЕГУЛИРОВАНИЯ (Many-to-Many)
+        const targetScopes = parseMultipleNames(item.scopesNames);
+        for (const scopeName of targetScopes) {
+          let scopeId = scopeCache.get(scopeName.toLowerCase());
+          if (!scopeId) {
+            const [existing] = await tx
+              .select()
+              .from(scopes)
+              .where(eq(sql`lower(${scopes.name})`, scopeName.toLowerCase()))
+              .limit(1);
+            if (existing) {
+              scopeId = existing.id;
+            } else {
+              const insertedScopes = await tx
+                .insert(scopes)
+                .values({ name: scopeName.toLowerCase() })
+                .returning();
+              // 🎯 ИСПРАВЛЕНИЕ: Безопасное извлечение объекта из массива
+              const inserted = insertedScopes[0];
+              if (!inserted)
+                throw new Error(
+                  `Не удалось создать сферу регулирования: ${scopeName}`
+                );
+              scopeId = inserted.id;
+            }
+            scopeCache.set(scopeName.toLowerCase(), scopeId);
+          }
+          // Записываем связь в промежуточную таблицу
+          await tx
+            .insert(scopesToDevices)
+            .values({ deviceId, scopeId })
+            .onConflictDoNothing();
+        }
+
+        // 🎯 3. РАЗРУЛИВАЕМ ВИДЫ ИЗМЕРЕНИЙ (Many-to-Many)
+        const targetMeasTypes = parseMultipleNames(item.measurementTypesNames);
+        for (const mTypeName of targetMeasTypes) {
+          let mTypeId = measTypeCache.get(mTypeName.toLowerCase());
+          if (!mTypeId) {
+            const [existing] = await tx
+              .select()
+              .from(measurementTypes)
+              .where(
+                eq(
+                  sql`lower(${measurementTypes.name})`,
+                  mTypeName.toLowerCase()
+                )
+              )
+              .limit(1);
+            if (existing) {
+              mTypeId = existing.id;
+            } else {
+              const insertedTypes = await tx
+                .insert(measurementTypes)
+                .values({ name: mTypeName.toLowerCase() })
+                .returning();
+              // 🎯 ИСПРАВЛЕНИЕ: Безопасное извлечение объекта из массива
+              const inserted = insertedTypes[0];
+              if (!inserted)
+                throw new Error(
+                  `Не удалось создать вид измерений: ${mTypeName}`
+                );
+              mTypeId = inserted.id;
+            }
+            measTypeCache.set(mTypeName.toLowerCase(), mTypeId);
+          }
+          // Записываем связь в промежуточную таблицу
+          await tx
+            .insert(measurementTypesToDevices)
+            .values({ deviceId, measurementTypeId: mTypeId })
+            .onConflictDoNothing();
+        }
+
+        // 🎯 4. РАЗРУЛИВАЕМ ПЕРВИЧНЫЕ ЭТАЛОНЫ (Many-to-Many)
+        const targetStandards = parseMultipleNames(item.primaryStandardsNames);
+        for (const stdName of targetStandards) {
+          let stdId = standardCache.get(stdName.toLowerCase());
+          if (!stdId) {
+            const [existing] = await tx
+              .select()
+              .from(primaryStandarts)
+              .where(
+                eq(sql`lower(${primaryStandarts.name})`, stdName.toLowerCase())
+              )
+              .limit(1);
+            if (existing) {
+              stdId = existing.id;
+            } else {
+              const insertedStandards = await tx
+                .insert(primaryStandarts)
+                .values({ name: stdName.toLowerCase() })
+                .returning();
+              // 🎯 ИСПРАВЛЕНИЕ: Безопасное извлечение объекта из массива
+              const inserted = insertedStandards[0];
+              if (!inserted)
+                throw new Error(
+                  `Не удалось создать первичный эталон: ${stdName}`
+                );
+              stdId = inserted.id;
+            }
+            standardCache.set(stdName.toLowerCase(), stdId);
+          }
+          // Записываем связь в промежуточную таблицу
+          await tx
+            .insert(primaryStandartsToDevices)
+            .values({ deviceId, primaryStandartId: stdId })
+            .onConflictDoNothing();
+        }
+
+        importedCount++;
+      }
+    });
+
+    // Запись общего действия в лог аудита (опционально, можно расширить лог на каждый прибор)
+    // if (this.auditLogService && importedCount > 0) {
+    //   await this.auditLogService.logAction({
+    //     action: 'create',
+    //     description: `Выполнен пакетный импорт приборов из Excel. Успешно загружено: ${importedCount} шт.`,
+    //     userId,
+    //   });
+    // }
+
+    return importedCount;
+  }
+
+  // async executeRawSql(sqlQuery: string) {
+  //   try {
+  //     // Выполняем сырой SQL запрос через Drizzle
+  //     const result = await this.db.execute(sql.raw(sqlQuery));
+
+  //     // Разные драйверы (pg, pglite) возвращают структуру чуть-чуть по-разному.
+  //     // Обычно данные лежат в result.rows, а информация о колонках в result.fields или ключах первого объекта.
+  //     const rows = Array.isArray(result.rows)
+  //       ? result.rows
+  //       : Array.isArray(result)
+  //       ? result
+  //       : [];
+
+  //     // Динамически вытаскиваем названия колонок из первого полученного объекта
+  //     const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+  //     return {
+  //       success: true,
+  //       columns,
+  //       rows,
+  //       affectedRows: result.rowCount ?? rows.length,
+  //       errorMessage: null,
+  //     };
+  //   } catch (error: any) {
+  //     // Перехватываем ошибку базы данных (например, неверный синтаксис), чтобы сервер не упал
+  //     console.error('Ошибка при выполнении сырого SQL:', error);
+  //     return {
+  //       success: false,
+  //       columns: [],
+  //       rows: [],
+  //       affectedRows: 0,
+  //       errorMessage:
+  //         error.message ||
+  //         'Критическая ошибка базы данных при выполнении запроса',
+  //     };
+  //   }
+  // }
+  async executeRawSql(sqlQuery: string) {
+    try {
+      // Выполняем сырой SQL запрос через Drizzle
+      const result = await this.db.execute(sql.raw(sqlQuery));
+
+      // Приводим результат к массиву строк для универсальности
+      const rows = Array.isArray(result.rows)
+        ? result.rows
+        : Array.isArray(result)
+        ? result
+        : [];
+
+      // Динамически вытаскиваем названия колонок из первого полученного объекта
+      const columns = rows.length > 0 ? Object.keys(rows[0]!) : [];
+
+      // 🎯 ИСПРАВЛЕНИЕ ts(2339): Безопасно проверяем наличие rowCount в объекте,
+      // либо берем длину массива rows, если это был обычный SELECT запрос
+      let affectedRows = rows.length;
+      if (result && typeof result === 'object' && 'rowCount' in result) {
+        affectedRows = (result as any).rowCount ?? rows.length;
+      }
+
+      return {
+        success: true,
+        columns,
+        rows,
+        affectedRows,
+        errorMessage: null,
+      };
+    } catch (error: any) {
+      console.error('Ошибка при выполнении сырого SQL:', error);
+      return {
+        success: false,
+        columns: [],
+        rows: [],
+        affectedRows: 0,
+        errorMessage:
+          error.message ||
+          'Критическая ошибка базы данных при выполнении запроса',
+      };
+    }
   }
 }
