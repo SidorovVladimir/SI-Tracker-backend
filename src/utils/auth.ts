@@ -2,6 +2,7 @@ import bcrypt from 'bcrypt';
 import { Response } from 'express';
 import { User } from '../modules/user/user.types';
 import jwt from 'jsonwebtoken';
+import { TokenPayload } from '../context';
 
 const SALT_ROUNDS = 12;
 
@@ -39,3 +40,11 @@ export const setAuthCookie = (res: Response, user: User) => {
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 };
+
+export function verifyToken(token: string): TokenPayload | null {
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET!) as TokenPayload;
+  } catch {
+    return null;
+  }
+}

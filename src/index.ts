@@ -11,6 +11,7 @@ import { typeDefs } from './graphql/typeDefs';
 import { resolvers } from './graphql/resolvers';
 import { createContext } from './context';
 import { exec } from 'child_process';
+import { authMiddleware } from './middleware/auth';
 
 async function startApolloServer() {
   const app = express();
@@ -49,7 +50,15 @@ async function startApolloServer() {
   // );
 
   app.use(express.json({ limit: '50mb' }));
-  app.use(cookieParser()); // 🎯 Теперь куки будут парситься везде!
+  app.use(cookieParser());
+  app.use(authMiddleware);
+
+  // const user = (req as any).currentUser;
+  // if (!user || (user.role !== 'admin' && user.role !== 'superadmin')) {
+  //   return res
+  //     .status(403)
+  //     .send('Доступ запрещен: требуется роль администратора');
+  // }
 
   app.get('/api/admin/backup', (req, res) => {
     const cookies = req.cookies;

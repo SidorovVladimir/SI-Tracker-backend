@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { db, DrizzleDB } from './db/client';
 
-interface TokenPayload extends JwtPayload {
+export interface TokenPayload extends JwtPayload {
   id: string;
   email: string;
   firstName: string;
