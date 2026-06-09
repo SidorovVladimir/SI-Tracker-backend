@@ -10,7 +10,7 @@ import cookieParser from 'cookie-parser';
 import { typeDefs } from './graphql/typeDefs';
 import { resolvers } from './graphql/resolvers';
 import { createContext } from './context';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { authMiddleware } from './middleware/auth';
 import { Server } from 'socket.io';
 import { verifyToken } from './utils/auth';
@@ -213,6 +213,43 @@ async function startApolloServer() {
     });
   });
 
+  // app.get('/api/admin/backup', (req, res) => {
+  //   const user = (req as any).currentUser;
+  //   if (!user || user.role !== 'superadmin') {
+  //     return res
+  //       .status(403)
+  //       .send('Доступ запрещен: требуется роль администратора');
+  //   }
+
+  //   const dbUser = process.env.DB_USER;
+  //   const dbName = process.env.DB_NAME;
+  //   const dbHost = process.env.DB_HOST;
+  //   const dbPassword = process.env.DB_PASSWORD;
+
+  //   const dateStr = new Date().toISOString().split('T')[0];
+  //   const fileName = `si_tracker_backup_${dateStr}.sql`;
+
+  //   const env = { ...process.env, PGPASSWORD: dbPassword };
+
+  //   const command = `pg_dump -h ${dbHost} -U ${dbUser} --clean --if-exists -F p ${dbName}`;
+
+  //   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  //   res.setHeader('Content-Type', 'application/sql');
+
+  //   const dumpProcess = exec(command, { env, maxBuffer: 1024 * 1024 * 50 });
+
+  //   dumpProcess.stdout?.pipe(res);
+
+  //   dumpProcess.on('error', (err) => {
+  //     console.error('Ошибка выполнения pg_dump на сервере:', err);
+  //     if (!res.headersSent) {
+  //       res
+  //         .status(500)
+  //         .send('Не удалось сгенерировать резервную копию базы данных');
+  //     }
+  //   });
+  // });
+
   app.get('/api/admin/backup', (req, res) => {
     const user = (req as any).currentUser;
     if (!user || user.role !== 'superadmin') {
@@ -221,24 +258,30 @@ async function startApolloServer() {
         .send('Доступ запрещен: требуется роль администратора');
     }
 
-    const dbUser = process.env.DB_USER;
-    const dbName = process.env.DB_NAME;
-    const dbHost = process.env.DB_HOST;
-    const dbPassword = process.env.DB_PASSWORD;
+    const dbUser = process.env.DB_USER!;
+    const dbName = process.env.DB_NAME!;
+    const dbHost = process.env.DB_HOST!;
+    const dbPassword = process.env.DB_PASSWORD!;
 
     const dateStr = new Date().toISOString().split('T')[0];
     const fileName = `si_tracker_backup_${dateStr}.sql`;
 
-    const env = { ...process.env, PGPASSWORD: dbPassword };
+    const dumpProcess = spawn(
+      'pg_dump',
+      ['-h', dbHost, '-U', dbUser, '--clean', '--if-exists', '-F', 'p', dbName],
+      { env: { ...process.env, PGPASSWORD: dbPassword } }
+    );
 
-    const command = `pg_dump -h ${dbHost} -U ${dbUser} --clean --if-exists -F p ${dbName}`;
+    // 🟢 Буферизируем stdout целиком
+    const chunks: Buffer[] = [];
+    dumpProcess.stdout.on('data', (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
 
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.setHeader('Content-Type', 'application/sql');
-
-    const dumpProcess = exec(command, { env, maxBuffer: 1024 * 1024 * 50 });
-
-    dumpProcess.stdout?.pipe(res);
+    let errorLog = '';
+    dumpProcess.stderr.on('data', (chunk: Buffer) => {
+      errorLog += chunk.toString();
+    });
 
     dumpProcess.on('error', (err) => {
       console.error('Ошибка выполнения pg_dump на сервере:', err);
@@ -248,7 +291,70 @@ async function startApolloServer() {
           .send('Не удалось сгенерировать резервную копию базы данных');
       }
     });
+
+    dumpProcess.on('close', (code) => {
+      if (code !== 0) {
+        console.error(
+          `pg_dump завершился с ошибкой (код ${code}): ${errorLog}`
+        );
+        if (!res.headersSent) {
+          res.status(500).send(`Ошибка при генерации дампа: ${errorLog}`);
+        }
+        return;
+      }
+
+      // 🟢 Отправляем только если всё успешно
+      const fullDump = Buffer.concat(chunks);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${fileName}"`
+      );
+      res.setHeader('Content-Type', 'application/sql');
+      res.send(fullDump);
+    });
   });
+
+  // app.post('/api/admin/restore', (req, res) => {
+  //   const user = (req as any).currentUser;
+  //   if (!user || user.role !== 'superadmin') {
+  //     return res
+  //       .status(403)
+  //       .send('Доступ запрещен: требуется роль администратора');
+  //   }
+
+  //   const dbUser = process.env.DB_USER;
+  //   const dbName = process.env.DB_NAME;
+  //   const dbHost = process.env.DB_HOST;
+  //   const dbPassword = process.env.DB_PASSWORD;
+
+  //   const env = { ...process.env, PGPASSWORD: dbPassword };
+
+  //   const command = `psql -h ${dbHost} -U ${dbUser} -d ${dbName}`;
+
+  //   const restoreProcess = exec(command, { env });
+
+  //   req.pipe(restoreProcess.stdin!);
+
+  //   let errorLog = '';
+  //   restoreProcess.stderr?.on('data', (chunk) => {
+  //     errorLog += chunk;
+  //   });
+
+  //   restoreProcess.on('close', (code) => {
+  //     if (code === 0) {
+  //       console.log('📦 База данных успешно восстановлена из дампа!');
+  //       res.status(200).send('База данных успешно восстановлена');
+  //     } else {
+  //       console.error('Ошибка psql при восстановлении:', errorLog);
+  //       res.status(500).send(`Ошибка восстановления базы данных: ${errorLog}`);
+  //     }
+  //   });
+
+  //   restoreProcess.on('error', (err) => {
+  //     console.error('Системная ошибка psql:', err);
+  //     res.status(500).send('Критический сбой процесса psql');
+  //   });
+  // });
 
   app.post('/api/admin/restore', (req, res) => {
     const user = (req as any).currentUser;
@@ -258,22 +364,27 @@ async function startApolloServer() {
         .send('Доступ запрещен: требуется роль администратора');
     }
 
-    const dbUser = process.env.DB_USER;
-    const dbName = process.env.DB_NAME;
-    const dbHost = process.env.DB_HOST;
-    const dbPassword = process.env.DB_PASSWORD;
+    const dbUser = process.env.DB_USER!;
+    const dbName = process.env.DB_NAME!;
+    const dbHost = process.env.DB_HOST!;
+    const dbPassword = process.env.DB_PASSWORD!;
 
-    const env = { ...process.env, PGPASSWORD: dbPassword };
+    // 🟢 spawn гарантирует наличие stdin (в отличие от exec)
+    const restoreProcess = spawn(
+      'psql',
+      ['-h', dbHost, '-U', dbUser, '-d', dbName],
+      {
+        env: { ...process.env, PGPASSWORD: dbPassword },
+        stdio: ['pipe', 'pipe', 'pipe'], // 🟢 явно открываем stdin
+      }
+    );
 
-    const command = `psql -h ${dbHost} -U ${dbUser} -d ${dbName}`;
-
-    const restoreProcess = exec(command, { env });
-
-    req.pipe(restoreProcess.stdin!);
+    // 🟢 Стримим тело запроса в psql
+    req.pipe(restoreProcess.stdin);
 
     let errorLog = '';
-    restoreProcess.stderr?.on('data', (chunk) => {
-      errorLog += chunk;
+    restoreProcess.stderr.on('data', (chunk: Buffer) => {
+      errorLog += chunk.toString();
     });
 
     restoreProcess.on('close', (code) => {
