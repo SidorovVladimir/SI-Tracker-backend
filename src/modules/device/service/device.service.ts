@@ -2,7 +2,11 @@ import { and, eq, ilike, inArray, ne, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity, NewDevice } from '../types/device.types';
-import { devices, devicesToBatches } from '../models/device.model';
+import {
+  devices,
+  devicesToBatches,
+  verificationBatches,
+} from '../models/device.model';
 import { scopes, scopesToDevices } from '../../catalog/models/scope.model';
 import { verifications } from '../models/verification.model';
 import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
@@ -37,53 +41,6 @@ export class DeviceService {
     return await this.db.select().from(devices);
   }
 
-  // async getDevicesWithRelations() {
-  //   const data = await this.db.query.devices.findMany({
-  //     with: {
-  //       status: true,
-  //       equipmentType: true,
-  //       productionSite: {
-  //         with: {
-  //           city: true,
-  //           company: true,
-  //         },
-  //       },
-  //       scopesToDevices: {
-  //         with: {
-  //           scope: true,
-  //         },
-  //       },
-  //       primaryStandartsToDevices: {
-  //         with: {
-  //           primaryStandart: true,
-  //         },
-  //       },
-  //       measurementTypesToDevices: {
-  //         with: {
-  //           measurementType: true,
-  //         },
-  //       },
-  //       verifications: {
-  //         with: {
-  //           metrologyControleType: true,
-  //           verificationOrganization: true,
-  //         },
-  //       },
-  //     },
-  //   });
-
-  //   return data.map((device) => ({
-  //     ...device,
-  //     scopes: device.scopesToDevices.map((sd) => sd.scope),
-  //     primaryStandarts: device.primaryStandartsToDevices.map(
-  //       (psd) => psd.primaryStandart
-  //     ),
-  //     measurementTypes: device.measurementTypesToDevices.map(
-  //       (mt) => mt.measurementType
-  //     ),
-  //   }));
-  // }
-
   async getDevicesWithRelations(args: {
     limit: number;
     offset: number;
@@ -91,7 +48,6 @@ export class DeviceService {
   }) {
     const { limit = 25, offset = 0, filter } = args;
 
-    // Формируем условия SQL WHERE на основе пришедших с фронтенда фильтров
     const conditions = [eq(devices.archived, false)];
     // 1. Фильтр по наименованию (Регистронезависимый поиск ILIKE)
     if (filter?.deviceName) {
@@ -217,7 +173,7 @@ export class DeviceService {
             company: { columns: { name: true } },
           },
         },
-        // 🌟 ОПТИМИЗАЦИЯ: База выгребает СТРОГО 1 последнюю поверку прибора!
+        // База выгребает СТРОГО 1 последнюю поверку прибора!
         verifications: {
           // orderBy: (v, { desc }) => [desc(v.validUntil), desc(v.date)],
           orderBy: (v) => [sql`${v.date} DESC NULLS LAST`],
@@ -466,119 +422,6 @@ export class DeviceService {
     return result;
   }
 
-  // async updateDevice(
-  //   id: string,
-  //   input: UpdateDeviceInput,
-  //   userId: string
-  // ): Promise<DeviceEntity> {
-  //   // const oldDataSnapshot = await this.getDevice(id);
-  //   const oldDataSnapshot = await this.getFlatAuditSnapshot(id);
-  //   if (!oldDataSnapshot) throw new Error('Device not found');
-
-  //   const normalize = (val?: string | null) =>
-  //     val?.toLowerCase().trim() ?? null;
-
-  //   const deviceData = {
-  //     name: input.name.toLowerCase(),
-  //     model: input.model.toLowerCase(),
-  //     serialNumber: input.serialNumber.toLowerCase(),
-  //     releaseDate: input.releaseDate,
-  //     grsiNumber: input.grsiNumber?.toLowerCase() ?? null,
-  //     measurementRange: input.measurementRange?.toLowerCase() ?? null,
-  //     accuracy: input.accuracy?.toLowerCase() ?? null,
-  //     inventoryNumber: input.inventoryNumber?.toLowerCase() ?? null,
-  //     receiptDate: input.receiptDate,
-  //     manufacturer: input.manufacturer?.toLowerCase() ?? null,
-  //     verificationInterval: input.verificationInterval,
-  //     archived: input.archived,
-  //     nomenclature: input.nomenclature?.toLowerCase() ?? null,
-  //     comment: input.comment?.toLowerCase() ?? null,
-  //     statusId: input.statusId,
-  //     productionSiteId: input.productionSiteId,
-  //     equipmentTypeId: input.equipmentTypeId ?? null,
-  //     updatedAt: new Date(),
-  //   };
-
-  //   const result = await this.db.transaction(async (tx) => {
-  //     const [updateDevice] = await tx
-  //       .update(devices)
-  //       .set(deviceData)
-  //       .where(eq(devices.id, id))
-  //       .returning();
-
-  //     if (!updateDevice) {
-  //       throw new Error('Failed to update device');
-  //     }
-
-  //     await tx.delete(scopesToDevices).where(eq(scopesToDevices.deviceId, id));
-
-  //     if (input.scopes && input.scopes.length > 0) {
-  //       const valuesToInsert = input.scopes.map((sId) => ({
-  //         deviceId: id,
-  //         scopeId: sId,
-  //       }));
-
-  //       await tx.insert(scopesToDevices).values(valuesToInsert);
-  //     }
-
-  //     await tx
-  //       .delete(primaryStandartsToDevices)
-  //       .where(eq(primaryStandartsToDevices.deviceId, id));
-
-  //     if (input.primaryStandarts && input.primaryStandarts.length > 0) {
-  //       const valuesToInsert = input.primaryStandarts.map((psId) => ({
-  //         deviceId: id,
-  //         primaryStandartId: psId,
-  //       }));
-
-  //       await tx.insert(primaryStandartsToDevices).values(valuesToInsert);
-  //     }
-
-  //     await tx
-  //       .delete(measurementTypesToDevices)
-  //       .where(eq(measurementTypesToDevices.deviceId, id));
-
-  //     if (input.measurementTypes && input.measurementTypes.length > 0) {
-  //       const valuesToInsert = input.measurementTypes.map((mtId) => ({
-  //         deviceId: id,
-  //         measurementTypeId: mtId,
-  //       }));
-
-  //       await tx.insert(measurementTypesToDevices).values(valuesToInsert);
-  //     }
-
-  //     await tx.delete(verifications).where(eq(verifications.deviceId, id));
-
-  //     if (input.verifications && input.verifications.length > 0) {
-  //       const verificationsData = input.verifications.map((verification) => ({
-  //         ...verification,
-  //         metrologyControleTypeId: verification.metrologyControleTypeId ?? null,
-  //         verificationOrganizationId:
-  //           verification.verificationOrganizationId ?? null,
-  //         deviceId: id,
-  //       }));
-
-  //       await tx.insert(verifications).values(verificationsData);
-  //     }
-
-  //     return updateDevice;
-  //   });
-
-  //   const newDataSnapshot = await this.getFlatAuditSnapshot(id);
-
-  //   if (this.auditLogService) {
-  //     // const newDataSnapshot = await this.getDevice(id);
-  //     await this.auditLogService.logAction({
-  //       deviceId: id,
-  //       action: 'update',
-  //       oldData: oldDataSnapshot,
-  //       newData: newDataSnapshot,
-  //       userId,
-  //     });
-  //   }
-
-  //   return result;
-  // }
   async updateDevice(
     id: string,
     input: UpdateDeviceInput,
@@ -657,20 +500,6 @@ export class DeviceService {
         await tx.insert(measurementTypesToDevices).values(valuesToInsert);
       }
 
-      // await tx.delete(verifications).where(eq(verifications.deviceId, id));
-
-      // if (input.verifications && input.verifications.length > 0) {
-      //   const verificationsData = input.verifications.map((verification) => ({
-      //     ...verification,
-      //     metrologyControleTypeId: verification.metrologyControleTypeId ?? null,
-      //     verificationOrganizationId:
-      //       verification.verificationOrganizationId ?? null,
-      //     deviceId: id,
-      //   }));
-
-      //   await tx.insert(verifications).values(verificationsData);
-      // }
-
       const dbVerifications = await tx
         .select({ id: verifications.id })
         .from(verifications)
@@ -723,7 +552,7 @@ export class DeviceService {
       return updateDevice;
     });
 
-    // 🌟 ЗДЕСЬ ТРАНЗАКЦИЯ УСПЕШНО ЗАКРЫЛАСЬ, ВСЕ БЛОКИРОВКИ С БД СНЯТЫ!
+    // ЗДЕСЬ ТРАНЗАКЦИЯ УСПЕШНО ЗАКРЫЛАСЬ, ВСЕ БЛОКИРОВКИ С БД СНЯТЫ!
 
     // 2. ПОСЛЕ транзакции снимаем свежий плоский снимок изменений
     const newDataSnapshot = await this.getFlatAuditSnapshot(id);
@@ -780,8 +609,6 @@ export class DeviceService {
       }
       return true;
     } catch (error) {
-      console.error(`[DeviceService] Failed to delete device ${id}:`, error);
-
       throw new Error(
         'Не удалось удалить устройство. Попробуйте обновить страницу.'
       );
@@ -1066,15 +893,6 @@ export class DeviceService {
   ): Promise<number> {
     let importedCount = 0;
 
-    // const parseMultipleNames = (
-    //   rawString: string | null | undefined
-    // ): string[] => {
-    //   if (!rawString) return [];
-    //   return rawString
-    //     .split(/[,;/|]+/)
-    //     .map((name) => name.trim())
-    //     .filter((name) => name.length > 0);
-    // };
     const parseMultipleNames = (
       rawString: string | null | undefined
     ): string[] => {
@@ -1426,43 +1244,6 @@ export class DeviceService {
     return importedCount;
   }
 
-  // async executeRawSql(sqlQuery: string) {
-  //   try {
-  //     // Выполняем сырой SQL запрос через Drizzle
-  //     const result = await this.db.execute(sql.raw(sqlQuery));
-
-  //     // Разные драйверы (pg, pglite) возвращают структуру чуть-чуть по-разному.
-  //     // Обычно данные лежат в result.rows, а информация о колонках в result.fields или ключах первого объекта.
-  //     const rows = Array.isArray(result.rows)
-  //       ? result.rows
-  //       : Array.isArray(result)
-  //       ? result
-  //       : [];
-
-  //     // Динамически вытаскиваем названия колонок из первого полученного объекта
-  //     const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
-
-  //     return {
-  //       success: true,
-  //       columns,
-  //       rows,
-  //       affectedRows: result.rowCount ?? rows.length,
-  //       errorMessage: null,
-  //     };
-  //   } catch (error: any) {
-  //     // Перехватываем ошибку базы данных (например, неверный синтаксис), чтобы сервер не упал
-  //     console.error('Ошибка при выполнении сырого SQL:', error);
-  //     return {
-  //       success: false,
-  //       columns: [],
-  //       rows: [],
-  //       affectedRows: 0,
-  //       errorMessage:
-  //         error.message ||
-  //         'Критическая ошибка базы данных при выполнении запроса',
-  //     };
-  //   }
-  // }
   async executeRawSql(sqlQuery: string) {
     try {
       // Выполняем сырой SQL запрос через Drizzle
@@ -1493,7 +1274,6 @@ export class DeviceService {
         errorMessage: null,
       };
     } catch (error: any) {
-      console.error('Ошибка при выполнении сырого SQL:', error);
       return {
         success: false,
         columns: [],

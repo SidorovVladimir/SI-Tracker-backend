@@ -10,12 +10,30 @@ import { AuthenticationError } from '../../../utils/errors';
 export class UserService {
   constructor(private db: DrizzleDB) {}
   async getUsers(): Promise<User[]> {
-    return await this.db.select().from(users);
+    return await this.db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        role: users.role,
+        email: users.email,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+      })
+      .from(users);
   }
 
   async getUser(userId: string): Promise<User> {
     const result = await this.db
-      .select()
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        role: users.role,
+        email: users.email,
+        createdAt: users.createdAt,
+        updatedAt: users.updatedAt,
+      })
       .from(users)
       .where(eq(users.id, userId))
       .limit(1);

@@ -13,7 +13,7 @@ import { ImportDevicesExcelInputSchema } from '../dto/ImportDeviceItemDto';
 import { GraphQLScalarType, Kind } from 'graphql';
 
 const JSONScalar = new GraphQLScalarType({
-  name: 'JSON', // Внутри схемы GraphQL тип по-прежнему будет называться строго "JSON"
+  name: 'JSON',
   description:
     'Кастомный скаляр для передачи произвольных JSON-объектов и массивов',
   serialize(value) {
@@ -43,15 +43,6 @@ export const Query = {
     return await new DeviceService(db).getDevices();
   },
 
-  //   devicesWithRelations: async (
-  //     _: unknown,
-  //     __: unknown,
-  //     { db, currentUser }: Context
-  //   ) => {
-  //     if (!currentUser) throw new Error('Не авторизован');
-
-  //     return await new DeviceService(db).getDevicesWithRelations();
-  //   },
   device: async (
     _: unknown,
     { id }: { id: string },
@@ -100,8 +91,8 @@ export const Query = {
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role === 'user') {
-      throw new Error('Доступ запрещен: требуются права администратора');
+    if (currentUser.role !== 'superadmin') {
+      throw new Error('Доступ запрещен: требуются права суперадминистратора');
     }
 
     const deviceService = new DeviceService(db);
@@ -270,8 +261,8 @@ export const Mutation = {
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
-    if (currentUser.role === 'user') {
-      throw new Error('Доступ запрещен: требуются права администратора');
+    if (currentUser.role !== 'superadmin') {
+      throw new Error('Доступ запрещен: требуются права суперадминистратора');
     }
 
     try {

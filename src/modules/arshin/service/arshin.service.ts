@@ -21,14 +21,17 @@ export class ArshinService {
     const cleanGrsi = grsiNumber.trim();
     const cleanSerial = serialNumber.trim();
 
-    // Строим точный URL согласно разделу 3.1.1 (поиск по mit_number и mi_number)
     const url = `https://fgis.gost.ru/fundmetrology/eapi/vri/?mit_number=${encodeURIComponent(
       cleanGrsi
     )}&mi_number=${encodeURIComponent(cleanSerial)}&rows=1`;
+
     for (let attempt = 1; attempt <= retries; attempt++) {
+      let timeoutId: NodeJS.Timeout | null = null; // Объявляем переменную выше, чтобы она была доступна везде
+
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 7000);
+        // Запускаем таймер принудительной отмены
+        timeoutId = setTimeout(() => controller.abort(), 7000);
 
         const response = await fetch(url, {
           method: 'GET',
@@ -51,7 +54,6 @@ export class ArshinService {
         const parsed = ArshinVriResponseSchema.safeParse(rawData);
 
         if (!parsed.success) {
-          console.error('Ошибка валидации схемы Аршина:', parsed.error);
           throw new Error(
             'Ответ ФГИС Аршин не соответствует ожидаемой структуре.'
           );
@@ -68,7 +70,6 @@ export class ArshinService {
           return null;
         }
 
-        // Обрабатываем номер документа. Если там "Нет данных", используем системный vri_id
         const finalDocNum =
           latestVri.result_docnum && latestVri.result_docnum !== 'Нет данных'
             ? latestVri.result_docnum
@@ -87,11 +88,6 @@ export class ArshinService {
           error.name === 'AbortError' ||
           error.code === 'UND_ERR_CONNECT_TIMEOUT';
 
-        console.warn(
-          `⚠️ Попытка ${attempt} не удалась. Причина: ${
-            error.message || 'Таймаут соединения'
-          }`
-        );
         if (attempt === retries) {
           if (isTimeout) {
             throw new Error(
@@ -102,6 +98,11 @@ export class ArshinService {
         }
 
         await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } finally {
+        // 🎯 ГАРАНТИРОВАННАЯ ОЧИСТКА: Удаляем таймер из памяти Node.js
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
       }
     }
     return null;
