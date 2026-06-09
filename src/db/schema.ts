@@ -12,3 +12,4 @@ export * from '../modules/location/models/productionSites.model';
 export * from '../modules/user/user.model';
 export * from '../modules/catalog/models/verificationOrganization.model';
 export * from '../modules/audit/auditLog.model';
+export * from '../modules/chat/models/message.model';

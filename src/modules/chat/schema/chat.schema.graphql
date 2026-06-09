@@ -1,0 +1,36 @@
+type ChatMessage {
+  id: ID!
+  senderId: ID!
+  recipientId: ID!
+  text: String!
+  isRead: Boolean!
+  createdAt: String!
+  updatedAt: String!
+}
+
+# Специальный тип для списка диалогов (чтобы видеть, с кем переписывались)
+type ChatDialog {
+  companionId: ID!
+  companionName: String!
+  lastMessageText: String!
+  unreadCount: Int!
+  lastMessageCreatedAt: String!
+}
+
+type Query {
+  # Получить историю сообщений с конкретным сотрудником (с пагинацией)
+  getChatHistory(recipientId: ID!, limit: Int!, offset: Int!): [ChatMessage!]!
+
+  # Получить список активных диалогов текущего пользователя (главный экран чата)
+  getChatDialogs: [ChatDialog!]!
+
+  # Быстрый счетчик суммарного количества всех непрочитанных сообщений (для Badge на колокольчике)
+  getTotalUnreadCount: Int!
+
+  getChatUsers: [User!]!
+}
+
+type Mutation {
+  # Отметить все сообщения от конкретного пользователя как прочитанные
+  markAsRead(senderId: ID!): Boolean!
+}

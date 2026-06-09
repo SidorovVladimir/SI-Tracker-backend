@@ -12,10 +12,26 @@ import { resolvers } from './graphql/resolvers';
 import { createContext } from './context';
 import { exec } from 'child_process';
 import { authMiddleware } from './middleware/auth';
+import { Server } from 'socket.io';
+import { verifyToken } from './utils/auth';
+import { db } from './db/client';
+import { chatMessages } from './modules/chat/models/message.model';
+import { initChatCleanerCron } from './modules/chat/сron/cleanChat';
+import { ChatService } from './modules/chat/service/chat.service';
+
+export let io: Server;
 
 async function startApolloServer() {
   const app = express();
   const httpServer = createServer(app);
+
+  io = new Server(httpServer, {
+    cors: {
+      origin: true,
+      credentials: true,
+    },
+    path: '/socket.io/',
+  });
 
   const server = new ApolloServer({
     typeDefs,
@@ -52,6 +68,150 @@ async function startApolloServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
   app.use(authMiddleware);
+
+  io.use(async (socket, next) => {
+    try {
+      const cookieHeader = socket.handshake.headers.cookie;
+      if (!cookieHeader) {
+        return next(new Error('Authentication error: Cookies missing'));
+      }
+
+      // 1. Вытаскиваем именно ваш auth_token из строки кук
+      const tokenCookie = cookieHeader
+        .split('; ')
+        .find((row) => row.startsWith('auth_token='));
+
+      if (!tokenCookie) {
+        return next(new Error('Authentication error: Token missing'));
+      }
+
+      const token = tokenCookie.split('=')[1];
+      if (!token) {
+        return next(new Error('Authentication error: Token empty'));
+      }
+
+      // 2. Валидируем токен вашей готовой функцией verifyToken
+      const payload = verifyToken(token);
+      if (!payload || !payload.id) {
+        return next(new Error('Authentication error: Invalid token'));
+      }
+
+      // 3. Проверяем существование пользователя в базе данных через Drizzle
+      const userExists = await db.query.users.findFirst({
+        where: (users, { eq }) => eq(users.id, payload.id),
+      });
+
+      if (!userExists) {
+        return next(new Error('Authentication error: User not found'));
+      }
+
+      // 4. Складываем данные пользователя в контекст сокета (как в Express клали в req.currentUser)
+      socket.data.user = {
+        id: userExists.id,
+        firstName: userExists.firstName,
+        lastName: userExists.lastName,
+        email: userExists.email,
+        role: userExists.role,
+      };
+
+      next(); // Всё отлично, пропускаем пользователя к соединению
+    } catch (err) {
+      console.error('Ошибка авторизации сокета:', err);
+      return next(new Error('Authentication error: Internal server error'));
+    }
+  });
+
+  const activeRooms = new Map<string, string | null>();
+
+  // 🎯 Обработка сокет-соединений
+  io.on('connection', (socket) => {
+    const user = socket.data.user;
+    if (!user) return socket.disconnect();
+
+    const userId = user.id.toLowerCase().trim();
+
+    // Помещаем сокет сотрудника в его персональную комнату по UUID
+    socket.join(userId);
+
+    activeRooms.set(socket.id, null); // При подключении окон открытых нет
+    console.log(
+      `📡 Метролог [${user.firstName} ${user.lastName}] успешно подключился. Socket ID: ${socket.id}`
+    );
+
+    socket.on('joinChatRoom', (data: { companionId: string | null }) => {
+      if (data.companionId) {
+        activeRooms.set(socket.id, data.companionId.toLowerCase().trim());
+        console.log(
+          `👤 Метролог [${user.firstName}] открыл чат с ${data.companionId}`
+        );
+      } else {
+        activeRooms.set(socket.id, null);
+      }
+    });
+
+    // Слушатель чата между сотрудниками
+    socket.on(
+      'sendMessage',
+      async (data: { recipientId: string; text: string }) => {
+        const { recipientId, text } = data;
+        const cleanRecipientId = recipientId.toLowerCase().trim();
+
+        try {
+          // 1. Сохраняем сообщение в базу данных PostgreSQL
+          const [insertedMessage] = await db
+            .insert(chatMessages)
+            .values({
+              senderId: userId,
+              recipientId: cleanRecipientId,
+              text: text,
+              isRead: false,
+            })
+            .returning();
+
+          if (!insertedMessage) return;
+
+          // 2. Мгновенно пересылаем сообщение получателю в его сокет-комнату
+          io.to(cleanRecipientId).emit('newMessage', insertedMessage);
+
+          // 3. Отправляем подтверждение самому отправителю (чтобы сообщение появилось на его экране)
+          socket.emit('messageSentConfirmation', insertedMessage);
+
+          // 3. 🎯 УМНЫЙ ПОДСЧЕТ СЧЕТЧИКОВ НА БЭКЕНДЕ:
+          // Ищем сокеты ПОЛУЧАТЕЛЯ и проверяем, открыт ли у него чат с ОТПРАВИТЕЛЕМ прямо сейчас
+          const recipientSockets = await io.in(cleanRecipientId).fetchSockets();
+          const chatService = new ChatService(db);
+
+          let shouldSendUpdate = true;
+
+          for (const rSocket of recipientSockets) {
+            const currentOpenChatInBrowser = activeRooms.get(rSocket.id);
+            // Если у получателя в браузере прямо сейчас открыт чат со мной (отправителем)
+            if (currentOpenChatInBrowser === userId) {
+              shouldSendUpdate = false; // Блокируем рассылку счетчика, он в активном диалоге!
+              break;
+            }
+          }
+
+          // Шлем цифру получателю ТОЛЬКО если у него этот чат СВЕРНУТ или он на другой странице
+          if (shouldSendUpdate) {
+            const recipientUnreadCount = await chatService.getTotalUnreadCount(
+              cleanRecipientId
+            );
+            io.to(cleanRecipientId).emit('updateUnreadCount', {
+              count: recipientUnreadCount,
+            });
+          }
+        } catch (error) {
+          console.error(error);
+        }
+      }
+    );
+
+    socket.on('disconnect', () => {
+      activeRooms.delete(socket.id); // Чистим память при отключении
+      console.log(`🔌 Метролог [${user.firstName}] отключился.`);
+    });
+  });
 
   app.get('/api/admin/backup', (req, res) => {
     const user = (req as any).currentUser;
@@ -144,6 +304,9 @@ async function startApolloServer() {
     httpServer.listen({ port: PORT }, resolve)
   );
   console.log(`🚀 Server ready at http://localhost:${PORT}/graphql`);
+  console.log(`📡 WebSockets ready at ws://localhost:${PORT}`);
+  initChatCleanerCron();
+  console.log(`⏰ Фоновые задачи (Cron) успешно инициализированы.`);
 }
 
 startApolloServer().catch(console.error);

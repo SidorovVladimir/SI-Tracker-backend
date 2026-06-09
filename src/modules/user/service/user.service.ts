@@ -6,6 +6,7 @@ import type { User, NewUser } from '../user.types';
 import { CreateUserInput } from '../dto/CreateUserDto';
 import { UpdateUserInput } from '../dto/UpdateUserDto';
 import { AuthenticationError } from '../../../utils/errors';
+import { io } from '../../..';
 
 export class UserService {
   constructor(private db: DrizzleDB) {}
@@ -78,6 +79,17 @@ export class UserService {
       throw new Error('Failed to create user');
     }
     const { passwordHash, ...publicUser } = user;
+
+    if (user) {
+      //   io.emit('userCreated', {
+      //     id: user.id,
+      //     firstName: user.firstName,
+      //     lastName: user.lastName,
+      //     email: user.email,
+      //     role: user.role,
+      //   });
+      io.emit('userCreated');
+    }
     return publicUser;
   }
 

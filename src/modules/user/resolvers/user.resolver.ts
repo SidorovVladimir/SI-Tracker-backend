@@ -19,6 +19,7 @@ export const Query = {
     }
     return await new UserService(db).getUsers();
   },
+
   user: async (
     _: unknown,
     { id }: { id: string },

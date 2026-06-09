@@ -1,0 +1,25 @@
+type SystemNotification {
+  id: ID!
+  userId: ID
+  title: String!
+  message: String!
+  type: String!
+  isRead: Boolean!
+  createdAt: String!
+}
+
+type Query {
+  # Получить последние 20 системных уведомлений пользователя
+  getSystemNotifications: [SystemNotification!]!
+
+  # Точное количество непрочитанных СИСТЕМНЫХ алертов (для Badge на колокольчике)
+  getUnreadNotificationsCount: Int!
+}
+
+type Mutation {
+  # Отметить конкретное уведомление прочитанным
+  markNotificationAsRead(id: ID!): Boolean!
+
+  # Отметить ВСЕ уведомления текущего пользователя прочитанными
+  markAllNotificationsAsRead: Boolean!
+}
