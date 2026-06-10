@@ -2,6 +2,7 @@ import { and, eq, sql, desc } from 'drizzle-orm';
 import { DrizzleDB } from '../../db/client';
 import { deviceAuditLogs } from './auditLog.model';
 import { users } from '../user/user.model';
+import { NotificationService } from '../notification/service/notification.service';
 
 interface LogActionArgs {
   deviceId: string;
@@ -18,7 +19,10 @@ interface LogActionArgs {
 }
 
 export class DeviceAuditLogService {
-  constructor(private db: DrizzleDB) {}
+  private notificationService: NotificationService;
+  constructor(private db: DrizzleDB) {
+    this.notificationService = new NotificationService(this.db);
+  }
 
   async logAction({
     deviceId,
@@ -34,27 +38,43 @@ export class DeviceAuditLogService {
         : `с ID ${deviceId}`;
 
       let description = '';
+      let alertTitle = '⚙️ Действие с оборудованием';
+      let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
+
       if (action === 'create')
         description = `Добавлен прибор в систему: ${deviceIdent}`;
+      alertTitle = '📦 Новый прибор';
+      alertType = 'success';
+
       if (action === 'delete')
         description = `Удален прибор из системы: ${deviceIdent}`;
+      alertTitle = '🗑️ Удаление оборудования';
+      alertType = 'warning';
       if (action === 'update')
         description = `Обновлены данные прибора: ${deviceIdent}`;
+      alertTitle = '📝 Изменение паспорта СИ';
+      alertType = 'info';
 
       if (action === 'assign_batch') {
         const batchNumber = newData?.batchNumber
           ? ` №${newData.batchNumber}`
           : '';
         description = `Прибор ${deviceIdent} запланирован на отправку и добавлен в партию поверок${batchNumber}`;
+        alertTitle = '🚚 Планирование графиков';
+        alertType = 'info';
       }
       if (action === 'remove_batch') {
         description = `Прибор ${deviceIdent} исключен из партии отправки и вернулся в автоматический пул`;
+        alertTitle = '🔄 Сброс графика отправки';
+        alertType = 'warning';
       }
       if (action === 'verify') {
         const docNum = newData?.protocolNumber
           ? ` (Свидетельство/Протокол: ${newData.protocolNumber})`
           : '';
         description = `Успешно зафиксированы результаты контроля прибора ${deviceIdent}. Статус просрочки снят${docNum}`;
+        alertTitle = '🔬 Сведения ФГИС Аршин';
+        alertType = 'success';
       }
 
       await this.db.insert(deviceAuditLogs).values({
@@ -64,6 +84,13 @@ export class DeviceAuditLogService {
         description,
         oldData: oldData ?? null,
         newData: newData ?? null,
+      });
+
+      await this.notificationService.createNotification({
+        userId: null,
+        title: alertTitle,
+        message: description,
+        type: alertType,
       });
     } catch (error) {
       console.error('Ошибка при записи аудит-лога прибора:', error);

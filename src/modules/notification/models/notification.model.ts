@@ -10,36 +10,62 @@ import {
 import { relations } from 'drizzle-orm';
 import { users } from '../../user/user.model';
 
-export const systemNotifications = pgTable(
-  'system_notifications',
+export const systemNotifications = pgTable('system_notifications', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = для всех
+  title: varchar('title', { length: 255 }).notNull(),
+  message: text('message').notNull(),
+  type: varchar('type', { length: 50 }).notNull().default('info'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const userNotificationStatuses = pgTable(
+  'user_notification_statuses',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-
-    // Кому предназначено уведомление. Если NULL — видят ВСЕ пользователи (глобальное)
-    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
-
-    title: varchar('title', { length: 255 }).notNull(), // Заголовок (напр. "Бэкап базы данных")
-    message: text('message').notNull(), // Текст (напр. "Резервная копия успешно сгенерирована")
-
-    // Тип для иконок: 'info' | 'success' | 'warning' | 'error'
-    type: varchar('type', { length: 50 }).notNull().default('info'),
-
-    isRead: boolean('is_read').notNull().default(false),
-
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    notificationId: uuid('notification_id')
+      .notNull()
+      .references(() => systemNotifications.id, { onDelete: 'cascade' }),
+    isRead: boolean('is_read').notNull().default(true), // Если запись тут есть, значит прочитано
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => ({
-    userIdIdx: index('sn_user_id_idx').on(table.userId),
-    userReadIdx: index('sn_user_read_idx').on(table.userId, table.isRead),
+    userNotifIdx: index('uns_user_notif_idx').on(
+      table.userId,
+      table.notificationId
+    ),
   })
 );
 
 export const systemNotificationsRelations = relations(
   systemNotifications,
-  ({ one }) => ({
+  ({ one, many }) => ({
+    // Сохраняем вашу старую связь: кто создал/кому принадлежит уведомление
     user: one(users, {
       fields: [systemNotifications.userId],
       references: [users.id],
+    }),
+    // Добавляем связь: у одного уведомления может быть много статусов прочтения разными людьми
+    statuses: many(userNotificationStatuses),
+  })
+);
+
+// 2.НОВОЕ: Отношения для промежуточной таблицы статусов прочтения
+export const userNotificationStatusesRelations = relations(
+  userNotificationStatuses,
+  ({ one }) => ({
+    // Связь статуса с конкретным пользователем, который прочитал
+    user: one(users, {
+      fields: [userNotificationStatuses.userId],
+      references: [users.id],
+    }),
+    // Связь статуса с самим прочитанным уведомлением
+    notification: one(systemNotifications, {
+      fields: [userNotificationStatuses.notificationId],
+      references: [systemNotifications.id],
     }),
   })
 );

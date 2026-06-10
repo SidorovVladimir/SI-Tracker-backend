@@ -104,7 +104,7 @@ export class ChatService {
     if (excludedIds.length > 0) {
       queryCondition = and(
         queryCondition,
-        notInArray(users.id, excludedIds) // 🎯 ИСКЛЮЧАЕМ ТЕХ, С КЕМ УЖЕ ЕСТЬ ЧАТ
+        notInArray(users.id, excludedIds) // ИСКЛЮЧАЕМ ТЕХ, С КЕМ УЖЕ ЕСТЬ ЧАТ
       ) as any;
     }
 

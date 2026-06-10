@@ -10,7 +10,7 @@ import cookieParser from 'cookie-parser';
 import { typeDefs } from './graphql/typeDefs';
 import { resolvers } from './graphql/resolvers';
 import { createContext } from './context';
-import { exec, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import { authMiddleware } from './middleware/auth';
 import { Server } from 'socket.io';
 import { verifyToken } from './utils/auth';
@@ -18,6 +18,7 @@ import { db } from './db/client';
 import { chatMessages } from './modules/chat/models/message.model';
 import { initChatCleanerCron } from './modules/chat/сron/cleanChat';
 import { ChatService } from './modules/chat/service/chat.service';
+import { initNotificationCleanerCron } from './modules/notification/cron/cleanNotifications';
 
 export let io: Server;
 
@@ -50,20 +51,6 @@ async function startApolloServer() {
       credentials: true,
     })
   );
-
-  // app.use(
-  //   '/graphql',
-  //   cors<cors.CorsRequest>({
-  //     // origin: ['http://localhost:5173', 'http://localhost:4173'],
-  //     origin: true,
-  //     credentials: true,
-  //   }),
-  //   express.json({ limit: '50mb' }),
-  //   cookieParser(),
-  //   expressMiddleware(server, {
-  //     context: createContext,
-  //   })
-  // );
 
   app.use(express.json({ limit: '50mb' }));
   app.use(cookieParser());
@@ -122,8 +109,24 @@ async function startApolloServer() {
   });
 
   const activeRooms = new Map<string, string | null>();
+  // const onlineUsers = new Set<string>();
 
-  // 🎯 Обработка сокет-соединений
+  const onlineSockets = new Map<string, { userId: string; isIdle: boolean }>();
+
+  const broadcastOnlineStatus = () => {
+    const usersMap = new Map<string, { userId: string; isIdle: boolean }>();
+
+    for (const info of onlineSockets.values()) {
+      const existing = usersMap.get(info.userId);
+      // Если хотя бы одна вкладка активна (isIdle === false), пользователь в сети!
+      if (!existing || !info.isIdle) {
+        usersMap.set(info.userId, info);
+      }
+    }
+    io.emit('updateOnlineStatus', Array.from(usersMap.values()));
+  };
+
+  //  Обработка сокет-соединений
   io.on('connection', (socket) => {
     const user = socket.data.user;
     if (!user) return socket.disconnect();
@@ -135,14 +138,27 @@ async function startApolloServer() {
 
     activeRooms.set(socket.id, null); // При подключении окон открытых нет
     console.log(
-      `📡 Метролог [${user.firstName} ${user.lastName}] успешно подключился. Socket ID: ${socket.id}`
+      `Сотрудник [${user.firstName} ${user.lastName}] успешно подключился. Socket ID: ${socket.id}`
     );
+
+    onlineSockets.set(socket.id, { userId, isIdle: false });
+    broadcastOnlineStatus();
+    console.log(`Сотрудник [${user.firstName}] зашел в систему.`);
+
+    // 2. НОВЫЙ ОБРАБОТЧИК: Ловим смену фонового режима от вашего useEffect!
+    socket.on('setUserIdleStatus', (data: { isIdle: boolean }) => {
+      const currentInfo = onlineSockets.get(socket.id);
+      if (currentInfo) {
+        currentInfo.isIdle = data.isIdle;
+        broadcastOnlineStatus();
+      }
+    });
 
     socket.on('joinChatRoom', (data: { companionId: string | null }) => {
       if (data.companionId) {
         activeRooms.set(socket.id, data.companionId.toLowerCase().trim());
         console.log(
-          `👤 Метролог [${user.firstName}] открыл чат с ${data.companionId}`
+          ` Сотрудник [${user.firstName}] открыл чат с ${data.companionId}`
         );
       } else {
         activeRooms.set(socket.id, null);
@@ -176,18 +192,20 @@ async function startApolloServer() {
           // 3. Отправляем подтверждение самому отправителю (чтобы сообщение появилось на его экране)
           socket.emit('messageSentConfirmation', insertedMessage);
 
-          // 3. 🎯 УМНЫЙ ПОДСЧЕТ СЧЕТЧИКОВ НА БЭКЕНДЕ:
+          // 3.УМНЫЙ ПОДСЧЕТ СЧЕТЧИКОВ НА БЭКЕНДЕ:
           // Ищем сокеты ПОЛУЧАТЕЛЯ и проверяем, открыт ли у него чат с ОТПРАВИТЕЛЕМ прямо сейчас
           const recipientSockets = await io.in(cleanRecipientId).fetchSockets();
           const chatService = new ChatService(db);
 
           let shouldSendUpdate = true;
+          let isRecipientLookingAtMe = false;
 
           for (const rSocket of recipientSockets) {
             const currentOpenChatInBrowser = activeRooms.get(rSocket.id);
             // Если у получателя в браузере прямо сейчас открыт чат со мной (отправителем)
             if (currentOpenChatInBrowser === userId) {
               shouldSendUpdate = false; // Блокируем рассылку счетчика, он в активном диалоге!
+              isRecipientLookingAtMe = true;
               break;
             }
           }
@@ -198,7 +216,8 @@ async function startApolloServer() {
               cleanRecipientId
             );
             io.to(cleanRecipientId).emit('updateUnreadCount', {
-              count: recipientUnreadCount,
+              count: isRecipientLookingAtMe ? 0 : recipientUnreadCount,
+              forceRefetchDialogs: true,
             });
           }
         } catch (error) {
@@ -207,48 +226,41 @@ async function startApolloServer() {
       }
     );
 
-    socket.on('disconnect', () => {
-      activeRooms.delete(socket.id); // Чистим память при отключении
-      console.log(`🔌 Метролог [${user.firstName}] отключился.`);
+    socket.on(
+      'notifyMessagesRead',
+      (data: { readerId: string; authorId: string }) => {
+        const cleanAuthorId = data.authorId.toLowerCase().trim();
+        const cleanReaderId = data.readerId.toLowerCase().trim();
+        io.to(cleanAuthorId).emit('messagesMarkedAsRead', {
+          senderId: cleanAuthorId,
+          recipientId: cleanReaderId,
+        });
+      }
+    );
+
+    // onlineUsers.add(userId);
+    // io.emit('updateOnlineStatus', Array.from(onlineUsers));
+    // console.log(`🟢 Сотрудник [${user.firstName}] зашел в систему.`);
+
+    socket.on('disconnect', async () => {
+      // const userSockets = await io.in(userId).fetchSockets();
+      // if (userSockets.length === 0) {
+      //   activeRooms.delete(socket.id);
+      //   onlineSockets.delete(socket.id);
+      //   broadcastOnlineStatus();
+      //   console.log(`🔴 Вкладка сотрудника [${user.firstName}] закрыта.`);
+      //   // onlineUsers.delete(userId);
+      //   // io.emit('updateOnlineStatus', Array.from(onlineUsers));
+      //   // console.log(
+      //   //   `🔴 Сотрудник [${user.firstName}] отключился и вышел из системы.`
+      //   // );
+      // }
+      activeRooms.delete(socket.id);
+      onlineSockets.delete(socket.id);
+      broadcastOnlineStatus();
+      console.log(`Вкладка сотрудника [${user.firstName}] закрыта.`);
     });
   });
-
-  // app.get('/api/admin/backup', (req, res) => {
-  //   const user = (req as any).currentUser;
-  //   if (!user || user.role !== 'superadmin') {
-  //     return res
-  //       .status(403)
-  //       .send('Доступ запрещен: требуется роль администратора');
-  //   }
-
-  //   const dbUser = process.env.DB_USER;
-  //   const dbName = process.env.DB_NAME;
-  //   const dbHost = process.env.DB_HOST;
-  //   const dbPassword = process.env.DB_PASSWORD;
-
-  //   const dateStr = new Date().toISOString().split('T')[0];
-  //   const fileName = `si_tracker_backup_${dateStr}.sql`;
-
-  //   const env = { ...process.env, PGPASSWORD: dbPassword };
-
-  //   const command = `pg_dump -h ${dbHost} -U ${dbUser} --clean --if-exists -F p ${dbName}`;
-
-  //   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-  //   res.setHeader('Content-Type', 'application/sql');
-
-  //   const dumpProcess = exec(command, { env, maxBuffer: 1024 * 1024 * 50 });
-
-  //   dumpProcess.stdout?.pipe(res);
-
-  //   dumpProcess.on('error', (err) => {
-  //     console.error('Ошибка выполнения pg_dump на сервере:', err);
-  //     if (!res.headersSent) {
-  //       res
-  //         .status(500)
-  //         .send('Не удалось сгенерировать резервную копию базы данных');
-  //     }
-  //   });
-  // });
 
   app.get('/api/admin/backup', (req, res) => {
     const user = (req as any).currentUser;
@@ -272,7 +284,7 @@ async function startApolloServer() {
       { env: { ...process.env, PGPASSWORD: dbPassword } }
     );
 
-    // 🟢 Буферизируем stdout целиком
+    // Буферизируем stdout целиком
     const chunks: Buffer[] = [];
     dumpProcess.stdout.on('data', (chunk: Buffer) => {
       chunks.push(chunk);
@@ -303,7 +315,7 @@ async function startApolloServer() {
         return;
       }
 
-      // 🟢 Отправляем только если всё успешно
+      // Отправляем только если всё успешно
       const fullDump = Buffer.concat(chunks);
       res.setHeader(
         'Content-Disposition',
@@ -313,48 +325,6 @@ async function startApolloServer() {
       res.send(fullDump);
     });
   });
-
-  // app.post('/api/admin/restore', (req, res) => {
-  //   const user = (req as any).currentUser;
-  //   if (!user || user.role !== 'superadmin') {
-  //     return res
-  //       .status(403)
-  //       .send('Доступ запрещен: требуется роль администратора');
-  //   }
-
-  //   const dbUser = process.env.DB_USER;
-  //   const dbName = process.env.DB_NAME;
-  //   const dbHost = process.env.DB_HOST;
-  //   const dbPassword = process.env.DB_PASSWORD;
-
-  //   const env = { ...process.env, PGPASSWORD: dbPassword };
-
-  //   const command = `psql -h ${dbHost} -U ${dbUser} -d ${dbName}`;
-
-  //   const restoreProcess = exec(command, { env });
-
-  //   req.pipe(restoreProcess.stdin!);
-
-  //   let errorLog = '';
-  //   restoreProcess.stderr?.on('data', (chunk) => {
-  //     errorLog += chunk;
-  //   });
-
-  //   restoreProcess.on('close', (code) => {
-  //     if (code === 0) {
-  //       console.log('📦 База данных успешно восстановлена из дампа!');
-  //       res.status(200).send('База данных успешно восстановлена');
-  //     } else {
-  //       console.error('Ошибка psql при восстановлении:', errorLog);
-  //       res.status(500).send(`Ошибка восстановления базы данных: ${errorLog}`);
-  //     }
-  //   });
-
-  //   restoreProcess.on('error', (err) => {
-  //     console.error('Системная ошибка psql:', err);
-  //     res.status(500).send('Критический сбой процесса psql');
-  //   });
-  // });
 
   app.post('/api/admin/restore', (req, res) => {
     const user = (req as any).currentUser;
@@ -369,7 +339,6 @@ async function startApolloServer() {
     const dbHost = process.env.DB_HOST!;
     const dbPassword = process.env.DB_PASSWORD!;
 
-    // 🟢 spawn гарантирует наличие stdin (в отличие от exec)
     const restoreProcess = spawn(
       'psql',
       ['-h', dbHost, '-U', dbUser, '-d', dbName],
@@ -379,7 +348,7 @@ async function startApolloServer() {
       }
     );
 
-    // 🟢 Стримим тело запроса в psql
+    // Стримим тело запроса в psql
     req.pipe(restoreProcess.stdin);
 
     let errorLog = '';
@@ -389,7 +358,7 @@ async function startApolloServer() {
 
     restoreProcess.on('close', (code) => {
       if (code === 0) {
-        console.log('📦 База данных успешно восстановлена из дампа!');
+        console.log('База данных успешно восстановлена из дампа!');
         res.status(200).send('База данных успешно восстановлена');
       } else {
         console.error('Ошибка psql при восстановлении:', errorLog);
@@ -414,10 +383,11 @@ async function startApolloServer() {
   await new Promise<void>((resolve) =>
     httpServer.listen({ port: PORT }, resolve)
   );
-  console.log(`🚀 Server ready at http://localhost:${PORT}/graphql`);
-  console.log(`📡 WebSockets ready at ws://localhost:${PORT}`);
+  console.log(`Server ready at http://localhost:${PORT}/graphql`);
+  console.log(`WebSockets ready at ws://localhost:${PORT}`);
   initChatCleanerCron();
-  console.log(`⏰ Фоновые задачи (Cron) успешно инициализированы.`);
+  initNotificationCleanerCron();
+  console.log(`Фоновые задачи (Cron) успешно инициализированы.`);
 }
 
 startApolloServer().catch(console.error);

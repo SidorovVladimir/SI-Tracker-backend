@@ -5,9 +5,7 @@ import { chatMessages } from '../models/message.model';
 
 export const initChatCleanerCron = () => {
   cron.schedule('0 3 * * *', async () => {
-    console.log(
-      '🧹 [CRON] Запуск регламентной очистки старых сообщений чата...'
-    );
+    console.log('[CRON] Запуск регламентной очистки старых сообщений чата...');
     try {
       // 1. Вычисляем временную отсечку (текущая дата минус 90 дней)
       const expiryDate = new Date();
@@ -18,10 +16,10 @@ export const initChatCleanerCron = () => {
         .delete(chatMessages)
         .where(lt(chatMessages.createdAt, expiryDate));
 
-      console.log(`✅ [CRON] Регламентная очистка чата успешно завершена.`);
+      console.log(`[CRON] Регламентная очистка чата успешно завершена.`);
     } catch (error) {
       console.error(
-        '❌ [CRON] Критическая ошибка при автоматической очистке чата:',
+        '[CRON] Критическая ошибка при автоматической очистке чата:',
         error
       );
     }

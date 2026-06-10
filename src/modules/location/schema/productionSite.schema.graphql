@@ -1,6 +1,8 @@
 type ProductionSite {
   id: ID!
   name: String!
+  companyId: ID!
+  cityId: ID!
   createdAt: String!
   updatedAt: String!
 }
