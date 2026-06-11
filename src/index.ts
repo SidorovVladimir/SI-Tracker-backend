@@ -103,7 +103,7 @@ async function startApolloServer() {
 
       next(); // Всё отлично, пропускаем пользователя к соединению
     } catch (err) {
-      console.error('Ошибка авторизации сокета:', err);
+      // console.error('Ошибка авторизации сокета:', err);
       return next(new Error('Authentication error: Internal server error'));
     }
   });
@@ -137,13 +137,13 @@ async function startApolloServer() {
     socket.join(userId);
 
     activeRooms.set(socket.id, null); // При подключении окон открытых нет
-    console.log(
-      `Сотрудник [${user.firstName} ${user.lastName}] успешно подключился. Socket ID: ${socket.id}`
-    );
+    // console.log(
+    //   `Сотрудник [${user.firstName} ${user.lastName}] успешно подключился. Socket ID: ${socket.id}`
+    // );
 
     onlineSockets.set(socket.id, { userId, isIdle: false });
     broadcastOnlineStatus();
-    console.log(`Сотрудник [${user.firstName}] зашел в систему.`);
+    // console.log(`Сотрудник [${user.firstName}] зашел в систему.`);
 
     // 2. НОВЫЙ ОБРАБОТЧИК: Ловим смену фонового режима от вашего useEffect!
     socket.on('setUserIdleStatus', (data: { isIdle: boolean }) => {
@@ -157,9 +157,9 @@ async function startApolloServer() {
     socket.on('joinChatRoom', (data: { companionId: string | null }) => {
       if (data.companionId) {
         activeRooms.set(socket.id, data.companionId.toLowerCase().trim());
-        console.log(
-          ` Сотрудник [${user.firstName}] открыл чат с ${data.companionId}`
-        );
+        // console.log(
+        //   ` Сотрудник [${user.firstName}] открыл чат с ${data.companionId}`
+        // );
       } else {
         activeRooms.set(socket.id, null);
       }
@@ -258,7 +258,7 @@ async function startApolloServer() {
       activeRooms.delete(socket.id);
       onlineSockets.delete(socket.id);
       broadcastOnlineStatus();
-      console.log(`Вкладка сотрудника [${user.firstName}] закрыта.`);
+      // console.log(`Вкладка сотрудника [${user.firstName}] закрыта.`);
     });
   });
 
@@ -296,7 +296,7 @@ async function startApolloServer() {
     });
 
     dumpProcess.on('error', (err) => {
-      console.error('Ошибка выполнения pg_dump на сервере:', err);
+      // console.error('Ошибка выполнения pg_dump на сервере:', err);
       if (!res.headersSent) {
         res
           .status(500)
@@ -306,9 +306,9 @@ async function startApolloServer() {
 
     dumpProcess.on('close', (code) => {
       if (code !== 0) {
-        console.error(
-          `pg_dump завершился с ошибкой (код ${code}): ${errorLog}`
-        );
+        // console.error(
+        //   `pg_dump завершился с ошибкой (код ${code}): ${errorLog}`
+        // );
         if (!res.headersSent) {
           res.status(500).send(`Ошибка при генерации дампа: ${errorLog}`);
         }
@@ -358,16 +358,16 @@ async function startApolloServer() {
 
     restoreProcess.on('close', (code) => {
       if (code === 0) {
-        console.log('База данных успешно восстановлена из дампа!');
+        // console.log('База данных успешно восстановлена из дампа!');
         res.status(200).send('База данных успешно восстановлена');
       } else {
-        console.error('Ошибка psql при восстановлении:', errorLog);
+        // console.error('Ошибка psql при восстановлении:', errorLog);
         res.status(500).send(`Ошибка восстановления базы данных: ${errorLog}`);
       }
     });
 
     restoreProcess.on('error', (err) => {
-      console.error('Системная ошибка psql:', err);
+      // console.error('Системная ошибка psql:', err);
       res.status(500).send('Критический сбой процесса psql');
     });
   });

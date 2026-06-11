@@ -44,6 +44,7 @@ export const chatMessages = pgTable(
       table.recipientId,
       table.isRead
     ),
+    createdAtIdx: index('cm_created_at_idx').on(table.createdAt),
   })
 );
 

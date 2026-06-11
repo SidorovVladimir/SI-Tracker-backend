@@ -10,14 +10,21 @@ import {
 import { relations } from 'drizzle-orm';
 import { users } from '../../user/user.model';
 
-export const systemNotifications = pgTable('system_notifications', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = для всех
-  title: varchar('title', { length: 255 }).notNull(),
-  message: text('message').notNull(),
-  type: varchar('type', { length: 50 }).notNull().default('info'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-});
+export const systemNotifications = pgTable(
+  'system_notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }), // null = для всех
+    title: varchar('title', { length: 255 }).notNull(),
+    message: text('message').notNull(),
+    type: varchar('type', { length: 50 }).notNull().default('info'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    notifCreatedAtIdx: index('sn_created_at_idx').on(table.createdAt),
+    notifUserIdx: index('sn_user_id_idx').on(table.userId), // Поможет быстро искать уведомления конкретного юзера
+  })
+);
 
 export const userNotificationStatuses = pgTable(
   'user_notification_statuses',
@@ -37,6 +44,7 @@ export const userNotificationStatuses = pgTable(
       table.userId,
       table.notificationId
     ),
+    notifIdIdx: index('uns_notification_id_idx').on(table.notificationId),
   })
 );
 

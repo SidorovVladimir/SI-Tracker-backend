@@ -99,7 +99,6 @@ export class ArshinService {
 
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       } finally {
-        // 🎯 ГАРАНТИРОВАННАЯ ОЧИСТКА: Удаляем таймер из памяти Node.js
         if (timeoutId) {
           clearTimeout(timeoutId);
         }
