@@ -3,7 +3,7 @@ import { DrizzleDB } from '../../db/client';
 import { deviceAuditLogs } from './auditLog.model';
 import { users } from '../user/user.model';
 import { NotificationService } from '../notification/service/notification.service';
-
+import { auditLogQueue } from './queues/audit.queue';
 interface LogActionArgs {
   deviceId: string;
   action:
@@ -24,76 +24,11 @@ export class DeviceAuditLogService {
     this.notificationService = new NotificationService(this.db);
   }
 
-  async logAction({
-    deviceId,
-    action,
-    oldData,
-    newData,
-    userId,
-  }: LogActionArgs): Promise<void> {
+  async logAction(args: LogActionArgs): Promise<void> {
     try {
-      const device = newData || oldData;
-      const deviceIdent = device
-        ? `«${device.name}» (Модель: ${device.model}, Зав. №: ${device.serialNumber})`
-        : `с ID ${deviceId}`;
-
-      let description = '';
-      let alertTitle = '⚙️ Действие с оборудованием';
-      let alertType: 'info' | 'success' | 'warning' | 'error' = 'info';
-
-      if (action === 'create')
-        description = `Добавлен прибор в систему: ${deviceIdent}`;
-      alertTitle = '📦 Новый прибор';
-      alertType = 'success';
-
-      if (action === 'delete')
-        description = `Удален прибор из системы: ${deviceIdent}`;
-      alertTitle = '🗑️ Удаление оборудования';
-      alertType = 'warning';
-      if (action === 'update')
-        description = `Обновлены данные прибора: ${deviceIdent}`;
-      alertTitle = '📝 Изменение паспорта СИ';
-      alertType = 'info';
-
-      if (action === 'assign_batch') {
-        const batchNumber = newData?.batchNumber
-          ? ` №${newData.batchNumber}`
-          : '';
-        description = `Прибор ${deviceIdent} запланирован на отправку и добавлен в партию поверок${batchNumber}`;
-        alertTitle = '🚚 Планирование графиков';
-        alertType = 'info';
-      }
-      if (action === 'remove_batch') {
-        description = `Прибор ${deviceIdent} исключен из партии отправки и вернулся в автоматический пул`;
-        alertTitle = '🔄 Сброс графика отправки';
-        alertType = 'warning';
-      }
-      if (action === 'verify') {
-        const docNum = newData?.protocolNumber
-          ? ` (Свидетельство/Протокол: ${newData.protocolNumber})`
-          : '';
-        description = `Успешно зафиксированы результаты контроля прибора ${deviceIdent}. Статус просрочки снят${docNum}`;
-        alertTitle = '🔬 Сведения ФГИС Аршин';
-        alertType = 'success';
-      }
-
-      await this.db.insert(deviceAuditLogs).values({
-        deviceId,
-        userId: userId ?? null,
-        action,
-        description,
-        oldData: oldData ?? null,
-        newData: newData ?? null,
-      });
-
-      await this.notificationService.createNotification({
-        userId: null,
-        title: alertTitle,
-        message: description,
-        type: alertType,
-      });
+      await auditLogQueue.add('write-audit-log', args);
     } catch (error) {
-      console.error('Ошибка при записи аудит-лога прибора:', error);
+      console.error('Ошибка при добавлении аудит-лога в очередь:', error);
     }
   }
   async getLogs(args: {

@@ -6,15 +6,18 @@ import {
 } from '../types/primaryStandart.types';
 import { primaryStandarts } from '../models/primaryStandarts.model';
 import { CreatePrimaryStandartInput } from '../dto/CreatePrimaryStandartDto';
+import { getOrCache, invalidateCache, CACHE_KEYS } from '../../../utils/cache';
 
 export class PrimaryStandartService {
   constructor(private db: DrizzleDB) {}
 
   async getPrimaryStandarts(): Promise<PrimaryStandartEntity[]> {
-    return await this.db
-      .select()
-      .from(primaryStandarts)
-      .orderBy(asc(primaryStandarts.name));
+    return getOrCache(CACHE_KEYS.PRIMARY_STANDARTS, () =>
+      this.db
+        .select()
+        .from(primaryStandarts)
+        .orderBy(asc(primaryStandarts.name))
+    );
   }
 
   async createPrimaryStandart(input: CreatePrimaryStandartInput) {
@@ -28,11 +31,13 @@ export class PrimaryStandartService {
     if (!primaryStandart) {
       throw new Error('Failed to create primary standart');
     }
+    await invalidateCache(CACHE_KEYS.PRIMARY_STANDARTS);
     return primaryStandart;
   }
 
   async deletePrimaryStandart(id: string) {
     await this.db.delete(primaryStandarts).where(eq(primaryStandarts.id, id));
+    await invalidateCache(CACHE_KEYS.PRIMARY_STANDARTS);
     return true;
   }
 }

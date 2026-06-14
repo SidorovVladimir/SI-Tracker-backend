@@ -12,6 +12,9 @@ import { SyncDeviceWithArshinInputSchema } from '../../arshin/dto/SyncDeviceWith
 import { ImportDevicesExcelInputSchema } from '../dto/ImportDeviceItemDto';
 import { GraphQLScalarType, Kind } from 'graphql';
 
+import { arshinQueue } from '../queues/arshin.queue';
+import { importQueue } from '../queues/import.queue';
+
 const JSONScalar = new GraphQLScalarType({
   name: 'JSON',
   description:
@@ -97,6 +100,31 @@ export const Query = {
 
     const deviceService = new DeviceService(db);
     return await deviceService.executeRawSql(sqlQuery);
+  },
+
+  getJobStatus: async (
+    _: unknown,
+    { jobId }: { jobId: string },
+    { currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: требуются права администратора');
+    }
+    // Ищем задачу в Redis через инстанс очереди
+    const job = await arshinQueue.getJob(jobId);
+    if (!job) return null;
+
+    const state = await job.getState(); //может быть 'completed', 'failed', 'active', 'waiting'
+
+    return {
+      id: job.id,
+      progress: job.progress, // вернет наш объект { current, total }
+      isCompleted: state === 'completed',
+      isFailed: state === 'failed',
+      failedReason: job.failedReason || null,
+    };
   },
 };
 
@@ -265,21 +293,35 @@ export const Mutation = {
       throw new Error('Доступ запрещен: требуются права суперадминистратора');
     }
 
-    try {
-      const validatedInput = ImportDevicesExcelInputSchema.parse(input);
+    const validatedInput = ImportDevicesExcelInputSchema.parse(input);
 
-      const auditLogService = new DeviceAuditLogService(db);
-      const deviceService = new DeviceService(db, auditLogService);
+    // Отправляем в фоновую очередь вместо синхронного выполнения.
+    // Это предотвращает таймаут GraphQL при большом количестве приборов.
+    const job = await importQueue.add('excel-import-job', {
+      items: validatedInput,
+      userId: currentUser.id,
+    });
 
-      return await deviceService.importDevicesFromExcel(
-        validatedInput,
-        currentUser.id
-      );
-    } catch (err) {
-      if (err instanceof ZodError) {
-        throw new Error(JSON.stringify(formatZodErrors(err)));
-      }
-      throw err;
-    }
+    return {
+      jobId: job.id,
+      itemCount: validatedInput.length,
+      message:
+        'Файл Excel успешно принят. Обработка и импорт приборов запущены в фоновом режиме.',
+    };
+    //   try {
+    //     const validatedInput = ImportDevicesExcelInputSchema.parse(input);
+
+    //     const auditLogService = new DeviceAuditLogService(db);
+    //     const deviceService = new DeviceService(db, auditLogService);
+
+    //     return await deviceService.importDevicesFromExcel(
+    //       validatedInput,
+    //       currentUser.id
+    //     );
+    //   } catch (err) {
+    //     if (err instanceof ZodError) {
+    //       throw new Error(JSON.stringify(formatZodErrors(err)));
+    //     }
+    //     throw err;
   },
 };

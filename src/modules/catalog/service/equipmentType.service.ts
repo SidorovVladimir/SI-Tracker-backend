@@ -6,15 +6,15 @@ import {
   EquipmentTypeEntity,
   NewEquipmentType,
 } from '../types/equipmentType.types';
+import { getOrCache, invalidateCache, CACHE_KEYS } from '../../../utils/cache';
 
 export class EquipmentTypeService {
   constructor(private db: DrizzleDB) {}
 
   async getEquipmentTypes(): Promise<EquipmentTypeEntity[]> {
-    return await this.db
-      .select()
-      .from(equipmentTypes)
-      .orderBy(asc(equipmentTypes.name));
+    return getOrCache(CACHE_KEYS.EQUIPMENT_TYPES, () =>
+      this.db.select().from(equipmentTypes).orderBy(asc(equipmentTypes.name))
+    );
   }
 
   async createEquipmentType(input: CreateEquipmentTypeInput) {
@@ -28,11 +28,13 @@ export class EquipmentTypeService {
     if (!equipmentType) {
       throw new Error('Failed to create equipmentType');
     }
+    await invalidateCache(CACHE_KEYS.EQUIPMENT_TYPES);
     return equipmentType;
   }
 
   async deleteEquipmentType(id: string) {
     await this.db.delete(equipmentTypes).where(eq(equipmentTypes.id, id));
+    await invalidateCache(CACHE_KEYS.EQUIPMENT_TYPES);
     return true;
   }
 }

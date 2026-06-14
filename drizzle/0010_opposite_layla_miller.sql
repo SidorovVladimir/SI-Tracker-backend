@@ -1,1 +1,0 @@
-ALTER TABLE "verifications" ADD COLUMN "cost" numeric(10, 2) DEFAULT '0.00';

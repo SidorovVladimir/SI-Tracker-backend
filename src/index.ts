@@ -16,9 +16,14 @@ import { Server } from 'socket.io';
 import { verifyToken } from './utils/auth';
 import { db } from './db/client';
 import { chatMessages } from './modules/chat/models/message.model';
-import { initChatCleanerCron } from './modules/chat/сron/cleanChat';
+
 import { ChatService } from './modules/chat/service/chat.service';
-import { initNotificationCleanerCron } from './modules/notification/cron/cleanNotifications';
+
+import { initAllWorkers, shutdownAllWorkers } from './workers';
+import fs from 'fs';
+import path from 'path';
+import { dbRestoreQueue } from './modules/admin/workers/restore.worker';
+import { checkRateLimit, RATE_LIMITS } from './middleware/rateLimiter';
 
 export let io: Server;
 
@@ -101,15 +106,13 @@ async function startApolloServer() {
         role: userExists.role,
       };
 
-      next(); // Всё отлично, пропускаем пользователя к соединению
+      next();
     } catch (err) {
-      // console.error('Ошибка авторизации сокета:', err);
       return next(new Error('Authentication error: Internal server error'));
     }
   });
 
   const activeRooms = new Map<string, string | null>();
-  // const onlineUsers = new Set<string>();
 
   const onlineSockets = new Map<string, { userId: string; isIdle: boolean }>();
 
@@ -165,10 +168,23 @@ async function startApolloServer() {
       }
     });
 
-    // Слушатель чата между сотрудниками
+    // Слушатель чата между сотрудниками с rate limiter
     socket.on(
       'sendMessage',
       async (data: { recipientId: string; text: string }) => {
+        // Rate limiting: не более 30 сообщений в минуту
+        const allowed = await checkRateLimit(
+          userId,
+          'sendMessage',
+          RATE_LIMITS.SEND_MESSAGE.max,
+          RATE_LIMITS.SEND_MESSAGE.windowMs
+        );
+        if (!allowed) {
+          return socket.emit('rateLimited', {
+            message: 'Слишком много сообщений. Подождите минуту.',
+          });
+        }
+
         const { recipientId, text } = data;
         const cleanRecipientId = recipientId.toLowerCase().trim();
 
@@ -210,7 +226,6 @@ async function startApolloServer() {
             }
           }
 
-          // Шлем цифру получателю ТОЛЬКО если у него этот чат СВЕРНУТ или он на другой странице
           if (shouldSendUpdate) {
             const recipientUnreadCount = await chatService.getTotalUnreadCount(
               cleanRecipientId
@@ -238,23 +253,7 @@ async function startApolloServer() {
       }
     );
 
-    // onlineUsers.add(userId);
-    // io.emit('updateOnlineStatus', Array.from(onlineUsers));
-    // console.log(`🟢 Сотрудник [${user.firstName}] зашел в систему.`);
-
     socket.on('disconnect', async () => {
-      // const userSockets = await io.in(userId).fetchSockets();
-      // if (userSockets.length === 0) {
-      //   activeRooms.delete(socket.id);
-      //   onlineSockets.delete(socket.id);
-      //   broadcastOnlineStatus();
-      //   console.log(`🔴 Вкладка сотрудника [${user.firstName}] закрыта.`);
-      //   // onlineUsers.delete(userId);
-      //   // io.emit('updateOnlineStatus', Array.from(onlineUsers));
-      //   // console.log(
-      //   //   `🔴 Сотрудник [${user.firstName}] отключился и вышел из системы.`
-      //   // );
-      // }
       activeRooms.delete(socket.id);
       onlineSockets.delete(socket.id);
       broadcastOnlineStatus();
@@ -278,17 +277,19 @@ async function startApolloServer() {
     const dateStr = new Date().toISOString().split('T')[0];
     const fileName = `si_tracker_backup_${dateStr}.sql`;
 
+    // 1. ЗАГОЛОВКИ СТАВИМ СРАЗУ. Начинаем стриминг в режиме HTTP-ответа 200.
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', 'application/sql');
+
     const dumpProcess = spawn(
       'pg_dump',
       ['-h', dbHost, '-U', dbUser, '--clean', '--if-exists', '-F', 'p', dbName],
       { env: { ...process.env, PGPASSWORD: dbPassword } }
     );
 
-    // Буферизируем stdout целиком
-    const chunks: Buffer[] = [];
-    dumpProcess.stdout.on('data', (chunk: Buffer) => {
-      chunks.push(chunk);
-    });
+    // 2. СТРИМИНГ НАПРЯМУЮ: Данные от pg_dump чанками (порциями по несколько КБ)
+    // летят сразу в сеть пользователю, минуя оперативную память Node.js.
+    dumpProcess.stdout.pipe(res);
 
     let errorLog = '';
     dumpProcess.stderr.on('data', (chunk: Buffer) => {
@@ -296,33 +297,37 @@ async function startApolloServer() {
     });
 
     dumpProcess.on('error', (err) => {
-      // console.error('Ошибка выполнения pg_dump на сервере:', err);
+      console.error('[Backup] Системная ошибка pg_dump:', err.message);
+      // Если заголовки ответа еще не ушли клиенту, отдаем честный 500
       if (!res.headersSent) {
         res
           .status(500)
           .send('Не удалось сгенерировать резервную копию базы данных');
+      } else {
+        res.destroy(); // Иначе принудительно рвем поток, чтобы файл не скачался битым
       }
     });
 
     dumpProcess.on('close', (code) => {
       if (code !== 0) {
-        // console.error(
-        //   `pg_dump завершился с ошибкой (код ${code}): ${errorLog}`
-        // );
+        console.error(
+          `[Backup] pg_dump завершился с ошибкой (код ${code}): ${errorLog}`
+        );
+
         if (!res.headersSent) {
           res.status(500).send(`Ошибка при генерации дампа: ${errorLog}`);
+        } else {
+          // Если pg_dump упал на середине файла, рвем сокет подключения,
+          // чтобы у администратора прервалась загрузка файла в браузере (сетевая ошибка).
+          // Это защитит систему от сохранения "обрезанного", поврежденного SQL-файла.
+          res.destroy();
         }
         return;
       }
 
-      // Отправляем только если всё успешно
-      const fullDump = Buffer.concat(chunks);
-      res.setHeader(
-        'Content-Disposition',
-        `attachment; filename="${fileName}"`
+      console.log(
+        `[Backup] Дамп базы данных "${dbName}" успешно отправлен пользователю.`
       );
-      res.setHeader('Content-Type', 'application/sql');
-      res.send(fullDump);
     });
   });
 
@@ -331,44 +336,46 @@ async function startApolloServer() {
     if (!user || user.role !== 'superadmin') {
       return res
         .status(403)
-        .send('Доступ запрещен: требуется роль администратора');
+        .send('Доступ запрещен: требуется роль суперадминистратора');
     }
 
-    const dbUser = process.env.DB_USER!;
-    const dbName = process.env.DB_NAME!;
-    const dbHost = process.env.DB_HOST!;
-    const dbPassword = process.env.DB_PASSWORD!;
+    const uploadDir = path.join(__dirname, '../../uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
 
-    const restoreProcess = spawn(
-      'psql',
-      ['-h', dbHost, '-U', dbUser, '-d', dbName],
-      {
-        env: { ...process.env, PGPASSWORD: dbPassword },
-        stdio: ['pipe', 'pipe', 'pipe'], // 🟢 явно открываем stdin
-      }
+    const tempFilePath = path.join(
+      uploadDir,
+      `backup_restore_${Date.now()}.sql`
     );
+    const writeStream = fs.createWriteStream(tempFilePath);
 
-    // Стримим тело запроса в psql
-    req.pipe(restoreProcess.stdin);
+    req.pipe(writeStream);
 
-    let errorLog = '';
-    restoreProcess.stderr.on('data', (chunk: Buffer) => {
-      errorLog += chunk.toString();
-    });
+    writeStream.on('finish', async () => {
+      try {
+        const job = await dbRestoreQueue.add('restore-job', {
+          filePath: tempFilePath,
+          userId: user.id,
+        });
 
-    restoreProcess.on('close', (code) => {
-      if (code === 0) {
-        // console.log('База данных успешно восстановлена из дампа!');
-        res.status(200).send('База данных успешно восстановлена');
-      } else {
-        // console.error('Ошибка psql при восстановлении:', errorLog);
-        res.status(500).send(`Ошибка восстановления базы данных: ${errorLog}`);
+        res.status(202).json({
+          success: true,
+          jobId: job.id,
+          message:
+            'Файл дампа успешно загружен. Процесс восстановления базы данных запущен в изолированном фоновом режиме.',
+        });
+      } catch (err: any) {
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+        res
+          .status(500)
+          .send(`Не удалось поставить задачу в очередь: ${err.message}`);
       }
     });
 
-    restoreProcess.on('error', (err) => {
-      // console.error('Системная ошибка psql:', err);
-      res.status(500).send('Критический сбой процесса psql');
+    writeStream.on('error', (err) => {
+      if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+      res.status(500).send(`Ошибка при загрузке файла дампа: ${err.message}`);
     });
   });
 
@@ -380,14 +387,25 @@ async function startApolloServer() {
   );
 
   const PORT = process.env.PORT || 4000;
+
+  initAllWorkers();
   await new Promise<void>((resolve) =>
     httpServer.listen({ port: PORT }, resolve)
   );
   console.log(`Server ready at http://localhost:${PORT}/graphql`);
   console.log(`WebSockets ready at ws://localhost:${PORT}`);
-  initChatCleanerCron();
-  initNotificationCleanerCron();
-  console.log(`Фоновые задачи (Cron) успешно инициализированы.`);
+  console.log(
+    `Фоновые задачи (Очереди + Кроны BullMQ) успешно инициализированы.`
+  );
 }
+
+const handleShutdown = async () => {
+  console.log('Получен сигнал на остановку сервера...');
+  await shutdownAllWorkers(); // Останавливаем все воркеры BullMQ
+  process.exit(0);
+};
+
+process.on('SIGINT', handleShutdown);
+process.on('SIGTERM', handleShutdown);
 
 startApolloServer().catch(console.error);

@@ -1,17 +1,23 @@
 import { Request, Response } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { db, DrizzleDB } from './db/client';
+import Redis from 'ioredis';
+import { redis } from './redis/client';
+import { isMaintenanceMode } from './modules/admin/workers/restore.worker';
+
+export type UserRole = 'admin' | 'user' | 'superadmin';
 
 export interface TokenPayload extends JwtPayload {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
-  role: 'admin' | 'user';
+  role: UserRole;
 }
 
 export interface Context {
   db: DrizzleDB;
+  redis: Redis;
   req: Request;
   res: Response;
   currentUser: {
@@ -19,7 +25,7 @@ export interface Context {
     email: string;
     firstName: string;
     lastName: string;
-    role: string;
+    role: UserRole;
   } | null;
 }
 export const createContext = async ({
@@ -29,6 +35,11 @@ export const createContext = async ({
   req: Request;
   res: Response;
 }): Promise<Context> => {
+  if (isMaintenanceMode) {
+    throw new Error(
+      'Система временно недоступна: идут технические работы по восстановлению базы данных. Пожалуйста, подождите.'
+    );
+  }
   let currentUser = null;
   const token = req.cookies?.auth_token;
   if (token) {
@@ -57,5 +68,5 @@ export const createContext = async ({
       console.warn('invalid auth token', err);
     }
   }
-  return { currentUser, req, res, db };
+  return { currentUser, req, res, db, redis };
 };

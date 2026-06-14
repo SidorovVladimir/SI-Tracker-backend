@@ -97,6 +97,14 @@ type RawSqlResponse {
   errorMessage: String # Текст ошибки, если запрос упал
 }
 
+type JobStatusResponse {
+  id: ID!
+  progress: JSON
+  isCompleted: Boolean!
+  isFailed: Boolean!
+  failedReason: String
+}
+
 type Query {
   devices: [Device!]!
   device(id: ID!): DeviceWithRelations
@@ -107,6 +115,8 @@ type Query {
     offset: Int!
     filter: DeviceFilterInput
   ): DevicesWithRelationsResponse!
+
+  getJobStatus(jobId: ID!): JobStatusResponse
 
   executeRawSql(sqlQuery: String!): RawSqlResponse!
 }
@@ -178,6 +188,14 @@ type BatchSyncResponse {
   details: [DeviceBatchSyncResult!]!
 }
 
+# Ответ при постановке задачи в очередь ( Аршин / импорт )
+type QueuedJobResponse {
+  jobId: ID!
+  batchId: ID
+  itemCount: Int
+  message: String!
+}
+
 input ImportDeviceItemInput {
   name: String!
   model: String!
@@ -205,6 +223,6 @@ type Mutation {
   deleteDevice(id: ID!): Boolean!
   updateDevice(id: ID!, input: UpdateDeviceInput!): Device!
   syncDeviceWithArshin(input: SyncDeviceWithArshinInput!): Device!
-  syncBatchWithArshin(batchId: ID!): BatchSyncResponse!
-  importDevicesFromExcel(input: [ImportDeviceItemInput!]!): Int!
+  syncBatchWithArshin(batchId: ID!): QueuedJobResponse!
+  importDevicesFromExcel(input: [ImportDeviceItemInput!]!): QueuedJobResponse!
 }

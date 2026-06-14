@@ -6,15 +6,18 @@ import {
 } from '../types/metrologyControlType.types';
 import { metrologyControleTypes } from '../models/metrologyControlType.model';
 import { CreateMetrologyControlTypeInput } from '../dto/CreateMetrologyControlTypeDto';
+import { getOrCache, invalidateCache, CACHE_KEYS } from '../../../utils/cache';
 
 export class MetrologyControlTypeService {
   constructor(private db: DrizzleDB) {}
 
   async getMetrologyControlTypes(): Promise<MetrologyControlTypeEntity[]> {
-    return await this.db
-      .select()
-      .from(metrologyControleTypes)
-      .orderBy(asc(metrologyControleTypes.name));
+    return getOrCache(CACHE_KEYS.METROLOGY_CONTROL_TYPES, () =>
+      this.db
+        .select()
+        .from(metrologyControleTypes)
+        .orderBy(asc(metrologyControleTypes.name))
+    );
   }
 
   async createMetrologyControlType(input: CreateMetrologyControlTypeInput) {
@@ -28,6 +31,7 @@ export class MetrologyControlTypeService {
     if (!metrologyControlType) {
       throw new Error('Failed to create metrology control type');
     }
+    await invalidateCache(CACHE_KEYS.METROLOGY_CONTROL_TYPES);
     return metrologyControlType;
   }
 
@@ -35,6 +39,7 @@ export class MetrologyControlTypeService {
     await this.db
       .delete(metrologyControleTypes)
       .where(eq(metrologyControleTypes.id, id));
+    await invalidateCache(CACHE_KEYS.METROLOGY_CONTROL_TYPES);
     return true;
   }
 }

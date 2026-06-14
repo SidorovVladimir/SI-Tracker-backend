@@ -6,6 +6,7 @@ import {
   VerificationOrganizationEntity,
 } from '../types/verificationOrganization.types';
 import { verificationOrganizations } from '../models/verificationOrganization.model';
+import { getOrCache, invalidateCache, CACHE_KEYS } from '../../../utils/cache';
 
 export class VerificationOrganizationService {
   constructor(private db: DrizzleDB) {}
@@ -13,10 +14,12 @@ export class VerificationOrganizationService {
   async getVerificationOrganizations(): Promise<
     VerificationOrganizationEntity[]
   > {
-    return await this.db
-      .select()
-      .from(verificationOrganizations)
-      .orderBy(asc(verificationOrganizations.name));
+    return getOrCache(CACHE_KEYS.VERIFICATION_ORGANIZATIONS, () =>
+      this.db
+        .select()
+        .from(verificationOrganizations)
+        .orderBy(asc(verificationOrganizations.name))
+    );
   }
 
   async createVerificationOrganization(
@@ -32,6 +35,7 @@ export class VerificationOrganizationService {
     if (!verificationOrganization) {
       throw new Error('Failed to create verification organization');
     }
+    await invalidateCache(CACHE_KEYS.VERIFICATION_ORGANIZATIONS);
     return verificationOrganization;
   }
 
@@ -39,6 +43,7 @@ export class VerificationOrganizationService {
     await this.db
       .delete(verificationOrganizations)
       .where(eq(verificationOrganizations.id, id));
+    await invalidateCache(CACHE_KEYS.VERIFICATION_ORGANIZATIONS);
     return true;
   }
 }

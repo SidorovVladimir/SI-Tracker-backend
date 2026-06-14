@@ -38,19 +38,6 @@ export class NotificationService {
     return newAlert;
   }
 
-  // async getNotifications(userId: string) {
-  //   return await this.db
-  //     .select()
-  //     .from(systemNotifications)
-  //     .where(
-  //       or(
-  //         eq(systemNotifications.userId, userId),
-  //         isNull(systemNotifications.userId)
-  //       )
-  //     )
-  //     .orderBy(desc(systemNotifications.createdAt))
-  //     .limit(20);
-  // }
   async getNotifications(userId: string) {
     const cleanUserId = userId.toLowerCase().trim();
 
@@ -83,86 +70,48 @@ export class NotificationService {
       .limit(20);
   }
 
-  // async getUnreadCount(userId: string): Promise<number> {
-  //   const cleanUserId = userId.toLowerCase().trim();
-  //   const [result] = await this.db
-  //     .select({ count: sql<number>`count(*)::int` })
-  //     .from(systemNotifications)
-  //     .where(
-  //       and(
-  //         or(
-  //           eq(systemNotifications.userId, cleanUserId),
-  //           isNull(systemNotifications.userId)
-  //         ),
-  //         eq(systemNotifications.isRead, false)
-  //       )
-  //     );
-  //   return result?.count ?? 0;
-  // }
   async getUnreadCount(userId: string): Promise<number> {
     const cleanUserId = userId.toLowerCase().trim();
 
-    const [result] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(systemNotifications)
-      .where(
-        and(
-          or(
-            eq(systemNotifications.userId, cleanUserId),
-            isNull(systemNotifications.userId)
-          ),
-          // Уведомление не должно существовать в таблице прочитанных этим пользователем
-          notExists(
-            this.db
-              .select()
-              .from(userNotificationStatuses)
-              .where(
-                and(
-                  eq(
-                    userNotificationStatuses.notificationId,
-                    systemNotifications.id
-                  ),
-                  eq(userNotificationStatuses.userId, cleanUserId)
+    try {
+      const [result] = await this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(systemNotifications)
+        .where(
+          and(
+            // 1. Уведомление принадлежит юзеру или общее
+            or(
+              eq(systemNotifications.userId, cleanUserId),
+              isNull(systemNotifications.userId)
+            ),
+            // 2. Исключаем прочитанные (оптимизированный NOT EXISTS)
+            notExists(
+              this.db
+                .select({ ones: sql`1` })
+                .from(userNotificationStatuses)
+                .where(
+                  and(
+                    eq(
+                      userNotificationStatuses.notificationId,
+                      systemNotifications.id
+                    ),
+                    eq(userNotificationStatuses.userId, cleanUserId)
+                  )
                 )
-              )
+            )
           )
-        )
-      );
+        );
 
-    return result?.count ?? 0;
+      return result?.count ?? 0;
+    } catch (error) {
+      console.error(
+        `[Notification Service] Ошибка подсчета уведомлений для ${cleanUserId}:`,
+        error
+      );
+      return 0; // Возвращаем 0, чтобы не ломать фронтенд при сбое БД
+    }
   }
 
-  // async markAsRead(id: string, userId: string) {
-  //   await this.db
-  //     .update(systemNotifications)
-  //     .set({ isRead: true })
-  //     .where(
-  //       and(
-  //         eq(systemNotifications.id, id),
-  //         or(
-  //           eq(systemNotifications.userId, userId),
-  //           isNull(systemNotifications.userId)
-  //         )
-  //       )
-  //     );
-  //   return true;
-  // }
-
-  // async markAllAsRead(userId: string) {
-  //   await this.db
-  //     .update(systemNotifications)
-  //     .set({ isRead: true })
-  //     .where(
-  //       and(
-  //         or(
-  //           eq(systemNotifications.userId, userId),
-  //           isNull(systemNotifications.userId)
-  //         ),
-  //         eq(systemNotifications.isRead, false)
-  //       )
-  //     );
-  //   return true;
-  // }
   async markAsRead(id: string, userId: string) {
     const cleanUserId = userId.toLowerCase().trim();
 

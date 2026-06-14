@@ -3,12 +3,15 @@ import { DrizzleDB } from '../../../db/client';
 import { NewScope, ScopeEntity } from '../types/scope.types';
 import { scopes } from '../models/scope.model';
 import { CreateScopeInput } from '../dto/CreateScopeDto';
+import { getOrCache, invalidateCache, CACHE_KEYS } from '../../../utils/cache';
 
 export class ScopeService {
   constructor(private db: DrizzleDB) {}
 
   async getScopes(): Promise<ScopeEntity[]> {
-    return await this.db.select().from(scopes).orderBy(asc(scopes.name));
+    return getOrCache(CACHE_KEYS.SCOPES, () =>
+      this.db.select().from(scopes).orderBy(asc(scopes.name))
+    );
   }
 
   async createScope(input: CreateScopeInput) {
@@ -19,11 +22,13 @@ export class ScopeService {
     if (!scope) {
       throw new Error('Failed to create scope');
     }
+    await invalidateCache(CACHE_KEYS.SCOPES);
     return scope;
   }
 
   async deleteScope(id: string) {
     await this.db.delete(scopes).where(eq(scopes.id, id));
+    await invalidateCache(CACHE_KEYS.SCOPES);
     return true;
   }
 }

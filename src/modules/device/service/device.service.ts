@@ -30,6 +30,7 @@ import { cities } from '../../location/models/city.model';
 import { companies } from '../../location/models/company.model';
 import { productionSites } from '../../location/models/productionSites.model';
 import { equipmentTypes } from '../../catalog/models/equipmentType.model';
+import { arshinQueue } from '../queues/arshin.queue';
 
 export class DeviceService {
   constructor(
@@ -824,12 +825,89 @@ export class DeviceService {
   }
 
   async syncBatchWithArshin(batchId: string, userId: string) {
+    const job = await arshinQueue.add('sync-batch', { batchId, userId });
+
+    return {
+      jobId: job.id,
+      batchId,
+      message: 'Синхронизация запущена в фоновом режиме',
+    };
+  }
+
+  // async syncBatchWithArshin(batchId: string, userId: string) {
+  //   const delay = (ms: number) =>
+  //     new Promise((resolve) => setTimeout(resolve, ms));
+  //   const pendingLinks = await this.db
+  //     .select({
+  //       deviceId: devicesToBatches.deviceId,
+  //     })
+  //     .from(devicesToBatches)
+  //     .where(
+  //       and(
+  //         eq(devicesToBatches.batchId, batchId),
+  //         ne(devicesToBatches.deviceStatus, 'returned')
+  //       )
+  //     );
+
+  //   const totalCount = pendingLinks.length;
+
+  //   let syncedCount = 0;
+  //   const details = [];
+
+  //   if (totalCount === 0) {
+  //     return {
+  //       batchId,
+  //       syncedCount: 0,
+  //       totalCount: 0,
+  //       details: [],
+  //     };
+  //   }
+
+  //   // for (const link of pendingLinks) {
+  //   for (let i = 0; i < pendingLinks.length; i++) {
+  //     const link = pendingLinks[i]!;
+  //     try {
+  //       if (i > 0) {
+  //         await delay(600);
+  //       }
+  //       await this.syncDeviceWithArshin(
+  //         { deviceId: link.deviceId, batchId },
+  //         userId
+  //       );
+
+  //       syncedCount++;
+  //       details.push({
+  //         deviceId: link.deviceId,
+  //         success: true,
+  //         message: 'Успешно синхронизирован с ФГИС Аршин',
+  //       });
+  //     } catch (error: any) {
+  //       details.push({
+  //         deviceId: link.deviceId,
+  //         success: false,
+  //         message: error.message || 'Неизвестная ошибка при запросе к Аршин',
+  //       });
+  //     }
+  //   }
+
+  //   return {
+  //     batchId,
+  //     syncedCount,
+  //     totalCount,
+  //     details,
+  //   };
+  // }
+  // Внутри вашего класса DeviceService
+  async executeBatchArshinSync(
+    batchId: string,
+    userId: string,
+    onProgress?: (synced: number, total: number) => Promise<void> // <- Добавляем колбэк
+  ) {
     const delay = (ms: number) =>
       new Promise((resolve) => setTimeout(resolve, ms));
+
     const pendingLinks = await this.db
-      .select({
-        deviceId: devicesToBatches.deviceId,
-      })
+      .select({ deviceId: devicesToBatches.deviceId })
       .from(devicesToBatches)
       .where(
         and(
@@ -839,20 +917,17 @@ export class DeviceService {
       );
 
     const totalCount = pendingLinks.length;
-
     let syncedCount = 0;
-    const details = [];
+    const details: Array<{
+      deviceId: string;
+      success: boolean;
+      message: string;
+    }> = [];
 
     if (totalCount === 0) {
-      return {
-        batchId,
-        syncedCount: 0,
-        totalCount: 0,
-        details: [],
-      };
+      return { batchId, syncedCount: 0, totalCount: 0, details };
     }
 
-    // for (const link of pendingLinks) {
     for (let i = 0; i < pendingLinks.length; i++) {
       const link = pendingLinks[i]!;
       try {
@@ -863,7 +938,6 @@ export class DeviceService {
           { deviceId: link.deviceId, batchId },
           userId
         );
-
         syncedCount++;
         details.push({
           deviceId: link.deviceId,
@@ -877,14 +951,15 @@ export class DeviceService {
           message: error.message || 'Неизвестная ошибка при запросе к Аршин',
         });
       }
+
+      // 🔥 ВЫЗЫВАЕМ КОЛБЭК ПРОГРЕССА ПОСЛЕ КАЖДОГО ПРИБОРА
+      if (onProgress) {
+        // Передаем текущий шаг и общее количество
+        await onProgress(i + 1, totalCount);
+      }
     }
 
-    return {
-      batchId,
-      syncedCount,
-      totalCount,
-      details,
-    };
+    return { batchId, syncedCount, totalCount, details };
   }
 
   async importDevicesFromExcel(
