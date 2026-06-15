@@ -1360,4 +1360,38 @@ export class DeviceService {
       };
     }
   }
+
+  async getDevicesBarcodeData(ids: string[]) {
+    if (!ids || ids.length === 0) return [];
+
+    const cleanIds = ids.map((id) => id.toLowerCase().trim());
+
+    return await this.db
+      .select({
+        id: devices.id,
+        name: devices.name,
+        model: devices.model,
+        serialNumber: devices.serialNumber,
+        statusName: statuses.name,
+        controlType: metrologyControleTypes.name,
+        validUntil: verifications.validUntil,
+      })
+      .from(devices)
+      .leftJoin(statuses, eq(devices.statusId, statuses.id))
+      .leftJoin(
+        verifications,
+        and(
+          eq(verifications.deviceId, devices.id),
+          eq(
+            verifications.date,
+            sql`(SELECT MAX(date) FROM verifications WHERE device_id = ${devices.id})`
+          )
+        )
+      )
+      .leftJoin(
+        metrologyControleTypes,
+        eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+      )
+      .where(inArray(devices.id, cleanIds));
+  }
 }

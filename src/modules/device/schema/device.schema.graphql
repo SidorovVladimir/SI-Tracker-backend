@@ -97,6 +97,16 @@ type RawSqlResponse {
   errorMessage: String # Текст ошибки, если запрос упал
 }
 
+type DeviceBarcodeData {
+  id: ID!
+  name: String!
+  model: String!
+  serialNumber: String!
+  controlType: String
+  validUntil: String
+  statusName: String
+}
+
 type JobStatusResponse {
   id: ID!
   progress: JSON
@@ -115,6 +125,7 @@ type Query {
     offset: Int!
     filter: DeviceFilterInput
   ): DevicesWithRelationsResponse!
+  getDevicesBarcodeData(ids: [ID!]!): [DeviceBarcodeData!]!
 
   getJobStatus(jobId: ID!): JobStatusResponse
 

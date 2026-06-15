@@ -102,6 +102,20 @@ export const Query = {
     return await deviceService.executeRawSql(sqlQuery);
   },
 
+  getDevicesBarcodeData: async (
+    _: unknown,
+    { ids }: { ids: string[] },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role !== 'superadmin') {
+      throw new Error('Доступ запрещен: требуются права суперадминистратора');
+    }
+    const deviceService = new DeviceService(db);
+    return await deviceService.getDevicesBarcodeData(ids);
+  },
+
   getJobStatus: async (
     _: unknown,
     { jobId }: { jobId: string },
