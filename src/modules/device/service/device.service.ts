@@ -791,23 +791,53 @@ export class DeviceService {
       orgId = newOrg.id;
     }
 
-    let validUntilDate: Date | null = null;
-    if (arshinData.validUntil) {
-      validUntilDate = new Date(arshinData.validUntil);
+    const parseArshinDate = (
+      dateStr: string | null | undefined
+    ): Date | null => {
+      if (!dateStr) return null;
+
+      const parts = dateStr.split('.');
+      if (parts.length !== 3) {
+        const parsedDate = new Date(dateStr);
+        return isNaN(parsedDate.getTime()) ? null : parsedDate;
+      }
+
+      const day = parseInt(parts[0] ?? '', 10);
+      const month = parseInt(parts[1] ?? '', 10) - 1;
+      const year = parseInt(parts[2] ?? '', 10);
+
+      return new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+    };
+
+    const parsedDate = parseArshinDate(arshinData.date);
+    if (!parsedDate) {
+      throw new Error(
+        'Не удалось распарсить обязательную дату поверки из ФГИС Аршин'
+      );
+    }
+
+    if (!deviceId || !controlType?.id || !orgId) {
+      throw new Error(
+        'Отсутствуют обязательные идентификаторы для привязки поверки'
+      );
     }
 
     const verificationDto = {
       deviceId: deviceId,
-      batchId: batchId,
+      batchId: batchId ?? null,
       protocolNumber: arshinData.protocolNumber,
       result: arshinData.isApplicable ? 'Годен' : 'Не годен',
-      date: new Date(arshinData.date),
-      validUntil: validUntilDate,
+
+      date: parsedDate,
+      validUntil: parseArshinDate(arshinData.validUntil) ?? undefined,
+
       metrologyControleTypeId: controlType.id,
       verificationOrganizationId: orgId,
       comment: `Автоматическая синхронизация ФГИС Аршин. ID записи: ${arshinData.arshinId}`,
       cost: 0,
     };
+
+    console.log('Данные для записи прибора', verificationDto);
 
     await this.createVerification(verificationDto, userId);
 

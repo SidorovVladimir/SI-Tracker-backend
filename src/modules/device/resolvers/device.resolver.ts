@@ -109,8 +109,8 @@ export const Query = {
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    if (currentUser.role !== 'superadmin') {
-      throw new Error('Доступ запрещен: требуются права суперадминистратора');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: требуются права администратора');
     }
     const deviceService = new DeviceService(db);
     return await deviceService.getDevicesBarcodeData(ids);
