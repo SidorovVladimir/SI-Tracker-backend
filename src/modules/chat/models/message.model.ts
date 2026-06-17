@@ -31,8 +31,13 @@ export const chatMessages = pgTable(
     // Статус прочтения (важно для вывода счетчика непрочитанных)
     isRead: boolean('is_read').notNull().default(false),
 
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
   },
   (table) => ({
     // ИНДЕКСЫ ДЛЯ УСКОРЕНИЯ ВЫБОРКИ ИСТОРИИ ДИАЛОГОВ:

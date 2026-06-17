@@ -39,8 +39,13 @@ export const verifications = pgTable(
     //   deviceId: uuid('device_id')
     // .notNull()
     // .references(() => devices.id, { onDelete: 'cascade' }),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
-    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => ({
     deviceIdIdx: index('verifications_device_id_idx').on(table.deviceId),

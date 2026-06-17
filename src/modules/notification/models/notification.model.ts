@@ -18,7 +18,9 @@ export const systemNotifications = pgTable(
     title: varchar('title', { length: 255 }).notNull(),
     message: text('message').notNull(),
     type: varchar('type', { length: 50 }).notNull().default('info'),
-    createdAt: timestamp('created_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
   },
   (table) => ({
     notifCreatedAtIdx: index('sn_created_at_idx').on(table.createdAt),
@@ -37,7 +39,9 @@ export const userNotificationStatuses = pgTable(
       .notNull()
       .references(() => systemNotifications.id, { onDelete: 'cascade' }),
     isRead: boolean('is_read').notNull().default(true), // Если запись тут есть, значит прочитано
-    createdAt: timestamp('created_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
   },
   (table) => ({
     userNotifIdx: index('uns_user_notif_idx').on(

@@ -36,7 +36,7 @@ export const devices = pgTable('devices', {
   nomenclature: varchar('nomenclature'), // Номенклатура по 1С
   comment: text('comment'),
   leadTimeDays: integer('lead_time_days'),
-  createdAt: timestamp('created_at').defaultNow(),
+
   statusId: uuid('status_id')
     .notNull()
     .references(() => statuses.id),
@@ -46,7 +46,13 @@ export const devices = pgTable('devices', {
   equipmentTypeId: uuid('equipment_type_id').references(
     () => equipmentTypes.id
   ),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 export const verificationBatches = pgTable('verification_batches', {
@@ -58,8 +64,13 @@ export const verificationBatches = pgTable('verification_batches', {
   ), // Куда везем (ссылка на вашу таблицу)
   status: text('status').notNull().default('draft'), // 'draft' | 'sent' | 'completed'
   comment: text('comment'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 // 3. Промежуточная таблица связей приборов и партий
@@ -74,7 +85,9 @@ export const devicesToBatches = pgTable(
       .notNull()
       .references(() => verificationBatches.id, { onDelete: 'cascade' }),
     deviceStatus: text('device_status').notNull().default('selected'), // 'selected' | 'dismantled' | 'returned'
-    createdAt: timestamp('created_at').notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => ({
     deviceIdIdx: index('dtb_device_id_idx').on(table.deviceId),

@@ -1,4 +1,4 @@
-import { and, eq, or, desc, sql, ne, notInArray } from 'drizzle-orm';
+import { and, eq, or, desc, sql, ne, notInArray, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { chatMessages } from '../models/message.model';
 import { users } from '../../user/user.model';
@@ -7,13 +7,39 @@ export class ChatService {
   constructor(private db: DrizzleDB) {}
 
   // 1. Получить историю переписки
+  // async getChatHistory(
+  //   currentUserId: string,
+  //   recipientId: string,
+  //   limit: number,
+  //   offset: number
+  // ) {
+  //   return await this.db
+  //     .select()
+  //     .from(chatMessages)
+  //     .where(
+  //       or(
+  //         and(
+  //           eq(chatMessages.senderId, currentUserId),
+  //           eq(chatMessages.recipientId, recipientId)
+  //         ),
+  //         and(
+  //           eq(chatMessages.senderId, recipientId),
+  //           eq(chatMessages.recipientId, currentUserId)
+  //         )
+  //       )
+  //     )
+  //     .orderBy(desc(chatMessages.createdAt))
+  //     .limit(limit)
+  //     .offset(offset);
+  // }
   async getChatHistory(
     currentUserId: string,
     recipientId: string,
     limit: number,
     offset: number
   ) {
-    return await this.db
+    // 1. Сначала вырезаем из базы последние 50 сообщений (desc)
+    const subquery = this.db
       .select()
       .from(chatMessages)
       .where(
@@ -28,9 +54,17 @@ export class ChatService {
           )
         )
       )
-      .orderBy(desc(chatMessages.createdAt))
+      .orderBy(desc(chatMessages.createdAt)) // Берем самые свежие
       .limit(limit)
-      .offset(offset);
+      .offset(offset)
+      .as('subquery');
+
+    // 2. 🔥 ИСПРАВЛЕНО: Разворачиваем этот срез данных на уровне самой базы по возрастанию (asc)!
+    // Теперь сервер всегда будет отдавать массив в хронологическом порядке [1, 2, 3 ... 10]
+    return await this.db
+      .select()
+      .from(subquery)
+      .orderBy(asc(subquery.createdAt));
   }
 
   // async getChatUsers(currentUserId: string) {
