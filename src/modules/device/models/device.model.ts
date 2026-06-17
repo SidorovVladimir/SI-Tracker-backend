@@ -58,7 +58,8 @@ export const devices = pgTable('devices', {
 export const verificationBatches = pgTable('verification_batches', {
   id: uuid('id').primaryKey().defaultRandom(),
   number: varchar('number', { length: 100 }).notNull(), // Номер заявки
-  plannedDate: timestamp('planned_date').notNull(), // Планируемый месяц/дата отправки
+  // plannedDate: timestamp('planned_date').notNull(), // Планируемый месяц/дата отправки
+  plannedDate: timestamp('planned_date', { withTimezone: true }).notNull(), // Планируемый месяц/дата отправки
   verificationOrganizationId: uuid('verification_organization_id').references(
     () => verificationOrganizations.id
   ), // Куда везем (ссылка на вашу таблицу)

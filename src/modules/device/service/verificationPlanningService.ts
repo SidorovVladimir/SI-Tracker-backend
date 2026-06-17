@@ -6,7 +6,7 @@ import {
   devicesToBatches,
   devices,
 } from '../../device/models/device.model';
-import { eq, and, inArray, sql } from 'drizzle-orm';
+import { eq, and, inArray, sql, gte, lte } from 'drizzle-orm';
 
 export interface CreateBatchInput {
   number: string;
@@ -551,24 +551,71 @@ export class VerificationPlanningService {
   //   });
   // }
 
+  // async getVerificationBatches(year?: number, status?: string) {
+  //   const constraints = [];
+
+  //   // 1. Фильтр по статусу ('draft' | 'sent' | 'completed')
+  //   if (status) {
+  //     constraints.push(eq(verificationBatches.status, status));
+  //   }
+
+  //   // 2. Фильтр по году плановой даты отправки
+  //   if (year) {
+  //     constraints.push(
+  //       sql`extract(year from ${verificationBatches.plannedDate}) = ${year}`
+  //     );
+  //   }
+
+  //   return await this.db.query.verificationBatches.findMany({
+  //     where: constraints.length > 0 ? and(...constraints) : undefined,
+  //     orderBy: (b, { desc }) => [desc(b.plannedDate)], // Свежие по дате партии будут первыми
+  //     with: {
+  //       devicesToBatches: {
+  //         with: {
+  //           device: {
+  //             columns: {
+  //               id: true,
+  //               name: true,
+  //               model: true,
+  //               serialNumber: true,
+  //             },
+  //             with: {
+  //               verifications: {
+  //                 where: (v, { eq }) => eq(v.batchId, v.batchId),
+  //                 orderBy: (v, { desc }) => [desc(v.date)],
+  //               },
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   });
+  // }
+
   async getVerificationBatches(year?: number, status?: string) {
     const constraints = [];
 
-    // 1. Фильтр по статусу ('draft' | 'sent' | 'completed')
+    // 1. Фильтр по статусу партии
     if (status) {
       constraints.push(eq(verificationBatches.status, status));
     }
 
-    // 2. Фильтр по году плановой даты отправки
+    // 2. Фильтр по году (оптимальный для индексов)
     if (year) {
+      const startDate = new Date(`${year}-01-01T00:00:00.000Z`);
+      const endDate = new Date(`${year}-12-31T23:59:59.999Z`);
+
       constraints.push(
-        sql`extract(year from ${verificationBatches.plannedDate}) = ${year}`
+        and(
+          gte(verificationBatches.plannedDate, startDate),
+          lte(verificationBatches.plannedDate, endDate)
+        )
       );
     }
 
     return await this.db.query.verificationBatches.findMany({
       where: constraints.length > 0 ? and(...constraints) : undefined,
-      orderBy: (b, { desc }) => [desc(b.plannedDate)], // Свежие по дате партии будут первыми
+      orderBy: (b, { desc }) => [desc(b.plannedDate)],
       with: {
         devicesToBatches: {
           with: {
@@ -581,7 +628,6 @@ export class VerificationPlanningService {
               },
               with: {
                 verifications: {
-                  where: (v, { eq }) => eq(v.batchId, v.batchId),
                   orderBy: (v, { desc }) => [desc(v.date)],
                 },
               },
