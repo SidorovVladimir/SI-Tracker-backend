@@ -60,11 +60,10 @@ export class DeviceService {
       conditions.push(ilike(devices.serialNumber, `%${filter.serialNumber}%`));
     }
 
-    // 3. Фильтр по статусу (Состоянию) СИ через подзапрос к справочнику statuses
     if (filter?.status) {
       conditions.push(
         sql`${devices.statusId} IN (
-          SELECT id FROM statuses WHERE name = ${filter.status}
+          SELECT id FROM statuses WHERE LOWER(TRIM(name)) = LOWER(TRIM(${filter.status}))
         )`
       );
     }
@@ -74,7 +73,7 @@ export class DeviceService {
       conditions.push(
         sql`${devices.productionSiteId} IN (
           SELECT id FROM production_sites WHERE name ILIKE ${
-            '%' + filter.productionSite + '%'
+            '%' + filter.productionSite.trim() + '%'
           }
         )`
       );
@@ -86,7 +85,7 @@ export class DeviceService {
         sql`${devices.productionSiteId} IN (
           SELECT ps.id FROM production_sites ps
           JOIN cities c ON ps.city_id = c.id
-          WHERE c.name = ${filter.city}
+          WHERE LOWER(TRIM(c.name)) = LOWER(TRIM(${filter.city}))
         )`
       );
     }
@@ -97,7 +96,7 @@ export class DeviceService {
         sql`${devices.productionSiteId} IN (
           SELECT ps.id FROM production_sites ps
           JOIN companies comp ON ps.company_id = comp.id
-          WHERE comp.name ILIKE ${'%' + filter.company + '%'}
+          WHERE comp.name ILIKE ${'%' + filter.company.trim() + '%'}
         )`
       );
     }
@@ -108,7 +107,7 @@ export class DeviceService {
         sql`${devices.id} IN (
           SELECT v.device_id FROM verifications v
           JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-          WHERE mct.name = ${filter.metrologyControle}
+          WHERE LOWER(TRIM(mct.name)) = LOWER(TRIM(${filter.metrologyControle}))
           AND v.valid_until = (
             SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
           )
@@ -117,11 +116,38 @@ export class DeviceService {
     }
 
     // 8. Фильтр по дате "Срок действия с..." (Сравниваем с valid_until последней поверки)
+    // if (filter?.dateStart) {
+    //   conditions.push(
+    //     sql`${devices.id} IN (
+    //       SELECT v.device_id FROM verifications v
+    //       WHERE v.valid_until >= ${new Date(filter.dateStart)}
+    //       AND v.valid_until = (
+    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
+    //       )
+    //     )`
+    //   );
+    // }
+
+    // // 9. Фильтр по дате "Срок действия до..."
+    // if (filter?.dateEnd) {
+    //   conditions.push(
+    //     sql`${devices.id} IN (
+    //       SELECT v.device_id FROM verifications v
+    //       WHERE v.valid_until <= ${new Date(filter.dateEnd)}
+    //       AND v.valid_until = (
+    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
+    //       )
+    //     )`
+    //   );
+    // }
     if (filter?.dateStart) {
+      // Вырезаем первые 10 символов (YYYY-MM-DD), защищаясь от полных ISO-строк
+      const safeDateStart = String(filter.dateStart).slice(0, 10);
+
       conditions.push(
         sql`${devices.id} IN (
           SELECT v.device_id FROM verifications v
-          WHERE v.valid_until >= ${new Date(filter.dateStart)}
+          WHERE v.valid_until::date >= ${safeDateStart}::date
           AND v.valid_until = (
             SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
           )
@@ -131,10 +157,12 @@ export class DeviceService {
 
     // 9. Фильтр по дате "Срок действия до..."
     if (filter?.dateEnd) {
+      const safeDateEnd = String(filter.dateEnd).slice(0, 10);
+
       conditions.push(
         sql`${devices.id} IN (
           SELECT v.device_id FROM verifications v
-          WHERE v.valid_until <= ${new Date(filter.dateEnd)}
+          WHERE v.valid_until::date <= ${safeDateEnd}::date
           AND v.valid_until = (
             SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
           )
