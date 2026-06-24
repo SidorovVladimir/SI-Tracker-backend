@@ -7,6 +7,15 @@ type ProductionSite {
   updatedAt: String!
 }
 
+type ProductionSiteSelectOption {
+  id: ID!
+  name: String!
+  companyId: ID!
+  cityId: ID!
+  createdAt: String!
+  updatedAt: String!
+}
+
 type ProductionSiteRelation {
   id: ID!
   name: String!
@@ -15,8 +24,8 @@ type ProductionSiteRelation {
 }
 
 type Query {
-  productionSites: [ProductionSite!]!
-  productionSite(id: ID!): ProductionSite!
+  productionSites: [ProductionSiteSelectOption!]!
+  productionSite(id: ID!): ProductionSiteSelectOption!
   getProductionSitesForSelect: [ProductionSite!]!
 }
 

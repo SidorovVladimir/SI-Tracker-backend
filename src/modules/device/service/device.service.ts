@@ -72,10 +72,9 @@ export class DeviceService {
     if (filter?.productionSite) {
       conditions.push(
         sql`${devices.productionSiteId} IN (
-          SELECT id FROM production_sites WHERE name ILIKE ${
-            '%' + filter.productionSite.trim() + '%'
-          }
-        )`
+      SELECT id FROM production_sites 
+      WHERE LOWER(TRIM(name)) = LOWER(TRIM(${filter.productionSite}))
+    )`
       );
     }
 
@@ -94,10 +93,10 @@ export class DeviceService {
     if (filter?.company) {
       conditions.push(
         sql`${devices.productionSiteId} IN (
-          SELECT ps.id FROM production_sites ps
-          JOIN companies comp ON ps.company_id = comp.id
-          WHERE comp.name ILIKE ${'%' + filter.company.trim() + '%'}
-        )`
+      SELECT ps.id FROM production_sites ps
+      JOIN companies comp ON ps.company_id = comp.id
+      WHERE LOWER(TRIM(comp.name)) = LOWER(TRIM(${filter.company}))
+    )`
       );
     }
 
