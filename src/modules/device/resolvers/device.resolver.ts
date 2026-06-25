@@ -322,20 +322,5 @@ export const Mutation = {
       message:
         'Файл Excel успешно принят. Обработка и импорт приборов запущены в фоновом режиме.',
     };
-    //   try {
-    //     const validatedInput = ImportDevicesExcelInputSchema.parse(input);
-
-    //     const auditLogService = new DeviceAuditLogService(db);
-    //     const deviceService = new DeviceService(db, auditLogService);
-
-    //     return await deviceService.importDevicesFromExcel(
-    //       validatedInput,
-    //       currentUser.id
-    //     );
-    //   } catch (err) {
-    //     if (err instanceof ZodError) {
-    //       throw new Error(JSON.stringify(formatZodErrors(err)));
-    //     }
-    //     throw err;
   },
 };

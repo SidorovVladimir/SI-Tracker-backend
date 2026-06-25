@@ -26,6 +26,75 @@ enum BudgetGroupBy {
   SITE # Группировать строки по Производственным площадкам (Участкам)
 }
 
+type BudgetPlan {
+  id: ID!
+  year: Int!
+  status: String! # 'draft' | 'approved'
+  comment: String
+  createdAt: String!
+  updatedAt: String!
+  # Статистические поля для фронтенда
+  totalCount: Int!
+  matchedCount: Int!
+  totalCost: Float!
+}
+
+type BudgetPlanItem {
+  id: ID!
+  budgetPlanId: ID!
+  deviceId: ID!
+  deviceName: String!
+  deviceModel: String!
+  matchedPricelistItemId: ID
+  matchMethod: String! # 'grsi' | 'csm_code' | 'model_exact' | 'text_fuzzy' | 'manual'
+  basePrice: Float!
+  vatAmount: Float!
+  totalCost: Float!
+  device: Device! # Связка с текущей карточкой прибора
+}
+
+type BudgetPlanItemsResponse {
+  items: [BudgetPlanItem!]!
+  totalCount: Int!
+}
+
+input BudgetPlanFilterInput {
+  matchMethod: String
+  productionSiteId: ID
+  searchQuery: String # Поиск по имени или модели прибора
+}
+
+type VerificationOrganizationRelation {
+  id: ID!
+  name: String!
+}
+
+type Pricelist {
+  id: ID!
+  verificationOrganizationId: ID!
+  title: String!
+  year: Int!
+  isRegulated: Boolean!
+  createdAt: String!
+  verificationOrganization: VerificationOrganizationRelation!
+}
+
+input PricelistItemInput {
+  grsiNumber: String
+  csmCode: String
+  name: String!
+  modelOrType: String
+  price: Float!
+}
+
+input CreatePricelistInput {
+  verificationOrganizationId: ID!
+  title: String!
+  year: Int!
+  isRegulated: Boolean!
+  items: [PricelistItemInput!]! # Массив строк, распарсенных и сопоставленных на клиенте
+}
+
 type Query {
   # 🎯 Главный запрос для вывода финансовой матрицы с поддержкой каскадных фильтров ЦФО
   getBudgetMatrix(
@@ -35,4 +104,37 @@ type Query {
     cityId: ID
     siteId: ID
   ): BudgetMatrixResponse!
+
+  budgetPlans: [BudgetPlan!]!
+  budgetPlan(id: ID!): BudgetPlan
+  budgetPlanItems(
+    budgetId: ID!
+    limit: Int!
+    offset: Int!
+    filter: BudgetPlanFilterInput
+  ): BudgetPlanItemsResponse!
+  pricelists: [Pricelist!]!
+  pricelist(id: ID!): Pricelist
+}
+
+input CreateBudgetPlanInput {
+  year: Int!
+  comment: String
+  pricelistIds: [ID!]! # Какие прайсы использовать для каскада
+}
+
+input UpdateBudgetPlanItemPriceInput {
+  itemId: ID!
+  manualPrice: Float! # Ручное переопределение цены пользователем
+}
+
+type Mutation {
+  createBudgetPlan(input: CreateBudgetPlanInput!): BudgetPlan!
+  updateBudgetPlanItemPrice(
+    input: UpdateBudgetPlanItemPriceInput!
+  ): BudgetPlanItem!
+  approveBudgetPlan(id: ID!): BudgetPlan!
+  deleteBudgetPlan(id: ID!): Boolean!
+  createPricelist(input: CreatePricelistInput!): QueuedJobResponse!
+  deletePricelist(id: ID!): Boolean!
 }
