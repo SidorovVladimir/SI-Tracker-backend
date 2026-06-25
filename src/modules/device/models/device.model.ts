@@ -26,6 +26,7 @@ export const devices = pgTable('devices', {
   serialNumber: varchar('serial_number').notNull(), // Серийный номер прибора
   releaseDate: timestamp('release_date'), // Дата выпуска
   grsiNumber: varchar('grsi_number', { length: 100 }), // ГРСИ
+  csmCode: varchar('csm_code', { length: 100 }), // Код СИ из прайса ЦСМ (договорной)
   measurementRange: varchar('measurement_range'), // Диапазон измерений
   accuracy: varchar('accuracy'), // Точность
   inventoryNumber: varchar('inventory_number', { length: 100 }), // Инвентарный номер
