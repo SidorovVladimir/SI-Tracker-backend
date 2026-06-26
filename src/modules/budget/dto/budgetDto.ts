@@ -1,24 +1,25 @@
 import { z } from 'zod';
 
-export const BudgetPlanFilterInputSchema = z
-  .object({
-    matchMethod: z.string().optional(),
-    // productionSiteId: z.uuid().optional(),
-    searchQuery: z.string().optional(),
-    city: z.uuid().optional(),
-    company: z.uuid().optional(),
-    productionSite: z.uuid().optional(),
-  })
-  .optional();
+export const BudgetPlanFilterInputSchema = z.object({
+  matchMethod: z.string().optional(),
+  // productionSiteId: z.uuid().optional(),
+  searchQuery: z.string().optional(),
+  city: z.uuid().optional(),
+  company: z.uuid().optional(),
+  productionSite: z.uuid().optional(),
+});
 
 export const CreateBudgetPlanInputSchema = z.object({
   year: z.number().int().min(2000).max(2100),
   comment: z.string().optional(),
-  pricelistIds: z.array(z.string().uuid()),
+  pricelistIds: z.array(z.uuid()),
+  cityId: z.uuid().optional(),
+  companyId: z.uuid().optional(),
+  productionSiteId: z.uuid().optional(),
 });
 
 export const UpdateBudgetPlanItemPriceInputSchema = z.object({
-  itemId: z.string().uuid(),
+  itemId: z.uuid(),
   manualPrice: z.number().positive(),
 });
 
@@ -31,7 +32,7 @@ export const PricelistItemInputSchema = z.object({
 });
 
 export const CreatePricelistInputSchema = z.object({
-  verificationOrganizationId: z.string().uuid(),
+  verificationOrganizationId: z.uuid(),
   title: z.string().min(1),
   year: z.number().int().min(2000).max(2100),
   isRegulated: z.boolean(),

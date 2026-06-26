@@ -524,11 +524,11 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     limit: number;
     offset: number;
     filter?: {
-      matchMethod?: string;
-      searchQuery?: string;
-      city?: string;
-      company?: string;
-      productionSite?: string;
+      matchMethod?: string | undefined;
+      searchQuery?: string | undefined;
+      city?: string | undefined;
+      company?: string | undefined;
+      productionSite?: string | undefined;
     };
   }) {
     const sqlConditions = [eq(budgetPlanItems.budgetPlanId, budgetId)];
@@ -674,10 +674,10 @@ ORDER BY "rowName" ASC, "monthNum" ASC
   async createBudgetPlan(input: {
     year: number;
     pricelistIds: string[];
-    comment?: string;
-    cityId?: string;
-    companyId?: string;
-    siteId?: string;
+    comment?: string | undefined;
+    cityId?: string | undefined;
+    companyId?: string | undefined;
+    productionSiteId?: string | undefined;
   }) {
     // 1. Создаем сам заголовок плана бюджета
     const [newPlan] = await this.db
@@ -693,12 +693,13 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       throw new Error('Failed to create plane');
     }
 
-    // 2. Строим условия отбора приборов (Исключаем архивные на корню)
     const deviceConditions = [eq(devices.archived, false)];
 
     // Жестко зажимаем выборку приборов по локациям, если они были выбраны в модалке создания
-    if (input.siteId) {
-      deviceConditions.push(eq(devices.productionSiteId, input.siteId));
+    if (input.productionSiteId) {
+      deviceConditions.push(
+        eq(devices.productionSiteId, input.productionSiteId)
+      );
     } else if (input.companyId || input.cityId) {
       // Если выбран только город или компания — ищем через подзапрос к production_sites
       if (input.companyId) {
@@ -713,14 +714,12 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       }
     }
 
-    // Достаем строго отфильтрованные приборы холдинга
     const targetDevices = await this.db.query.devices.findMany({
       where: and(...deviceConditions),
     });
 
     const itemsToInsert = [];
 
-    // 3. Запускаем каскадный подбор цен из прайсов ЦСМ строго по отсеченным приборам
     for (const device of targetDevices) {
       const matchResult = await this.cascadeMatchPrice(
         device,
