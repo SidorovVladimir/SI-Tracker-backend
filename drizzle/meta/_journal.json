@@ -50,6 +50,13 @@
       "when": 1782378313561,
       "tag": "0006_overconfident_phantom_reporter",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1782453524538,
+      "tag": "0007_curved_franklin_storm",
+      "breakpoints": true
     }
   ]
 }
