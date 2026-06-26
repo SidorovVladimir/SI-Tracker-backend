@@ -41,7 +41,6 @@ export const Query = {
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
 
-    // Обязательно должен быть оператор return!
     return await new BudgetService(db).getBudgetPlans();
   },
 

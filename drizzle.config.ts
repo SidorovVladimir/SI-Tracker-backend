@@ -4,7 +4,7 @@ export default defineConfig({
   out: './drizzle',
   schema: './src/modules/**/*model.ts',
   dialect: 'postgresql',
-  driver: 'pglite',
+  // driver: 'pglite',
   dbCredentials: {
     url: process.env.DATABASE_URL!,
   },
