@@ -399,6 +399,121 @@ ORDER BY "rowName" ASC, "monthNum" ASC
   //     totalCostAll: parseFloat(sumResult?.totalCost || '0.00'),
   //   };
   // }
+  // async getBudgetPlanItems({
+  //   budgetId,
+  //   limit,
+  //   offset,
+  //   filter,
+  // }: {
+  //   budgetId: string;
+  //   limit: number;
+  //   offset: number;
+  //   filter?:
+  //     | {
+  //         matchMethod?: string | undefined;
+  //         searchQuery?: string | undefined;
+  //         city?: string | undefined;
+  //         company?: string | undefined;
+  //         productionSite?: string | undefined;
+  //       }
+  //     | undefined;
+  // }) {
+  //   // 1. Сборка динамических условий фильтрации строго на UUID
+  //   const conditions = [eq(budgetPlanItems.budgetPlanId, budgetId)];
+
+  //   if (filter?.matchMethod) {
+  //     conditions.push(eq(budgetPlanItems.matchMethod, filter.matchMethod));
+  //   }
+
+  //   if (filter?.searchQuery && filter.searchQuery.trim() !== '') {
+  //     conditions.push(
+  //       or(
+  //         ilike(budgetPlanItems.deviceName, `%${filter.searchQuery}%`),
+  //         ilike(budgetPlanItems.deviceModel, `%${filter.searchQuery}%`)
+  //       )!
+  //     );
+  //   }
+
+  //   // Фильтрация по ID локаций холдинга (один в один по вашей логике)
+  //   if (filter?.company && filter.company !== 'ALL' && filter.company !== '') {
+  //     conditions.push(eq(productionSites.companyId, filter.company));
+  //   }
+  //   if (filter?.city && filter.city !== 'ALL' && filter.city !== '') {
+  //     conditions.push(eq(productionSites.cityId, filter.city));
+  //   }
+  //   if (
+  //     filter?.productionSite &&
+  //     filter.productionSite !== 'ALL' &&
+  //     filter.productionSite !== ''
+  //   ) {
+  //     conditions.push(eq(productionSites.id, filter.productionSite));
+  //   }
+
+  //   const finalWhereClause = and(...conditions);
+
+  //   // 2. ЗАПРОС №1: Получаем строки текущей страницы с точным JOIN локаций
+  //   const items = await this.db
+  //     .select({
+  //       id: budgetPlanItems.id,
+  //       deviceName: budgetPlanItems.deviceName,
+  //       deviceModel: budgetPlanItems.deviceModel,
+  //       matchMethod: budgetPlanItems.matchMethod,
+  //       basePrice: budgetPlanItems.basePrice,
+  //       vatAmount: budgetPlanItems.vatAmount,
+  //       totalCost: budgetPlanItems.totalCost,
+  //       device: {
+  //         id: devices.id,
+  //         serialNumber: devices.serialNumber,
+  //         grsiNumber: devices.grsiNumber,
+  //       },
+  //     })
+  //     .from(budgetPlanItems)
+  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
+  //     .innerJoin(
+  //       productionSites,
+  //       eq(devices.productionSiteId, productionSites.id)
+  //     )
+  //     .innerJoin(companies, eq(productionSites.companyId, companies.id))
+  //     .innerJoin(cities, eq(productionSites.cityId, cities.id))
+  //     .where(finalWhereClause)
+  //     .limit(limit)
+  //     .offset(offset);
+
+  //   // 3. ЗАПРОС №2: Считаем общее число отфильтрованных позиций для пагинации
+  //   const [countResult] = await this.db
+  //     .select({ count: sql<number>`count(${budgetPlanItems.id})::int` })
+  //     .from(budgetPlanItems)
+  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
+  //     .innerJoin(
+  //       productionSites,
+  //       eq(devices.productionSiteId, productionSites.id)
+  //     )
+  //     .innerJoin(companies, eq(productionSites.companyId, companies.id))
+  //     .innerJoin(cities, eq(productionSites.cityId, cities.id))
+  //     .where(finalWhereClause);
+
+  //   // 4. ЗАПРОС №3: Пересчет плановой суммы СТРОГО по отфильтрованному срезу
+  //   const [sumResult] = await this.db
+  //     .select({
+  //       totalCost: sql<string>`sum(${budgetPlanItems.totalCost})::numeric(12,2)`,
+  //     })
+  //     .from(budgetPlanItems)
+  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
+  //     .innerJoin(
+  //       productionSites,
+  //       eq(devices.productionSiteId, productionSites.id)
+  //     )
+  //     .innerJoin(companies, eq(productionSites.companyId, companies.id))
+  //     .innerJoin(cities, eq(productionSites.cityId, cities.id))
+  //     .where(finalWhereClause);
+
+  //   return {
+  //     items: items || [],
+  //     totalCount: countResult?.count || 0,
+  //     totalCostAll: parseFloat(sumResult?.totalCost || '0.00'),
+  //   };
+  // }
+
   async getBudgetPlanItems({
     budgetId,
     limit,
@@ -408,25 +523,22 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     budgetId: string;
     limit: number;
     offset: number;
-    filter?:
-      | {
-          matchMethod?: string | undefined;
-          searchQuery?: string | undefined;
-          city?: string | undefined;
-          company?: string | undefined;
-          productionSite?: string | undefined;
-        }
-      | undefined;
+    filter?: {
+      matchMethod?: string;
+      searchQuery?: string;
+      city?: string;
+      company?: string;
+      productionSite?: string;
+    };
   }) {
-    // 1. Сборка динамических условий фильтрации строго на UUID
-    const conditions = [eq(budgetPlanItems.budgetPlanId, budgetId)];
+    const sqlConditions = [eq(budgetPlanItems.budgetPlanId, budgetId)];
 
     if (filter?.matchMethod) {
-      conditions.push(eq(budgetPlanItems.matchMethod, filter.matchMethod));
+      sqlConditions.push(eq(budgetPlanItems.matchMethod, filter.matchMethod));
     }
 
     if (filter?.searchQuery && filter.searchQuery.trim() !== '') {
-      conditions.push(
+      sqlConditions.push(
         or(
           ilike(budgetPlanItems.deviceName, `%${filter.searchQuery}%`),
           ilike(budgetPlanItems.deviceModel, `%${filter.searchQuery}%`)
@@ -434,24 +546,20 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       );
     }
 
-    // Фильтрация по ID локаций холдинга (один в один по вашей логике)
-    if (filter?.company && filter.company !== 'ALL' && filter.company !== '') {
-      conditions.push(eq(productionSites.companyId, filter.company));
+    // 🎯 СТРОГАЯ И ЧИСТАЯ ФИЛЬТРАЦИЯ ПО UUID (Никакого текстового мусора!)
+    if (filter?.company) {
+      sqlConditions.push(eq(productionSites.companyId, filter.company));
     }
-    if (filter?.city && filter.city !== 'ALL' && filter.city !== '') {
-      conditions.push(eq(productionSites.cityId, filter.city));
+    if (filter?.city) {
+      sqlConditions.push(eq(productionSites.cityId, filter.city));
     }
-    if (
-      filter?.productionSite &&
-      filter.productionSite !== 'ALL' &&
-      filter.productionSite !== ''
-    ) {
-      conditions.push(eq(productionSites.id, filter.productionSite));
+    if (filter?.productionSite) {
+      sqlConditions.push(eq(productionSites.id, filter.productionSite));
     }
 
-    const finalWhereClause = and(...conditions);
+    const finalWhereClause = and(...sqlConditions);
 
-    // 2. ЗАПРОС №1: Получаем строки текущей страницы с точным JOIN локаций
+    // 1. Текущая страница приборов
     const items = await this.db
       .select({
         id: budgetPlanItems.id,
@@ -473,13 +581,11 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         productionSites,
         eq(devices.productionSiteId, productionSites.id)
       )
-      .innerJoin(companies, eq(productionSites.companyId, companies.id))
-      .innerJoin(cities, eq(productionSites.cityId, cities.id))
       .where(finalWhereClause)
       .limit(limit)
       .offset(offset);
 
-    // 3. ЗАПРОС №2: Считаем общее число отфильтрованных позиций для пагинации
+    // 2. Общее число отфильтрованных строк для пагинации страницы
     const [countResult] = await this.db
       .select({ count: sql<number>`count(${budgetPlanItems.id})::int` })
       .from(budgetPlanItems)
@@ -488,11 +594,9 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         productionSites,
         eq(devices.productionSiteId, productionSites.id)
       )
-      .innerJoin(companies, eq(productionSites.companyId, companies.id))
-      .innerJoin(cities, eq(productionSites.cityId, cities.id))
       .where(finalWhereClause);
 
-    // 4. ЗАПРОС №3: Пересчет плановой суммы СТРОГО по отфильтрованному срезу
+    // 3. Динамический пересчет плановой суммы на панели сверху
     const [sumResult] = await this.db
       .select({
         totalCost: sql<string>`sum(${budgetPlanItems.totalCost})::numeric(12,2)`,
@@ -503,8 +607,6 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         productionSites,
         eq(devices.productionSiteId, productionSites.id)
       )
-      .innerJoin(companies, eq(productionSites.companyId, companies.id))
-      .innerJoin(cities, eq(productionSites.cityId, cities.id))
       .where(finalWhereClause);
 
     return {
@@ -513,12 +615,71 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       totalCostAll: parseFloat(sumResult?.totalCost || '0.00'),
     };
   }
+
   // 4. Создание бюджета с каскадным поиском цен
+  // async createBudgetPlan(input: {
+  //   year: number;
+  //   pricelistIds: string[];
+  //   comment?: string | undefined;
+  // }) {
+  //   const [newPlan] = await this.db
+  //     .insert(budgetPlans)
+  //     .values({
+  //       year: input.year,
+  //       comment: input.comment ?? null,
+  //       status: 'draft',
+  //     })
+  //     .returning();
+
+  //   if (!newPlan) {
+  //     throw new Error('Failed to create plane');
+  //   }
+
+  //   const activeDevices = await this.db
+  //     .select()
+  //     .from(devices)
+  //     .where(eq(devices.archived, false));
+  //   const itemsToInsert = [];
+
+  //   for (const device of activeDevices) {
+  //     const matchResult = await this.cascadeMatchPrice(
+  //       device,
+  //       input.pricelistIds
+  //     );
+
+  //     const basePrice = matchResult ? parseFloat(matchResult.item.price) : 0;
+  //     const vatAmount = basePrice * 0.2;
+  //     const totalCost = basePrice + vatAmount;
+
+  //     itemsToInsert.push({
+  //       budgetPlanId: newPlan.id,
+  //       deviceId: device.id,
+  //       deviceName: device.name,
+  //       deviceModel: device.model,
+  //       matchedPricelistItemId: matchResult ? matchResult.item.id : null,
+  //       matchMethod: matchResult ? matchResult.method : 'not_found',
+  //       basePrice: basePrice.toFixed(2),
+  //       vatAmount: vatAmount.toFixed(2),
+  //       totalCost: totalCost.toFixed(2),
+  //     });
+  //   }
+
+  //   if (itemsToInsert.length > 0) {
+  //     await this.db.insert(budgetPlanItems).values(itemsToInsert);
+  //   }
+
+  //   return newPlan;
+  // }
+
   async createBudgetPlan(input: {
     year: number;
     pricelistIds: string[];
-    comment?: string | undefined;
+    comment?: string;
+    cityId?: string;
+    companyId?: string;
+    siteId?: string;
   }) {
+    // 1. Создаем сам заголовок плана бюджета
     const [newPlan] = await this.db
       .insert(budgetPlans)
       .values({
@@ -532,13 +693,35 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       throw new Error('Failed to create plane');
     }
 
-    const activeDevices = await this.db
-      .select()
-      .from(devices)
-      .where(eq(devices.archived, false));
+    // 2. Строим условия отбора приборов (Исключаем архивные на корню)
+    const deviceConditions = [eq(devices.archived, false)];
+
+    // Жестко зажимаем выборку приборов по локациям, если они были выбраны в модалке создания
+    if (input.siteId) {
+      deviceConditions.push(eq(devices.productionSiteId, input.siteId));
+    } else if (input.companyId || input.cityId) {
+      // Если выбран только город или компания — ищем через подзапрос к production_sites
+      if (input.companyId) {
+        deviceConditions.push(
+          sql`production_site_id in (select id from production_sites where company_id = ${input.companyId})`
+        );
+      }
+      if (input.cityId) {
+        deviceConditions.push(
+          sql`production_site_id in (select id from production_sites where city_id = ${input.cityId})`
+        );
+      }
+    }
+
+    // Достаем строго отфильтрованные приборы холдинга
+    const targetDevices = await this.db.query.devices.findMany({
+      where: and(...deviceConditions),
+    });
+
     const itemsToInsert = [];
 
-    for (const device of activeDevices) {
+    // 3. Запускаем каскадный подбор цен из прайсов ЦСМ строго по отсеченным приборам
+    for (const device of targetDevices) {
       const matchResult = await this.cascadeMatchPrice(
         device,
         input.pricelistIds

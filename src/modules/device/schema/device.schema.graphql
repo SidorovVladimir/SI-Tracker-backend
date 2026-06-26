@@ -33,6 +33,8 @@ input DeviceFilterInput {
   metrologyControle: String
   dateStart: String
   dateEnd: String
+  archived: Boolean
+  includeArchived: Boolean
 }
 
 type DevicesWithRelationsResponse {
@@ -77,6 +79,7 @@ type DeviceTableItem {
   manufacturer: String
   verificationInterval: Int
   status: Status!
+  archived: Boolean
   productionSite: ProductionSiteRelation!
   latestVerification: VerificationTableItem
 }
