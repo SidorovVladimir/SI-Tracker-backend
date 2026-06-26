@@ -74,7 +74,7 @@ export const budgetPlanItems = pgTable('budget_plan_items', {
     .references(() => budgetPlans.id, { onDelete: 'cascade' }),
   deviceId: uuid('device_id')
     .notNull()
-    .references(() => devices.id),
+    .references(() => devices.id, { onDelete: 'cascade' }),
   deviceName: varchar('device_name').notNull(),
   deviceModel: varchar('device_model').notNull(),
   matchedPricelistItemId: uuid('matched_pricelist_item_id').references(

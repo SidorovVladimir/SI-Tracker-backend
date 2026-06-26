@@ -56,12 +56,15 @@ type BudgetPlanItem {
 type BudgetPlanItemsResponse {
   items: [BudgetPlanItem!]!
   totalCount: Int!
+  totalCostAll: Float!
 }
 
 input BudgetPlanFilterInput {
   matchMethod: String
-  productionSiteId: ID
   searchQuery: String # Поиск по имени или модели прибора
+  city: ID
+  company: ID
+  productionSite: ID
 }
 
 type VerificationOrganizationRelation {
@@ -95,6 +98,23 @@ input CreatePricelistInput {
   items: [PricelistItemInput!]! # Массив строк, распарсенных и сопоставленных на клиенте
 }
 
+type BudgetPlanDistributionRow {
+  groupId: ID!
+  groupName: String! # Имя компании, города или цеха
+  count: Int! # Количество приборов в этой группе
+  baseSubtotal: Float! # Плановая сумма без НДС
+  totalCost: Float! # Итоговая плановая сумма с НДС
+}
+
+input DeviceFilterInput {
+  deviceName: String
+  matchMethod: String
+  # 🎯 Фильтры для мгновенной селекции по карточкам холдинга
+  cityId: ID
+  companyId: ID
+  productionSiteId: ID
+}
+
 type Query {
   # 🎯 Главный запрос для вывода финансовой матрицы с поддержкой каскадных фильтров ЦФО
   getBudgetMatrix(
@@ -115,6 +135,10 @@ type Query {
   ): BudgetPlanItemsResponse!
   pricelists: [Pricelist!]!
   pricelist(id: ID!): Pricelist
+  getBudgetPlanDistribution(
+    budgetId: ID!
+    groupBy: String! # 'company' | 'city' | 'production_site'
+  ): [BudgetPlanDistributionRow!]!
 }
 
 input CreateBudgetPlanInput {

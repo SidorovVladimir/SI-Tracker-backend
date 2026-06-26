@@ -79,6 +79,22 @@ export const Query = {
     if (!currentUser) throw new Error('Не авторизован');
     return await new BudgetService(db).getPricelist(id);
   },
+
+  getBudgetPlanDistribution: async (
+    _: unknown,
+    {
+      budgetId,
+      groupBy,
+    }: { budgetId: string; groupBy: 'company' | 'city' | 'production_site' },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    return await new BudgetService(db).getBudgetPlanDistribution(
+      budgetId,
+      groupBy
+    );
+  },
 };
 
 export const Mutation = {

@@ -3,8 +3,11 @@ import { z } from 'zod';
 export const BudgetPlanFilterInputSchema = z
   .object({
     matchMethod: z.string().optional(),
-    productionSiteId: z.string().uuid().optional(),
+    // productionSiteId: z.uuid().optional(),
     searchQuery: z.string().optional(),
+    city: z.uuid().optional(),
+    company: z.uuid().optional(),
+    productionSite: z.uuid().optional(),
   })
   .optional();
 
