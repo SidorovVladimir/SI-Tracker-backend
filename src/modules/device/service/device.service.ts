@@ -1,12 +1,8 @@
 import { and, eq, ilike, inArray, ne, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateDeviceInput } from '../dto/CreateDeviceDto';
-import { DeviceEntity, NewDevice } from '../types/device.types';
-import {
-  devices,
-  devicesToBatches,
-  verificationBatches,
-} from '../models/device.model';
+import { DeviceEntity } from '../types/device.types';
+import { devices, devicesToBatches } from '../models/device.model';
 import { scopes, scopesToDevices } from '../../catalog/models/scope.model';
 import { verifications } from '../models/verification.model';
 import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
@@ -863,8 +859,6 @@ export class DeviceService {
       comment: `Автоматическая синхронизация ФГИС Аршин. ID записи: ${arshinData.arshinId}`,
       cost: 0,
     };
-
-    console.log('Данные для записи прибора', verificationDto);
 
     await this.createVerification(verificationDto, userId);
 

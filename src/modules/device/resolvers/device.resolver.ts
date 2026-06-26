@@ -179,6 +179,7 @@ export const Mutation = {
     }
     try {
       const validatedInput = UpdateDeviceInputSchema.parse(input);
+
       const auditLogService = new DeviceAuditLogService(db);
       const deviceService = new DeviceService(db, auditLogService);
 
