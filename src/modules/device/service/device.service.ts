@@ -49,7 +49,22 @@ export class DeviceService {
   }) {
     const { limit = 25, offset = 0, filter } = args;
 
-    const conditions = [eq(devices.archived, false)];
+    // const conditions = [eq(devices.archived, false)];
+
+    const conditions = [];
+
+    if (filter?.includeArchived === true) {
+      // Режим 1: Выбрано "Все приборы".
+      // Мы просто НИЧЕГО не добавляем в массив условий, Postgres выведет и true, и false вместе.
+    } else if (filter?.archived === true) {
+      // Режим 2: Выбрано "Только архив".
+      conditions.push(eq(devices.archived, true));
+    } else {
+      // Режим 3: Выбрано "Активные" ИЛИ первая загрузка страницы (по умолчанию)
+      conditions.push(eq(devices.archived, false));
+    }
+
+    // const conditions = [eq(devices.archived, filter.archived)];
     // 1. Фильтр по наименованию (Регистронезависимый поиск ILIKE)
     if (filter?.deviceName) {
       conditions.push(ilike(devices.name, `%${filter.deviceName}%`));
@@ -114,31 +129,6 @@ export class DeviceService {
       );
     }
 
-    // 8. Фильтр по дате "Срок действия с..." (Сравниваем с valid_until последней поверки)
-    // if (filter?.dateStart) {
-    //   conditions.push(
-    //     sql`${devices.id} IN (
-    //       SELECT v.device_id FROM verifications v
-    //       WHERE v.valid_until >= ${new Date(filter.dateStart)}
-    //       AND v.valid_until = (
-    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
-    //       )
-    //     )`
-    //   );
-    // }
-
-    // // 9. Фильтр по дате "Срок действия до..."
-    // if (filter?.dateEnd) {
-    //   conditions.push(
-    //     sql`${devices.id} IN (
-    //       SELECT v.device_id FROM verifications v
-    //       WHERE v.valid_until <= ${new Date(filter.dateEnd)}
-    //       AND v.valid_until = (
-    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
-    //       )
-    //     )`
-    //   );
-    // }
     if (filter?.dateStart) {
       // Вырезаем первые 10 символов (YYYY-MM-DD), защищаясь от полных ISO-строк
       const safeDateStart = String(filter.dateStart).slice(0, 10);
@@ -605,7 +595,7 @@ export class DeviceService {
     const oldDataSnapshot = await this.getFlatAuditSnapshot(id);
 
     if (!oldDataSnapshot) {
-      throw new Error('Прибор для удаления не найден');
+      throw new Error('Прибор для архивации не найден');
     }
 
     try {
@@ -626,6 +616,13 @@ export class DeviceService {
 
         await tx.delete(devices).where(eq(devices.id, id));
       });
+      // await this.db
+      //   .update(devices)
+      //   .set({
+      //     archived: true,
+      //     updatedAt: new Date()
+      //   })
+      //   .where(eq(devices.id, id));
 
       if (this.auditLogService) {
         await this.auditLogService.logAction({
