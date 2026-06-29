@@ -13,6 +13,7 @@ import {
   pricelistItems,
   pricelists,
 } from '../models/budget.model';
+import { statuses } from '../../catalog/models/status.model';
 
 export class BudgetService {
   constructor(private db: DrizzleDB) {}
@@ -153,367 +154,6 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     return list || null;
   }
 
-  // 3. Строки бюджета с пагинацией и вложенным прибором (1 запрос к БД вместо N+1)
-  // async getBudgetPlanItems({
-  //   budgetId,
-  //   limit,
-  //   offset,
-  //   filter,
-  // }: {
-  //   budgetId: string;
-  //   limit: number;
-  //   offset: number;
-  //   filter?:
-  //     | { matchMethod?: string | undefined; searchQuery?: string | undefined }
-  //     | undefined;
-  // }) {
-  //   const whereClause = (table: any, { and, eq, or, ilike }: any) => {
-  //     const conditions = [eq(table.budgetPlanId, budgetId)];
-
-  //     if (filter?.matchMethod) {
-  //       conditions.push(eq(table.matchMethod, filter.matchMethod));
-  //     }
-
-  //     // 🎯 ПРОСТОЙ И НАДЕЖНЫЙ ВАРИАНТ: ищем строго по полям самой таблицы
-  //     if (filter?.searchQuery) {
-  //       conditions.push(
-  //         or(
-  //           ilike(table.deviceName, `%${filter.searchQuery}%`),
-  //           ilike(table.deviceModel, `%${filter.searchQuery}%`)
-  //         )
-  //       );
-  //     }
-
-  //     return and(...conditions);
-  //   };
-
-  //   // Сам запрос оставляем легким и плоским:
-  //   const items = await this.db.query.budgetPlanItems.findMany({
-  //     where: whereClause,
-  //     limit,
-  //     offset,
-  //     with: {
-  //       device: true, // Вытаскиваем прибор только для серийного номера
-  //     },
-  //   });
-
-  //   const [total] = await this.db
-  //     .select({ value: count() })
-  //     .from(budgetPlanItems)
-  //     .where(and(eq(budgetPlanItems.budgetPlanId, budgetId)));
-
-  //   return {
-  //     items,
-  //     totalCount: total?.value || 0,
-  //   };
-  // }
-  // async getBudgetPlanItems({
-  //   budgetId,
-  //   limit,
-  //   offset,
-  //   filter,
-  // }: {
-  //   budgetId: string;
-  //   limit: number;
-  //   offset: number;
-  //   filter?:
-  //     | {
-  //         matchMethod?: string | undefined;
-  //         searchQuery?: string | undefined;
-  //         productionSiteId?: string | undefined;
-  //         cityId?: string | undefined;
-  //         companyId?: string | undefined;
-  //       }
-  //     | undefined;
-  // }) {
-  //   // 1. Базовые условия для самой таблицы budget_plan_items (только по плану и статусу мэтчинга)
-  //   const whereClause = (table: any, { and, eq }: any) => {
-  //     const conditions = [eq(table.budgetPlanId, budgetId)];
-  //     if (filter?.matchMethod) {
-  //       conditions.push(eq(table.matchMethod, filter.matchMethod));
-  //     }
-  //     return and(...conditions);
-  //   };
-
-  //   // 2. Вытягиваем строки бюджета сразу со всей вложенной цепочкой связей Drizzle
-  //   const items = await this.db.query.budgetPlanItems.findMany({
-  //     where: whereClause,
-  //     with: {
-  //       device: {
-  //         with: {
-  //           productionSite: {
-  //             with: {
-  //               city: true,
-  //               company: true,
-  //             },
-  //           },
-  //         },
-  //       },
-  //     },
-  //   });
-
-  //   // 3. УМНАЯ И БЕЗОПАСНАЯ ФИЛЬТРАЦИЯ СТРУКТУРЫ ХОЛДИНГА (Snapshot-safe)
-  //   const filteredItems = items.filter((item: any) => {
-  //     const dev = item.device;
-  //     if (!dev) return false;
-
-  //     const site = dev.productionSite;
-
-  //     // А) Фильтрация по UUID-карточкам холдинга (строгое совпадение ID)
-  //     if (filter?.cityId && site?.cityId !== filter.cityId) return false;
-  //     if (filter?.companyId && site?.companyId !== filter.companyId)
-  //       return false;
-  //     if (filter?.productionSiteId && site?.id !== filter.productionSiteId)
-  //       return false;
-
-  //     // Б) Обычный текстовый поиск по названию или модели прибора из инпута
-  //     if (filter?.searchQuery) {
-  //       const query = filter.searchQuery.toLowerCase().trim();
-  //       const matchName = item.deviceName?.toLowerCase().includes(query);
-  //       const matchModel = item.deviceModel?.toLowerCase().includes(query);
-
-  //       if (!matchName && !matchModel) return false;
-  //     }
-
-  //     return true;
-  //   });
-
-  //   // 4. Пагинация уже отфильтрованного в памяти массива для точного вывода страниц
-  //   const totalCount = filteredItems.length;
-  //   const slicedItems = filteredItems.slice(offset, offset + limit);
-
-  //   return {
-  //     items: slicedItems,
-  //     totalCount,
-  //   };
-  // }
-
-  // async getBudgetPlanItems({
-  //   budgetId,
-  //   limit,
-  //   offset,
-  //   filter,
-  // }: {
-  //   budgetId: string;
-  //   limit: number;
-  //   offset: number;
-  //   filter?:
-  //     | {
-  //         matchMethod?: string | undefined;
-  //         searchQuery?: string | undefined;
-  //         city?: string | undefined;
-  //         company?: string | undefined;
-  //         productionSite?: string | undefined;
-  //       }
-  //     | undefined;
-  // }) {
-  //   // 🎯 ШАГ A: Динамически собираем массив условий для Postgres
-  //   const sqlConditions = [eq(budgetPlanItems.budgetPlanId, budgetId)];
-
-  //   if (filter?.matchMethod) {
-  //     sqlConditions.push(eq(budgetPlanItems.matchMethod, filter.matchMethod));
-  //   }
-
-  //   // Защита от ts(2345) 'undefined': формируем массив OR-условий только если строка не пустая
-  //   if (filter?.searchQuery && filter.searchQuery.trim() !== '') {
-  //     sqlConditions.push(
-  //       or(
-  //         ilike(budgetPlanItems.deviceName, `%${filter.searchQuery}%`),
-  //         ilike(budgetPlanItems.deviceModel, `%${filter.searchQuery}%`)
-  //       )! // Восклицательный знак гарантирует TypeScript, что OR выражение не undefined
-  //     );
-  //   }
-
-  //   // 🎯 Фильтрация по текстовым именам каскада (через Snapshot-поля или сырые связи)
-  //   if (filter?.city) {
-  //     sqlConditions.push(sql`production_sites.name is not null`); // Заглушка-активатор для JOIN
-  //   }
-
-  //   // Собираем базовый селект
-  //   const baseQuery = this.db
-  //     .select({
-  //       id: budgetPlanItems.id,
-  //       deviceName: budgetPlanItems.deviceName,
-  //       deviceModel: budgetPlanItems.deviceModel,
-  //       matchMethod: budgetPlanItems.matchMethod,
-  //       basePrice: budgetPlanItems.basePrice,
-  //       vatAmount: budgetPlanItems.vatAmount,
-  //       totalCost: budgetPlanItems.totalCost,
-  //       // Собираем плоский прибор для серийного номера на клиенте
-  //       device: {
-  //         id: devices.id,
-  //         serialNumber: devices.serialNumber,
-  //         grsiNumber: devices.grsiNumber,
-  //       },
-  //     })
-  //     .from(budgetPlanItems)
-  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
-  //     .innerJoin(
-  //       productionSites,
-  //       eq(devices.productionSiteId, productionSites.id)
-  //     )
-  //     .innerJoin(sql`companies c`, sql`production_sites.company_id = c.id`)
-  //     .innerJoin(sql`cities`, sql`production_sites.city_id = cities.id`);
-
-  //   // Формируем результирующее условие WHERE
-  //   const finalWhereClause = and(...sqlConditions);
-
-  //   // 1. Получаем отфильтрованные строки приборов с учетом пагинации LIMIT и OFFSET
-  //   const items = await baseQuery
-  //     .where(finalWhereClause)
-  //     .limit(limit)
-  //     .offset(offset);
-
-  //   // 2. Получаем общее количество строк по этим фильтрам для пагинатора
-  //   const [countResult] = await this.db
-  //     .select({ count: sql<number>`count(${budgetPlanItems.id})::int` })
-  //     .from(budgetPlanItems)
-  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
-  //     .innerJoin(
-  //       productionSites,
-  //       eq(devices.productionSiteId, productionSites.id)
-  //     )
-  //     .innerJoin(sql`companies c`, sql`production_sites.company_id = c.id`)
-  //     .innerJoin(sql`cities`, sql`production_sites.city_id = cities.id`)
-  //     .where(finalWhereClause);
-
-  //   // 3. 🎯 САМОЕ ГЛАВНОЕ: Считаем общую сумму по выбранному фильтру ПО ВСЕЙ БАЗЕ ДАННЫХ
-  //   const [sumResult] = await this.db
-  //     .select({
-  //       totalCost: sql<string>`sum(${budgetPlanItems.totalCost})::numeric(12,2)`,
-  //     })
-  //     .from(budgetPlanItems)
-  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
-  //     .innerJoin(
-  //       productionSites,
-  //       eq(devices.productionSiteId, productionSites.id)
-  //     )
-  //     .innerJoin(sql`companies c`, sql`production_sites.company_id = c.id`)
-  //     .innerJoin(sql`cities`, sql`production_sites.city_id = cities.id`)
-  //     .where(finalWhereClause);
-
-  //   return {
-  //     items: items || [],
-  //     totalCount: countResult?.count || 0,
-  //     // Передаем точную общую сумму среза на фронтенд (если пусто — возвращаем 0)
-  //     totalCostAll: parseFloat(sumResult?.totalCost || '0.00'),
-  //   };
-  // }
-  // async getBudgetPlanItems({
-  //   budgetId,
-  //   limit,
-  //   offset,
-  //   filter,
-  // }: {
-  //   budgetId: string;
-  //   limit: number;
-  //   offset: number;
-  //   filter?:
-  //     | {
-  //         matchMethod?: string | undefined;
-  //         searchQuery?: string | undefined;
-  //         city?: string | undefined;
-  //         company?: string | undefined;
-  //         productionSite?: string | undefined;
-  //       }
-  //     | undefined;
-  // }) {
-  //   // 1. Сборка динамических условий фильтрации строго на UUID
-  //   const conditions = [eq(budgetPlanItems.budgetPlanId, budgetId)];
-
-  //   if (filter?.matchMethod) {
-  //     conditions.push(eq(budgetPlanItems.matchMethod, filter.matchMethod));
-  //   }
-
-  //   if (filter?.searchQuery && filter.searchQuery.trim() !== '') {
-  //     conditions.push(
-  //       or(
-  //         ilike(budgetPlanItems.deviceName, `%${filter.searchQuery}%`),
-  //         ilike(budgetPlanItems.deviceModel, `%${filter.searchQuery}%`)
-  //       )!
-  //     );
-  //   }
-
-  //   // Фильтрация по ID локаций холдинга (один в один по вашей логике)
-  //   if (filter?.company && filter.company !== 'ALL' && filter.company !== '') {
-  //     conditions.push(eq(productionSites.companyId, filter.company));
-  //   }
-  //   if (filter?.city && filter.city !== 'ALL' && filter.city !== '') {
-  //     conditions.push(eq(productionSites.cityId, filter.city));
-  //   }
-  //   if (
-  //     filter?.productionSite &&
-  //     filter.productionSite !== 'ALL' &&
-  //     filter.productionSite !== ''
-  //   ) {
-  //     conditions.push(eq(productionSites.id, filter.productionSite));
-  //   }
-
-  //   const finalWhereClause = and(...conditions);
-
-  //   // 2. ЗАПРОС №1: Получаем строки текущей страницы с точным JOIN локаций
-  //   const items = await this.db
-  //     .select({
-  //       id: budgetPlanItems.id,
-  //       deviceName: budgetPlanItems.deviceName,
-  //       deviceModel: budgetPlanItems.deviceModel,
-  //       matchMethod: budgetPlanItems.matchMethod,
-  //       basePrice: budgetPlanItems.basePrice,
-  //       vatAmount: budgetPlanItems.vatAmount,
-  //       totalCost: budgetPlanItems.totalCost,
-  //       device: {
-  //         id: devices.id,
-  //         serialNumber: devices.serialNumber,
-  //         grsiNumber: devices.grsiNumber,
-  //       },
-  //     })
-  //     .from(budgetPlanItems)
-  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
-  //     .innerJoin(
-  //       productionSites,
-  //       eq(devices.productionSiteId, productionSites.id)
-  //     )
-  //     .innerJoin(companies, eq(productionSites.companyId, companies.id))
-  //     .innerJoin(cities, eq(productionSites.cityId, cities.id))
-  //     .where(finalWhereClause)
-  //     .limit(limit)
-  //     .offset(offset);
-
-  //   // 3. ЗАПРОС №2: Считаем общее число отфильтрованных позиций для пагинации
-  //   const [countResult] = await this.db
-  //     .select({ count: sql<number>`count(${budgetPlanItems.id})::int` })
-  //     .from(budgetPlanItems)
-  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
-  //     .innerJoin(
-  //       productionSites,
-  //       eq(devices.productionSiteId, productionSites.id)
-  //     )
-  //     .innerJoin(companies, eq(productionSites.companyId, companies.id))
-  //     .innerJoin(cities, eq(productionSites.cityId, cities.id))
-  //     .where(finalWhereClause);
-
-  //   // 4. ЗАПРОС №3: Пересчет плановой суммы СТРОГО по отфильтрованному срезу
-  //   const [sumResult] = await this.db
-  //     .select({
-  //       totalCost: sql<string>`sum(${budgetPlanItems.totalCost})::numeric(12,2)`,
-  //     })
-  //     .from(budgetPlanItems)
-  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
-  //     .innerJoin(
-  //       productionSites,
-  //       eq(devices.productionSiteId, productionSites.id)
-  //     )
-  //     .innerJoin(companies, eq(productionSites.companyId, companies.id))
-  //     .innerJoin(cities, eq(productionSites.cityId, cities.id))
-  //     .where(finalWhereClause);
-
-  //   return {
-  //     items: items || [],
-  //     totalCount: countResult?.count || 0,
-  //     totalCostAll: parseFloat(sumResult?.totalCost || '0.00'),
-  //   };
-  // }
-
   async getBudgetPlanItems({
     budgetId,
     limit,
@@ -546,326 +186,181 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       );
     }
 
-    // 🎯 СТРОГАЯ И ЧИСТАЯ ФИЛЬТРАЦИЯ ПО UUID (Никакого текстового мусора!)
-    if (filter?.company) {
+    if (filter?.company)
       sqlConditions.push(eq(productionSites.companyId, filter.company));
-    }
-    if (filter?.city) {
+    if (filter?.city)
       sqlConditions.push(eq(productionSites.cityId, filter.city));
-    }
-    if (filter?.productionSite) {
+    if (filter?.productionSite)
       sqlConditions.push(eq(productionSites.id, filter.productionSite));
-    }
 
     const finalWhereClause = and(...sqlConditions);
 
-    // 1. Текущая страница приборов
-    const items = await this.db
-      .select({
-        id: budgetPlanItems.id,
-        deviceName: budgetPlanItems.deviceName,
-        deviceModel: budgetPlanItems.deviceModel,
-        matchMethod: budgetPlanItems.matchMethod,
-        basePrice: budgetPlanItems.basePrice,
-        vatAmount: budgetPlanItems.vatAmount,
-        totalCost: budgetPlanItems.totalCost,
-        device: {
-          id: devices.id,
+    // Базовый конструктор запроса, чтобы не дублировать одинаковые INNER JOIN
+    const [itemsRaw, countResult, sumResult] = await Promise.all([
+      // 1. Запрос на получение текущей страницы данных
+      this.db
+        .select({
+          id: budgetPlanItems.id,
+          deviceName: budgetPlanItems.deviceName,
+          deviceModel: budgetPlanItems.deviceModel,
+          matchMethod: budgetPlanItems.matchMethod,
+          basePrice: budgetPlanItems.basePrice,
+          vatAmount: budgetPlanItems.vatAmount,
+          totalCost: budgetPlanItems.totalCost,
+          deviceId: devices.id,
           serialNumber: devices.serialNumber,
           grsiNumber: devices.grsiNumber,
-        },
-      })
-      .from(budgetPlanItems)
-      .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
-      .innerJoin(
-        productionSites,
-        eq(devices.productionSiteId, productionSites.id)
-      )
-      .where(finalWhereClause)
-      .limit(limit)
-      .offset(offset);
+        })
+        .from(budgetPlanItems)
+        .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
+        .innerJoin(
+          productionSites,
+          eq(devices.productionSiteId, productionSites.id)
+        )
+        .where(finalWhereClause)
+        .limit(limit)
+        .offset(offset)
+        .orderBy(desc(budgetPlanItems.createdAt)),
 
-    // 2. Общее число отфильтрованных строк для пагинации страницы
-    const [countResult] = await this.db
-      .select({ count: sql<number>`count(${budgetPlanItems.id})::int` })
-      .from(budgetPlanItems)
-      .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
-      .innerJoin(
-        productionSites,
-        eq(devices.productionSiteId, productionSites.id)
-      )
-      .where(finalWhereClause);
+      // 2. Запрос на подсчет общего количества строк
+      this.db
+        .select({ count: sql<number>`count(${budgetPlanItems.id})::int` })
+        .from(budgetPlanItems)
+        .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
+        .innerJoin(
+          productionSites,
+          eq(devices.productionSiteId, productionSites.id)
+        )
+        .where(finalWhereClause),
 
-    // 3. Динамический пересчет плановой суммы на панели сверху
-    const [sumResult] = await this.db
-      .select({
-        totalCost: sql<string>`sum(${budgetPlanItems.totalCost})::numeric(12,2)`,
-      })
-      .from(budgetPlanItems)
-      .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
-      .innerJoin(
-        productionSites,
-        eq(devices.productionSiteId, productionSites.id)
-      )
-      .where(finalWhereClause);
+      // 3. Запрос на подсчет суммы затрат на панели
+      this.db
+        .select({
+          totalCost: sql<string>`sum(${budgetPlanItems.totalCost})::numeric(12,2)`,
+        })
+        .from(budgetPlanItems)
+        .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
+        .innerJoin(
+          productionSites,
+          eq(devices.productionSiteId, productionSites.id)
+        )
+        .where(finalWhereClause),
+    ]);
+
+    // Безопасно извлекаем первые элементы из массивов агрегатов
+    const totalCount = countResult[0]?.count || 0;
+    const totalCostAll = parseFloat(sumResult[0]?.totalCost || '0.00');
+
+    // Мапим плоский SQL ответ во вложенный объект для GraphQL
+    const items = itemsRaw.map((row) => ({
+      id: row.id,
+      budgetPlanId: budgetId,
+      deviceName: row.deviceName,
+      deviceModel: row.deviceModel,
+      matchMethod: row.matchMethod,
+      basePrice: parseFloat(row.basePrice),
+      vatAmount: parseFloat(row.vatAmount),
+      totalCost: parseFloat(row.totalCost),
+      device: {
+        id: row.deviceId,
+        serialNumber: row.serialNumber,
+        grsiNumber: row.grsiNumber,
+      },
+    }));
 
     return {
-      items: items || [],
-      totalCount: countResult?.count || 0,
-      totalCostAll: parseFloat(sumResult?.totalCost || '0.00'),
+      items,
+      totalCount,
+      totalCostAll,
     };
   }
 
-  // 4. Создание бюджета с каскадным поиском цен
-  // async createBudgetPlan(input: {
-  //   year: number;
-  //   pricelistIds: string[];
-  //   comment?: string | undefined;
-  // }) {
-  //   const [newPlan] = await this.db
-  //     .insert(budgetPlans)
-  //     .values({
-  //       year: input.year,
-  //       comment: input.comment ?? null,
-  //       status: 'draft',
-  //     })
-  //     .returning();
-
-  //   if (!newPlan) {
-  //     throw new Error('Failed to create plane');
-  //   }
-
-  //   const activeDevices = await this.db
-  //     .select()
-  //     .from(devices)
-  //     .where(eq(devices.archived, false));
-  //   const itemsToInsert = [];
-
-  //   for (const device of activeDevices) {
-  //     const matchResult = await this.cascadeMatchPrice(
-  //       device,
-  //       input.pricelistIds
-  //     );
-
-  //     const basePrice = matchResult ? parseFloat(matchResult.item.price) : 0;
-  //     const vatAmount = basePrice * 0.2;
-  //     const totalCost = basePrice + vatAmount;
-
-  //     itemsToInsert.push({
-  //       budgetPlanId: newPlan.id,
-  //       deviceId: device.id,
-  //       deviceName: device.name,
-  //       deviceModel: device.model,
-  //       matchedPricelistItemId: matchResult ? matchResult.item.id : null,
-  //       matchMethod: matchResult ? matchResult.method : 'not_found',
-  //       basePrice: basePrice.toFixed(2),
-  //       vatAmount: vatAmount.toFixed(2),
-  //       totalCost: totalCost.toFixed(2),
-  //     });
-  //   }
-
-  //   if (itemsToInsert.length > 0) {
-  //     await this.db.insert(budgetPlanItems).values(itemsToInsert);
-  //   }
-
-  //   return newPlan;
-  // }
-
-  async createBudgetPlan(input: {
-    year: number;
-    pricelistIds: string[];
-    comment?: string | undefined;
-    cityId?: string | undefined;
-    companyId?: string | undefined;
-    productionSiteId?: string | undefined;
-  }) {
-    // 1. Создаем сам заголовок плана бюджета
-    const [newPlan] = await this.db
-      .insert(budgetPlans)
-      .values({
-        year: input.year,
-        comment: input.comment ?? null,
-        status: 'draft',
-      })
-      .returning();
-
-    if (!newPlan) {
-      throw new Error('Failed to create plane');
+  private async loadPricelistItemsMap(pricelistIds: string[]) {
+    if (!pricelistIds || pricelistIds.length === 0) {
+      return { byGrsi: new Map(), byCsmCode: new Map(), all: [] };
     }
 
-    const deviceConditions = [eq(devices.archived, false)];
+    // Делаем ровно 1 запрос к базе данных вместо тысяч
+    const items = await this.db
+      .select()
+      .from(pricelistItems)
+      .where(inArray(pricelistItems.pricelistId, pricelistIds));
 
-    // Жестко зажимаем выборку приборов по локациям, если они были выбраны в модалке создания
-    if (input.productionSiteId) {
-      deviceConditions.push(
-        eq(devices.productionSiteId, input.productionSiteId)
-      );
-    } else if (input.companyId || input.cityId) {
-      // Если выбран только город или компания — ищем через подзапрос к production_sites
-      if (input.companyId) {
-        deviceConditions.push(
-          sql`production_site_id in (select id from production_sites where company_id = ${input.companyId})`
-        );
-      }
-      if (input.cityId) {
-        deviceConditions.push(
-          sql`production_site_id in (select id from production_sites where city_id = ${input.cityId})`
-        );
-      }
+    const byGrsi = new Map<string, typeof pricelistItems.$inferSelect>();
+    const byCsmCode = new Map<string, typeof pricelistItems.$inferSelect>();
+
+    // ГРСИ и Код ЦСМ уникальны — их пишем в быстрые мапы O(1)
+    for (const item of items) {
+      if (item.grsiNumber) byGrsi.set(item.grsiNumber.trim(), item);
+      if (item.csmCode) byCsmCode.set(item.csmCode.trim(), item);
     }
 
-    const targetDevices = await this.db.query.devices.findMany({
-      where: and(...deviceConditions),
-    });
-
-    const itemsToInsert = [];
-
-    for (const device of targetDevices) {
-      const matchResult = await this.cascadeMatchPrice(
-        device,
-        input.pricelistIds
-      );
-
-      const basePrice = matchResult ? parseFloat(matchResult.item.price) : 0;
-      const vatAmount = basePrice * 0.2;
-      const totalCost = basePrice + vatAmount;
-
-      itemsToInsert.push({
-        budgetPlanId: newPlan.id,
-        deviceId: device.id,
-        deviceName: device.name,
-        deviceModel: device.model,
-        matchedPricelistItemId: matchResult ? matchResult.item.id : null,
-        matchMethod: matchResult ? matchResult.method : 'not_found',
-        basePrice: basePrice.toFixed(2),
-        vatAmount: vatAmount.toFixed(2),
-        totalCost: totalCost.toFixed(2),
-      });
-    }
-
-    if (itemsToInsert.length > 0) {
-      await this.db.insert(budgetPlanItems).values(itemsToInsert);
-    }
-
-    return newPlan;
+    // Поле модели мы не пишем в Map, так как там каша из запятых.
+    // Вместо этого мы возвращаем весь массив "all" для умного поиска ниже.
+    return { byGrsi, byCsmCode, all: items };
   }
 
-  private async cascadeMatchPrice(device: any, pricelistIds: string[]) {
+  private async cascadeMatchPrice(
+    device: any,
+    pricelistIds: string[],
+    maps: {
+      byGrsi: Map<string, any>;
+      byCsmCode: Map<string, any>;
+      all: any[];
+    }
+  ) {
     if (!pricelistIds || pricelistIds.length === 0) return null;
 
+    // ⚡ Шаг 1: По Госреестру (Мгновенно в RAM)
     if (device.grsiNumber) {
-      const [item] = await this.db
-        .select()
-        .from(pricelistItems)
-        .where(
-          and(
-            inArray(pricelistItems.pricelistId, pricelistIds),
-            eq(pricelistItems.grsiNumber, device.grsiNumber)
-          )
-        )
-        .limit(1);
+      const item = maps.byGrsi.get(device.grsiNumber.trim());
       if (item) return { item, method: 'grsi' };
     }
 
+    // ⚡ Шаг 2: По коду ЦСМ / СИ (Мгновенно в RAM)
     if (device.csmCode) {
-      const [item] = await this.db
-        .select()
-        .from(pricelistItems)
-        .where(
-          and(
-            inArray(pricelistItems.pricelistId, pricelistIds),
-            eq(pricelistItems.csmCode, device.csmCode)
-          )
-        )
-        .limit(1);
+      const item = maps.byCsmCode.get(device.csmCode.trim());
       if (item) return { item, method: 'csm_code' };
     }
 
-    if (device.model) {
-      const [item] = await this.db
-        .select()
-        .from(pricelistItems)
-        .where(
-          and(
-            inArray(pricelistItems.pricelistId, pricelistIds),
-            ilike(pricelistItems.modelOrType, device.model)
-          )
-        )
-        .limit(1);
-      if (item) return { item, method: 'model_exact' };
+    // Подготавливаем очищенную модель прибора для текстового анализа
+    const deviceModelClean = device.model?.toLowerCase().trim();
+
+    // ⚡ Шаг 3: Умный поиск по Модели / Типу (Проверяем перечисления через запятую в ОЗУ)
+    if (deviceModelClean && deviceModelClean.length > 1) {
+      let bestModelItem: typeof pricelistItems.$inferSelect | null = null;
+      let highestModelScore = 0;
+
+      for (const item of maps.all) {
+        if (!item.modelOrType) continue;
+        const pricelistModelLower = item.modelOrType.toLowerCase();
+
+        // 🔥 ВОТ ТУТ ОНО РАБОТАЕТ:
+        // Если в прайсе написано "МИТ-8.10, МИТ-8.15", а у прибора "МИТ-8.15" — условие сработает!
+        if (pricelistModelLower.includes(deviceModelClean)) {
+          // Считаем длину строки. Чем короче строка в прайсе при совпадении,
+          // тем точнее совпадение (защита от ложных срабатываний схожих моделей)
+          const score = 1000 - pricelistModelLower.length;
+          if (score > highestModelScore) {
+            highestModelScore = score;
+            bestModelItem = item;
+          }
+        }
+      }
+
+      if (bestModelItem) return { item: bestModelItem, method: 'model_exact' };
     }
 
-    // const [fuzzyItem] = await this.db
-    //   .select()
-    //   .from(pricelistItems)
-    //   .where(
-    //     and(
-    //       inArray(pricelistItems.pricelistId, pricelistIds),
-    //       sql`${pricelistItems.name} % ${device.name}`
-    //     )
-    //   )
-    //   .orderBy(sql`similarity(${pricelistItems.name}, ${device.name}) DESC`)
-    //   .limit(1);
-
-    // if (fuzzyItem) return { item: fuzzyItem, method: 'text_fuzzy' };
-
-    // return null;
-    // try {
-    //   // 4.1. Пробуем Enterprise-вариант через триграммы (для Prod на реальном Postgres)
-    //   const [fuzzyItem] = await this.db
-    //     .select()
-    //     .from(pricelistItems)
-    //     .where(
-    //       and(
-    //         inArray(pricelistItems.pricelistId, pricelistIds),
-    //         sql`${pricelistItems.name} % ${device.name}`
-    //       )
-    //     )
-    //     .orderBy(sql`similarity(${pricelistItems.name}, ${device.name}) DESC`)
-    //     .limit(1);
-
-    //   if (fuzzyItem) return { item: fuzzyItem, method: 'text_fuzzy' };
-    // } catch (trgmError) {
-    //   // 4.2. ФОЛБЕК ДЛЯ DEV-РЕЖИМА (PGlite): Если расширения pg_trgm нет, ищем по подстроке
-    //   // Разбиваем название прибора на ключевые слова (например, "Измеритель крутящего момента" -> ["измеритель", "крутящего", "момента"])
-    //   const words = device.name
-    //     .split(' ')
-    //     .map((w: any) => w.trim())
-    //     .filter((w: any) => w.length > 3); // Игнорируем союзы и предлоги
-
-    //   if (words.length > 0) {
-    //     // Формируем цепочку условий ILIKE для каждого слова: name ILIKE '%слово1%' AND name ILIKE '%слово2%'
-    //     const subQueries = words.map((word: any) =>
-    //       ilike(pricelistItems.name, `%${word}%`)
-    //     );
-
-    //     const [fallbackItem] = await this.db
-    //       .select()
-    //       .from(pricelistItems)
-    //       .where(
-    //         and(
-    //           inArray(pricelistItems.pricelistId, pricelistIds),
-    //           ...subQueries
-    //         )
-    //       )
-    //       .limit(1);
-
-    //     if (fallbackItem) return { item: fallbackItem, method: 'text_fuzzy' };
-    //   }
-    // }
-
-    // // Шаг 5: Если вообще ничего не нашлось
-    // return null;
-
+    // 🐘 Шаг 4: Полнотекстовый векторный поиск в БД с поддержкой РУССКОЙ МОРФОЛОГИИ
+    // Выполняется ТОЛЬКО для проблемных приборов, если первые 3 шага не дали результатов
     if (device.name && device.name.trim().length > 3) {
-      // 1. Очищаем имя прибора от спецсимволов и преобразуем в поисковую строку для векторов
-      // Например: "Измеритель крутящего момента" -> "измеритель & крутящего & момента"
       const cleanSearchQuery = device.name
         .replace(/[^a-zA-Zа-яА-Я0-9\s]/g, '')
         .split(/\s+/)
         .map((w: string) => w.trim())
         .filter((w: string) => w.length > 2)
         .join(' & ');
+
       if (cleanSearchQuery) {
         const [ftsItem] = await this.db
           .select()
@@ -873,11 +368,9 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           .where(
             and(
               inArray(pricelistItems.pricelistId, pricelistIds),
-              // Сравниваем вектор текста из прайса с поисковым вектором прибора через оператор @@
               sql`to_tsvector('russian', ${pricelistItems.name}) @@ to_tsquery('russian', ${cleanSearchQuery})`
             )
           )
-          // Ранжируем результаты по точности совпадения (чтобы самое похожее было сверху)
           .orderBy(
             sql`ts_rank(to_tsvector('russian', ${pricelistItems.name}), to_tsquery('russian', ${cleanSearchQuery})) DESC`
           )
@@ -887,8 +380,317 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       }
     }
 
-    // Шаг 5: Если вообще ничего не нашлось
     return null;
+  }
+
+  // async createBudgetPlan(input: {
+  //   year: number;
+  //   pricelistIds: string[];
+  //   comment?: string;
+  //   cityId?: string;
+  //   companyId?: string;
+  //   productionSiteId?: string;
+  // }) {
+  //   const VAT_RATE = 0.2;
+  //   const targetYear = input.year;
+
+  //   // 1. Формируем условия каскадной фильтрации площадок холдинга
+  //   const locationConditions: any[] = [];
+  //   if (input.productionSiteId && input.productionSiteId !== 'ALL') {
+  //     locationConditions.push(eq(productionSites.id, input.productionSiteId));
+  //   } else {
+  //     if (input.companyId && input.companyId !== 'ALL')
+  //       locationConditions.push(eq(productionSites.companyId, input.companyId));
+  //     if (input.cityId && input.cityId !== 'ALL')
+  //       locationConditions.push(eq(productionSites.cityId, input.cityId));
+  //   }
+
+  //   let siteIds: string[] = [];
+  //   if (locationConditions.length > 0) {
+  //     const targetSites = await this.db
+  //       .select({ id: productionSites.id })
+  //       .from(productionSites)
+  //       .where(and(...locationConditions));
+  //     siteIds = targetSites.map((s) => s.id);
+
+  //     if (siteIds.length === 0) {
+  //       throw new Error(
+  //         'Не найдено производственных площадок для указанных критериев.'
+  //       );
+  //     }
+  //   }
+
+  //   const siteFilterSql =
+  //     siteIds.length > 0
+  //       ? sql`AND d.production_site_id IN (${sql.join(siteIds, sql`, `)})`
+  //       : sql``;
+
+  //   // 2. 🐘 УМНЫЙ ОТБОР ПРИБОРОВ: Проверка архива, нерабочих статусов и даты следующей поверки по МПИ
+  //   const targetDevicesRaw = await this.db.execute(sql`
+  //     WITH last_verifications AS (
+  //       -- Находим строго последнюю поверку для каждого прибора
+  //       SELECT DISTINCT ON (device_id) id, device_id, valid_until
+  //       FROM ${verifications}
+  //       ORDER BY device_id, created_at DESC
+  //     ),
+  //     calculated_devices AS (
+  //       SELECT
+  //         d.id,
+  //         d.name,
+  //         d.model,
+  //         d.grsi_number as "grsiNumber",
+  //         d.csm_code as "csmCode",
+  //         -- Вычисляем дату следующей поверки:
+  //         -- valid_until последней поверки ИЛИ (дата получения + МПИ месяцев), если прибор новый
+  //         COALESCE(
+  //           lv.valid_until,
+  //           d.receipt_date + (COALESCE(d.verification_interval, 12) || ' month')::interval
+  //         ) as next_verification_date
+  //       FROM ${devices} d
+  //       LEFT JOIN last_verifications lv ON lv.device_id = d.id
+  //       INNER JOIN ${statuses} s ON s.id = d.status_id
+  //       WHERE d.archived = false -- 🎯 Исключаем архивные приборы
+  //         -- 🎯 Исключаем нерабочие статусы
+  //         AND LOWER(s.name) NOT IN ('неисправен', 'утерян', 'забракован', 'длительное хранение', 'консервация')
+  //         ${siteFilterSql}
+  //     )
+  //     SELECT id, name, model, "grsiNumber", "csmCode"
+  //     FROM calculated_devices
+  //     -- Оставляем только те приборы, чей срок поверки наступает в планируемом году
+  //     WHERE EXTRACT(YEAR FROM next_verification_date) = ${targetYear}
+  //   `);
+
+  //   const targetDevices = targetDevicesRaw.rows as any[];
+
+  //   if (targetDevices.length === 0) {
+  //     throw new Error(
+  //       `В базе данных нет активных приборов, требующих плановой поверки/калибровки в ${targetYear} году.`
+  //     );
+  //   }
+
+  //   // 3. Загружаем прайс-листы в память ОДИН раз для RAM-мэтчинга
+  //   const pricelistMaps = await this.loadPricelistItemsMap(input.pricelistIds);
+
+  //   // 4. Открываем транзакцию для атомарной записи заголовка и строк
+  //   return await this.db.transaction(async (tx) => {
+  //     const [newPlan] = await tx
+  //       .insert(budgetPlans)
+  //       .values({
+  //         year: targetYear,
+  //         comment: input.comment ?? null,
+  //         status: 'draft',
+  //       })
+  //       .returning();
+
+  //     if (!newPlan)
+  //       throw new Error(
+  //         'Не удалось зафиксировать заголовок плана бюджета в БД'
+  //       );
+
+  //     const itemsToInsert = [];
+
+  //     for (const device of targetDevices) {
+  //       // Подбираем цену по цепочке (RAM мапы -> точечно FTS в базе с русской морфологией)
+  //       const matchResult = await this.cascadeMatchPrice(
+  //         device,
+  //         input.pricelistIds,
+  //         pricelistMaps
+  //       );
+
+  //       const basePrice = matchResult ? parseFloat(matchResult.item.price) : 0;
+  //       const vatAmount = basePrice * VAT_RATE;
+  //       const totalCost = basePrice + vatAmount;
+
+  //       itemsToInsert.push({
+  //         budgetPlanId: newPlan.id,
+  //         deviceId: device.id,
+  //         deviceName: device.name ?? 'Неизвестный прибор',
+  //         deviceModel: device.model ?? '',
+  //         matchedPricelistItemId: matchResult ? matchResult.item.id : null,
+  //         matchMethod: matchResult ? matchResult.method : 'not_found',
+  //         basePrice: basePrice.toFixed(2),
+  //         vatAmount: vatAmount.toFixed(2),
+  //         totalCost: totalCost.toFixed(2),
+  //       });
+  //     }
+
+  //     // 5. Запись в базу данных порциями по 1000 строк (защита от лимитов Postgres на bind-параметры)
+  //     const CHUNK_SIZE = 1000;
+  //     for (let i = 0; i < itemsToInsert.length; i += CHUNK_SIZE) {
+  //       await tx
+  //         .insert(budgetPlanItems)
+  //         .values(itemsToInsert.slice(i, i + CHUNK_SIZE));
+  //     }
+
+  //     return newPlan;
+  //   });
+  // }
+
+  async createBudgetPlan(input: {
+    year: number;
+    comment?: string | undefined;
+    cityId?: string | undefined;
+    companyId?: string | undefined;
+    productionSiteId?: string | undefined;
+    // Настройки режима калькуляции
+    calculationMethod: 'pricelist' | 'history';
+    pricelistIds?: string[] | undefined; // Обязательно только для режима 'pricelist'
+  }) {
+    const VAT_RATE = 0.2;
+    const targetYear = input.year;
+
+    // 1. Каскадная сборка фильтров площадок холдинга
+    const locationConditions: any[] = [];
+    if (input.productionSiteId && input.productionSiteId !== 'ALL') {
+      locationConditions.push(eq(productionSites.id, input.productionSiteId));
+    } else {
+      if (input.companyId && input.companyId !== 'ALL')
+        locationConditions.push(eq(productionSites.companyId, input.companyId));
+      if (input.cityId && input.cityId !== 'ALL')
+        locationConditions.push(eq(productionSites.cityId, input.cityId));
+    }
+
+    let siteIds: string[] = [];
+    if (locationConditions.length > 0) {
+      const targetSites = await this.db
+        .select({ id: productionSites.id })
+        .from(productionSites)
+        .where(and(...locationConditions));
+      siteIds = targetSites.map((s) => s.id);
+
+      if (siteIds.length === 0) {
+        throw new Error(
+          'Не найдено производственных площадок для указанных критериев.'
+        );
+      }
+    }
+
+    const siteFilterSql =
+      siteIds.length > 0
+        ? sql`AND d.production_site_id IN (${sql.join(siteIds, sql`, `)})`
+        : sql``;
+
+    // 2. 🐘 АНАЛИТИЧЕСКИЙ ОТБОР ПРИБОРОВ НА ЦЕЛЕВОЙ ГОД
+    // Вытаскиваем девайсы по МПИ/крайней поверке, исключая архив и нерабочие статусы.
+    // Дополнительно сразу подтягиваем цену крайней поверки (cost) для режима 'history'.
+    const targetDevicesRaw = await this.db.execute(sql`
+      WITH last_verifications AS (
+        SELECT DISTINCT ON (device_id) id, device_id, valid_until, cost
+        FROM ${verifications}
+        ORDER BY device_id, created_at DESC
+      ),
+      calculated_devices AS (
+        SELECT 
+          d.id,
+          d.name,
+          d.model,
+          d.grsi_number as "grsiNumber",
+          d.csm_code as "csmCode",
+          COALESCE(lv.cost, 0)::numeric as "historicalCost", -- Историческая цена
+          COALESCE(
+            lv.valid_until, 
+            d.receipt_date + (COALESCE(d.verification_interval, 12) || ' month')::interval
+          ) as next_verification_date
+        FROM ${devices} d
+        LEFT JOIN last_verifications lv ON lv.device_id = d.id
+        INNER JOIN ${statuses} s ON s.id = d.status_id
+        WHERE d.archived = false
+          AND LOWER(s.name) NOT IN ('неисправен', 'утерян', 'забракован', 'длительное хранение', 'консервация')
+          ${siteFilterSql}
+      )
+      SELECT id, name, model, "grsiNumber", "csmCode", "historicalCost"
+      FROM calculated_devices
+      WHERE EXTRACT(YEAR FROM next_verification_date) = ${targetYear}
+    `);
+
+    const targetDevices = targetDevicesRaw.rows as any[];
+
+    if (targetDevices.length === 0) {
+      throw new Error(
+        `В базе данных нет активных приборов, требующих поверки/калибровки в ${targetYear} году.`
+      );
+    }
+
+    // 3. Если выбран режим прайсов — инициализируем кэш в оперативной памяти
+    let pricelistMaps: any = null;
+    if (input.calculationMethod === 'pricelist') {
+      if (!input.pricelistIds || input.pricelistIds.length === 0) {
+        throw new Error(
+          'Для выбранного метода расчета необходимо указать массив прайс-листов ЦСМ.'
+        );
+      }
+      pricelistMaps = await this.loadPricelistItemsMap(input.pricelistIds);
+    }
+
+    // 4. Открываем транзакцию записи в базу данных
+    return await this.db.transaction(async (tx) => {
+      const [newPlan] = await tx
+        .insert(budgetPlans)
+        .values({
+          year: targetYear,
+          comment: input.comment ?? null,
+          status: 'draft',
+        })
+        .returning();
+
+      if (!newPlan)
+        throw new Error(
+          'Не удалось зафиксировать заголовок плана бюджета в БД'
+        );
+
+      const itemsToInsert = [];
+
+      for (const device of targetDevices) {
+        let basePrice = 0;
+        let matchMethod = 'not_found';
+
+        // РЕЖИМ 1: Расчёт цен по прайс-листам ЦСМ
+        if (input.calculationMethod === 'pricelist') {
+          const matchResult = await this.cascadeMatchPrice(
+            device,
+            input.pricelistIds!,
+            pricelistMaps
+          );
+          if (matchResult) {
+            basePrice = parseFloat(matchResult.item.price);
+            matchMethod = matchResult.method;
+          }
+        }
+        // РЕЖИМ 2: Расчёт цен на основе исторической стоимости прошлой поверки
+        else {
+          const historical = parseFloat(device.historicalCost || '0.00');
+          if (historical > 0) {
+            basePrice = historical;
+            matchMethod = 'historical'; // Маркируем строку как посчитанную по истории
+          }
+        }
+
+        const vatAmount = basePrice * VAT_RATE;
+        const totalCost = basePrice + vatAmount;
+
+        itemsToInsert.push({
+          budgetPlanId: newPlan.id,
+          deviceId: device.id,
+          deviceName: device.name ?? 'Неизвестный прибор',
+          deviceModel: device.model ?? '',
+          matchedPricelistItemId: null, // Для истории поле остается пустым
+          matchMethod: matchMethod,
+          basePrice: basePrice.toFixed(2),
+          vatAmount: vatAmount.toFixed(2),
+          totalCost: totalCost.toFixed(2),
+        });
+      }
+
+      // 5. Пакетный инсерт строк порциями по 1000 элементов
+      const CHUNK_SIZE = 1000;
+      for (let i = 0; i < itemsToInsert.length; i += CHUNK_SIZE) {
+        await tx
+          .insert(budgetPlanItems)
+          .values(itemsToInsert.slice(i, i + CHUNK_SIZE));
+      }
+
+      return newPlan;
+    });
   }
 
   // 5. Импорт прейскуранта через транзакцию
@@ -936,22 +738,67 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     });
   }
 
-  async getBudgetPlans() {
-    const plans = await this.db
-      .select()
-      .from(budgetPlans)
-      .orderBy(budgetPlans.year);
+  // async getBudgetPlans() {
+  //   const plans = await this.db
+  //     .select()
+  //     .from(budgetPlans)
+  //     .orderBy(budgetPlans.year);
 
-    return plans || [];
+  //   return plans || [];
+  // }
+
+  async getBudgetPlans() {
+    return await this.db
+      .select({
+        id: budgetPlans.id,
+        year: budgetPlans.year,
+        status: budgetPlans.status,
+        comment: budgetPlans.comment,
+        createdAt: sql<string>`TO_CHAR(${budgetPlans.createdAt}, 'YYYY-MM-DD HH24:MI:SS')`,
+        updatedAt: sql<string>`TO_CHAR(${budgetPlans.updatedAt}, 'YYYY-MM-DD HH24:MI:SS')`,
+        totalCount: count(budgetPlanItems.id),
+        matchedCount: sql<number>`COUNT(CASE WHEN ${budgetPlanItems.matchMethod} != 'not_found' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${budgetPlanItems.totalCost}), 0)::float`,
+      })
+      .from(budgetPlans)
+      .leftJoin(
+        budgetPlanItems,
+        eq(budgetPlanItems.budgetPlanId, budgetPlans.id)
+      )
+      .groupBy(budgetPlans.id)
+      .orderBy(desc(budgetPlans.year));
   }
 
+  // async getBudgetPlan(id: string) {
+  //   const [plan] = await this.db
+  //     .select()
+  //     .from(budgetPlans)
+  //     .where(eq(budgetPlans.id, id))
+  //     .limit(1);
+  //   return plan || null;
+  // }
   async getBudgetPlan(id: string) {
-    const [plan] = await this.db
-      .select()
+    const result = await this.db
+      .select({
+        id: budgetPlans.id,
+        year: budgetPlans.year,
+        status: budgetPlans.status,
+        comment: budgetPlans.comment,
+        createdAt: sql<string>`TO_CHAR(${budgetPlans.createdAt}, 'YYYY-MM-DD HH24:MI:SS')`,
+        updatedAt: sql<string>`TO_CHAR(${budgetPlans.updatedAt}, 'YYYY-MM-DD HH24:MI:SS')`,
+        totalCount: count(budgetPlanItems.id),
+        matchedCount: sql<number>`COUNT(CASE WHEN ${budgetPlanItems.matchMethod} != 'not_found' THEN 1 END)::int`,
+        totalCost: sql<number>`COALESCE(SUM(${budgetPlanItems.totalCost}), 0)::float`,
+      })
       .from(budgetPlans)
+      .leftJoin(
+        budgetPlanItems,
+        eq(budgetPlanItems.budgetPlanId, budgetPlans.id)
+      )
       .where(eq(budgetPlans.id, id))
-      .limit(1);
-    return plan || null;
+      .groupBy(budgetPlans.id);
+
+    return result[0] || null;
   }
 
   async updateBudgetPlanItemPrice(itemId: string, manualPrice: number) {
@@ -995,12 +842,27 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     return updated;
   }
 
-  async deleteBudgetPlan(id: string) {
-    return !!(await this.db.delete(budgetPlans).where(eq(budgetPlans.id, id)));
+  // async deleteBudgetPlan(id: string) {
+  //   return !!(await this.db.delete(budgetPlans).where(eq(budgetPlans.id, id)));
+  // }
+
+  // async deletePricelist(id: string) {
+  //   return !!(await this.db.delete(pricelists).where(eq(pricelists.id, id)));
+  // }
+  async deleteBudgetPlan(id: string): Promise<boolean> {
+    const result = await this.db
+      .delete(budgetPlans)
+      .where(eq(budgetPlans.id, id))
+      .returning();
+    return result.length > 0;
   }
 
-  async deletePricelist(id: string) {
-    return !!(await this.db.delete(pricelists).where(eq(pricelists.id, id)));
+  async deletePricelist(id: string): Promise<boolean> {
+    const result = await this.db
+      .delete(pricelists)
+      .where(eq(pricelists.id, id))
+      .returning();
+    return result.length > 0;
   }
 
   async createPricelistHeader(metadata: {
@@ -1059,32 +921,72 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     return itemsToInsert.length;
   }
 
+  // async getBudgetPlanDistribution(
+  //   budgetId: string,
+  //   groupBy: 'company' | 'city' | 'production_site'
+  // ) {
+  //   const selectFields: Record<string, any> = {
+  //     count: sql<number>`count(${budgetPlanItems.id})::int`,
+  //     baseSubtotal: sql<string>`sum(${budgetPlanItems.basePrice})::numeric(10,2)`,
+  //     totalCost: sql<string>`sum(${budgetPlanItems.totalCost})::numeric(10,2)`,
+  //   };
+
+  //   let groupByFields: any[] = [];
+  //   if (groupBy === 'company') {
+  //     selectFields.groupId = sql`c.id`; // 🎯 вытягиваем UUID
+  //     selectFields.groupName = sql`c.name`;
+  //     groupByFields = [sql`c.id`, sql`c.name`];
+  //   } else if (groupBy === 'city') {
+  //     selectFields.groupId = sql`cities.id`; // 🎯 вытягиваем UUID
+  //     selectFields.groupName = sql`cities.name`;
+  //     groupByFields = [sql`cities.id`, sql`cities.name`];
+  //   } else {
+  //     selectFields.groupId = productionSites.id; // 🎯 вытягиваем UUID
+  //     selectFields.groupName = productionSites.name;
+  //     groupByFields = [productionSites.id, productionSites.name];
+  //   }
+
+  //   // Один оптимизированный JOIN-запрос
+  //   const distribution = await this.db
+  //     .select(selectFields)
+  //     .from(budgetPlanItems)
+  //     .innerJoin(devices, eq(budgetPlanItems.deviceId, devices.id))
+  //     .innerJoin(
+  //       productionSites,
+  //       eq(devices.productionSiteId, productionSites.id)
+  //     )
+  //     .innerJoin(sql`companies c`, sql`production_sites.company_id = c.id`)
+  //     .innerJoin(sql`cities`, sql`production_sites.city_id = cities.id`)
+  //     .where(eq(budgetPlanItems.budgetPlanId, budgetId))
+  //     .groupBy(...groupByFields);
+
+  //   return distribution || [];
+  // }
   async getBudgetPlanDistribution(
     budgetId: string,
     groupBy: 'company' | 'city' | 'production_site'
   ) {
     const selectFields: Record<string, any> = {
       count: sql<number>`count(${budgetPlanItems.id})::int`,
-      baseSubtotal: sql<string>`sum(${budgetPlanItems.basePrice})::numeric(10,2)`,
-      totalCost: sql<string>`sum(${budgetPlanItems.totalCost})::numeric(10,2)`,
+      baseSubtotal: sql<string>`sum(${budgetPlanItems.basePrice})::numeric(12,2)`,
+      totalCost: sql<string>`sum(${budgetPlanItems.totalCost})::numeric(12,2)`,
     };
 
     let groupByFields: any[] = [];
     if (groupBy === 'company') {
-      selectFields.groupId = sql`c.id`; // 🎯 вытягиваем UUID
+      selectFields.groupId = sql`c.id`;
       selectFields.groupName = sql`c.name`;
       groupByFields = [sql`c.id`, sql`c.name`];
     } else if (groupBy === 'city') {
-      selectFields.groupId = sql`cities.id`; // 🎯 вытягиваем UUID
+      selectFields.groupId = sql`cities.id`;
       selectFields.groupName = sql`cities.name`;
       groupByFields = [sql`cities.id`, sql`cities.name`];
     } else {
-      selectFields.groupId = productionSites.id; // 🎯 вытягиваем UUID
+      selectFields.groupId = productionSites.id;
       selectFields.groupName = productionSites.name;
       groupByFields = [productionSites.id, productionSites.name];
     }
 
-    // Один оптимизированный JOIN-запрос
     const distribution = await this.db
       .select(selectFields)
       .from(budgetPlanItems)
@@ -1098,6 +1000,12 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       .where(eq(budgetPlanItems.budgetPlanId, budgetId))
       .groupBy(...groupByFields);
 
-    return distribution || [];
+    return distribution.map((r: any) => ({
+      groupId: r.groupId,
+      groupName: r.groupName,
+      count: r.count,
+      baseSubtotal: parseFloat(r.baseSubtotal || '0.00'),
+      totalCost: parseFloat(r.totalCost || '0.00'),
+    }));
   }
 }

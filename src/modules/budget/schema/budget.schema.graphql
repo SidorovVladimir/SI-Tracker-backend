@@ -144,7 +144,8 @@ type Query {
 input CreateBudgetPlanInput {
   year: Int!
   comment: String
-  pricelistIds: [ID!]! # Какие прайсы использовать для каскада
+  calculationMethod: String!
+  pricelistIds: [ID!] # Какие прайсы использовать для каскада
   cityId: ID
   companyId: ID
   productionSiteId: ID
