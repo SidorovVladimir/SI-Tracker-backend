@@ -50,6 +50,7 @@ type BudgetPlanItem {
   basePrice: Float!
   vatAmount: Float!
   totalCost: Float!
+  matchHistorySku: String
   device: Device! # Связка с текущей карточкой прибора
 }
 
@@ -139,6 +140,9 @@ type Query {
     budgetId: ID!
     groupBy: String! # 'company' | 'city' | 'production_site'
   ): [BudgetPlanDistributionRow!]!
+
+  getCsmTariffTrend(siteId: String!): CsmTariffTrendResponse!
+  getVerificationRisks: VerificationRisksResponse!
 }
 
 input CreateBudgetPlanInput {
@@ -165,4 +169,51 @@ type Mutation {
   deleteBudgetPlan(id: ID!): Boolean!
   createPricelist(input: CreatePricelistInput!): QueuedJobResponse!
   deletePricelist(id: ID!): Boolean!
+}
+
+type CsmTariffTimelinePoint {
+  year: Int! # Календарный год тарифа (например, 2024, 2025, 2026)
+  price: Float! # Стоимость поверки прибора без НДС в этот период
+  csmName: String! # Название ЦСМ, предоставившего тариф (например, "Новосибирский ЦСМ")
+}
+
+type CsmTariffTrendResponse {
+  serviceName: String! # Актуальное текстовое название услуги для заголовка
+  timeline: [CsmTariffTimelinePoint!]! # Хронологический массив точек изменения цен
+}
+
+type RiskSiteData {
+  id: ID!
+  name: String!
+  status: String! # Критический статус: 'green' | 'warning' | 'error'
+  totalCount: Int! # Всего приборов на участке
+  expiredCount: Int! # Просрочено поверок
+  warningCount: Int! # Поверка заканчивается в течение 30 дней
+}
+
+# 2. Данные по юридическому лицу / компании
+type RiskCompanyData {
+  id: ID!
+  name: String!
+  status: String!
+  totalCount: Int!
+  expiredCount: Int!
+  warningCount: Int!
+  sites: [RiskSiteData!]! # Вложенный список цехов этой компании
+}
+
+# 3. Данные по географическому региону / городу
+type RiskCityData {
+  id: ID!
+  name: String!
+  status: String!
+  totalCount: Int!
+  expiredCount: Int!
+  warningCount: Int!
+  companies: [RiskCompanyData!]! # Вложенный список компаний в этом городе
+}
+
+# 4. Монолитный корневой ответ дерева рисков
+type VerificationRisksResponse {
+  cities: [RiskCityData!]!
 }

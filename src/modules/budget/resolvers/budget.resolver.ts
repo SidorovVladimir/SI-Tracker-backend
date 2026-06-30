@@ -94,6 +94,28 @@ export const Query = {
       groupBy
     );
   },
+
+  getCsmTariffTrend: async (
+    _: unknown,
+    { siteId }: { siteId: string }, // 🎯 ИСПРАВЛЕНИЕ: деструктурируем именно siteId
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    // Передаем правильную переменную в метод сервиса
+    return await new BudgetService(db).getCsmTariffTrend(siteId);
+  },
+
+  getVerificationRisks: async (
+    _: unknown,
+    __: unknown,
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    // Делегируем вызов в чистый метод сервиса
+    return await new BudgetService(db).getVerificationRisks();
+  },
 };
 
 export const Mutation = {
