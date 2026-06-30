@@ -1126,66 +1126,125 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     }));
   }
 
-  async getCsmTariffTrend(siteId: string) {
-    if (!siteId) {
-      throw new Error('Параметр siteId обязателен для получения аналитики.');
+  async getCsmTariffTrend(idOrSku: string) {
+    if (!idOrSku) {
+      throw new Error('Параметр idOrSku обязателен для получения аналитики.');
     }
 
     const isProduction = process.env.NODE_ENV === 'production';
 
-    if (isProduction) {
-      // 🖥️ ПРОДАКШЕН: Считаем суммарные затраты по конкретному цеху за все доступные года в разрезе ЦСМ
-      const rows = await this.db
-        .select({
-          year: pricelistItems.year,
-          price: sql<number>`CAST(SUM(${pricelistItems.price}) AS DOUBLE PRECISION)`,
-          // Берём имя цеха из справочника
-          serviceName: sql<string>`(SELECT name FROM production_sites WHERE id = ${siteId} LIMIT 1)`,
-          // Вытаскиваем имя ЦСМ через родительские прайсы
-          csmName: sql<string>`
-            (SELECT pl.title 
-             FROM pricelists pl 
-             WHERE pl.id = ${pricelistItems.pricelistId} 
-             LIMIT 1)
-          `,
-        })
-        .from(pricelistItems)
-        // Предполагается, что у вас в строках бюджета или прайсов есть привязка к площадкам холдинга
-        // Если привязка идет через связанные таблицы, Drizzle скомпилирует этот подзапрос
-        .groupBy(pricelistItems.year, pricelistItems.pricelistId)
-        .orderBy(pricelistItems.year);
+    // Проверяем, является ли переданная строка валидным UUID
+    const isUuid =
+      /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+        idOrSku
+      );
 
-      if (rows.length === 0) {
+    if (isProduction) {
+      if (isUuid) {
+        // =========================================================================
+        // СЦЕНАРИЙ А: Передан UUID цеха/площадки (Вызов с общего дашборда аналитики)
+        // =========================================================================
+        const result = await this.db.execute(sql`
+          SELECT 
+            pi.year,
+            CAST(SUM(pi.price) AS DOUBLE PRECISION) as price,
+            (SELECT ps.name FROM production_sites ps WHERE ps.id = ${idOrSku}::uuid LIMIT 1) as service_name,
+            (SELECT pl.title FROM pricelists pl WHERE pl.id = pi.pricelist_id LIMIT 1) as csm_name
+          FROM pricelist_items pi
+          INNER JOIN devices d ON d.production_site_id = ${idOrSku}::uuid
+          WHERE pi.grsi_number = d.grsi_number OR pi.csm_code = d.csm_code
+          GROUP BY pi.year, pi.pricelist_id
+          ORDER BY pi.year;
+        `);
+
+        // ✅ Безопасно достаем массив строк через свойство .rows
+        const rows = (result as any)?.rows as any[];
+
+        if (!rows || rows.length === 0) {
+          return { serviceName: 'Данные по цеху не найдены', timeline: [] };
+        }
+
+        const firstRow = rows[0];
+
         return {
-          serviceName: 'Данные по цеху не найдены',
-          timeline: [],
+          serviceName: `Динамика стоимости обслуживания: ${
+            firstRow?.service_name || 'Цех'
+          }`,
+          timeline: rows.map((row: any) => ({
+            year: Number(row.year),
+            price: Number(row.price),
+            csmName: row.csm_name || 'Региональный ЦСМ',
+          })),
+        };
+      } else {
+        // =========================================================================
+        // СЦЕНАРИЙ Б: Передан текстовый SKU прибора (Вызов при клике в списке бюджета)
+        // =========================================================================
+        const result = await this.db.execute(sql`
+          SELECT 
+            pi.year,
+            CAST(pi.price AS DOUBLE PRECISION) as price,
+            pi.name as service_name,
+            (SELECT pl.title FROM pricelists pl WHERE pl.id = pi.pricelist_id LIMIT 1) as csm_name
+          FROM pricelist_items pi
+          WHERE pi.match_history_sku = ${idOrSku}
+          ORDER BY pi.year;
+        `);
+
+        // ✅ Достаем строки из объекта QueryResult
+        let rows = (result as any)?.rows as any[];
+
+        if (!rows || rows.length === 0) {
+          // Спасательный круг: если по точному SKU в новой базе пока пусто, ищем по ILIKE по тексту
+          const cleanText = idOrSku.replace('TEXT-', '').replace(/-/g, ' ');
+          const fallbackResult = await this.db.execute(sql`
+            SELECT 
+              pi.year,
+              CAST(pi.price AS DOUBLE PRECISION) as price,
+              pi.name as service_name,
+              (SELECT pl.title FROM pricelists pl WHERE pl.id = pi.pricelist_id LIMIT 1) as csm_name
+            FROM pricelist_items pi
+            WHERE pi.name ILIKE ${'%' + cleanText + '%'}
+            ORDER BY pi.year;
+          `);
+
+          rows = (fallbackResult as any)?.rows as any[];
+
+          if (!rows || rows.length === 0) {
+            return {
+              serviceName: `Анализ инфляции: "${cleanText}"`,
+              timeline: [],
+            };
+          }
+        }
+
+        // Безопасно забираем имя из последней строки массива через .at(-1)
+        const latestServiceName =
+          rows.at(-1)?.service_name || 'Услуга поверки СИ';
+
+        return {
+          serviceName: latestServiceName,
+          timeline: rows.map((row: any) => ({
+            year: Number(row.year),
+            price: Number(row.price),
+            csmName: row.csm_name || 'Региональный ЦСМ',
+          })),
         };
       }
-
-      return {
-        serviceName: `Динамика стоимости обслуживания: Цех "${
-          rows[0]?.serviceName || '—'
-        }"`,
-        timeline: rows.map((row: any) => ({
-          year: row.year,
-          price: row.price,
-          csmName: row.csmName || 'Региональный ЦСМ',
-        })),
-      };
     } else {
-      // 📱 ЛОКАЛЬНО (Защита PGlite от зависаний): Стабильные Mock-данные
+      // 📱 ЛОКАЛЬНО: Мок-ответ (для защиты PGlite от зависаний)
+      console.log(`🤖 [СЕРВИС] Имитация графика для ключа: "${idOrSku}"`);
       return {
-        serviceName: `Динамика стоимости обслуживания объекта (Тестовый цех #${siteId.slice(
-          0,
-          4
-        )})`,
+        serviceName: isUuid
+          ? `Динамика затрат объекта холдинга (Участок #${idOrSku.slice(0, 4)})`
+          : `Анализ инфляции тарифа: "${idOrSku
+              .replace('TEXT-', '')
+              .replace(/-/g, ' ')
+              .toUpperCase()}"`,
         timeline: [
-          { year: 2024, price: 45000.0, csmName: 'Новосибирский ЦСМ' },
-          { year: 2025, price: 52000.0, csmName: 'Новосибирский ЦСМ' },
-          { year: 2026, price: 61000.0, csmName: 'Новосибирский ЦСМ' },
-          { year: 2024, price: 50000.0, csmName: 'Ростест-Москва' },
-          { year: 2025, price: 58000.0, csmName: 'Ростест-Москва' },
-          { year: 2026, price: 64000.0, csmName: 'Ростест-Москва' },
+          { year: 2024, price: 1200.0, csmName: 'Новосибирский ЦСМ' },
+          { year: 2025, price: 1450.0, csmName: 'Новосибирский ЦСМ' },
+          { year: 2026, price: 1800.0, csmName: 'Новосибирский ЦСМ' },
         ],
       };
     }
@@ -1204,7 +1263,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
             ROW_NUMBER() OVER (PARTITION BY v.device_id ORDER BY v.date DESC) as rn
           FROM verifications v
           -- 🎯 УНИВЕРСАЛЬНЫЙ ФИЛЬТР: Привязываемся к именам типов контроля, а не к UUID
-          INNER JOIN metrology_controle_types mct ON msmct.id = v.metrology_controle_type_id
+          INNER JOIN metrology_controle_types mct ON mct.id = v.metrology_controle_type_id
           WHERE mct.name ILIKE '%поверка%' OR mct.name ILIKE '%калибровка%'
         ),
         device_statuses AS (
