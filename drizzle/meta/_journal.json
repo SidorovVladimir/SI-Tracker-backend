@@ -57,6 +57,13 @@
       "when": 1782453524538,
       "tag": "0007_curved_franklin_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782801142899,
+      "tag": "0008_cold_dazzler",
+      "breakpoints": true
     }
   ]
 }
