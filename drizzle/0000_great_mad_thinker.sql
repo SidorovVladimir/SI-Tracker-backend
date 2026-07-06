@@ -10,6 +10,51 @@ CREATE TABLE "device_audit_logs" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "budget_plan_items" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"budget_plan_id" uuid NOT NULL,
+	"device_id" uuid NOT NULL,
+	"device_name" varchar NOT NULL,
+	"device_model" varchar NOT NULL,
+	"matched_pricelist_item_id" uuid,
+	"match_method" text NOT NULL,
+	"base_price" numeric(10, 2) NOT NULL,
+	"vat_amount" numeric(10, 2) DEFAULT '0.00' NOT NULL,
+	"total_cost" numeric(10, 2) NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "budget_plans" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"year" integer NOT NULL,
+	"status" text DEFAULT 'draft' NOT NULL,
+	"comment" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "pricelist_items" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"pricelist_id" uuid NOT NULL,
+	"grsi_number" text,
+	"csm_code" text,
+	"model_or_type" text,
+	"name" text NOT NULL,
+	"price" numeric(10, 2) NOT NULL,
+	"year" integer DEFAULT 2026 NOT NULL,
+	"match_history_sku" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "pricelists" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"verification_organization_id" uuid NOT NULL,
+	"title" varchar(255) NOT NULL,
+	"year" integer NOT NULL,
+	"is_regulated" boolean DEFAULT false NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "equipment_types" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" varchar(255) NOT NULL,
@@ -45,6 +90,7 @@ CREATE TABLE "metrology_controle_types" (
 CREATE TABLE "primary_standards" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" varchar(255) NOT NULL,
+	"description" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "primary_standards_name_unique" UNIQUE("name")
@@ -96,8 +142,8 @@ CREATE TABLE "chat_messages" (
 	"recipient_id" uuid NOT NULL,
 	"text" text NOT NULL,
 	"is_read" boolean DEFAULT false NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp (3) with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "devices" (
@@ -107,6 +153,7 @@ CREATE TABLE "devices" (
 	"serial_number" varchar NOT NULL,
 	"release_date" timestamp,
 	"grsi_number" varchar(100),
+	"csm_code" varchar(100),
 	"measurement_range" varchar,
 	"accuracy" varchar,
 	"inventory_number" varchar(100),
@@ -117,11 +164,11 @@ CREATE TABLE "devices" (
 	"nomenclature" varchar,
 	"comment" text,
 	"lead_time_days" integer,
-	"created_at" timestamp DEFAULT now(),
 	"status_id" uuid NOT NULL,
 	"production_site_id" uuid NOT NULL,
 	"equipment_type_id" uuid,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "devices_to_batches" (
@@ -129,18 +176,18 @@ CREATE TABLE "devices_to_batches" (
 	"device_id" uuid NOT NULL,
 	"batch_id" uuid NOT NULL,
 	"device_status" text DEFAULT 'selected' NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "verification_batches" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"number" varchar(100) NOT NULL,
-	"planned_date" timestamp NOT NULL,
+	"planned_date" timestamp with time zone NOT NULL,
 	"verification_organization_id" uuid,
 	"status" text DEFAULT 'draft' NOT NULL,
 	"comment" text,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "verifications" (
@@ -157,8 +204,8 @@ CREATE TABLE "verifications" (
 	"batch_id" uuid,
 	"device_id" uuid NOT NULL,
 	"cost" numeric(10, 2) DEFAULT '0.00',
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"updated_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "cities" (
@@ -193,7 +240,7 @@ CREATE TABLE "system_notifications" (
 	"title" varchar(255) NOT NULL,
 	"message" text NOT NULL,
 	"type" varchar(50) DEFAULT 'info' NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "user_notification_statuses" (
@@ -201,7 +248,7 @@ CREATE TABLE "user_notification_statuses" (
 	"user_id" uuid NOT NULL,
 	"notification_id" uuid NOT NULL,
 	"is_read" boolean DEFAULT true NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL
+	"created_at" timestamp (3) with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "users" (
@@ -217,6 +264,11 @@ CREATE TABLE "users" (
 );
 --> statement-breakpoint
 ALTER TABLE "device_audit_logs" ADD CONSTRAINT "device_audit_logs_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "budget_plan_items" ADD CONSTRAINT "budget_plan_items_budget_plan_id_budget_plans_id_fk" FOREIGN KEY ("budget_plan_id") REFERENCES "public"."budget_plans"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "budget_plan_items" ADD CONSTRAINT "budget_plan_items_device_id_devices_id_fk" FOREIGN KEY ("device_id") REFERENCES "public"."devices"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "budget_plan_items" ADD CONSTRAINT "budget_plan_items_matched_pricelist_item_id_pricelist_items_id_fk" FOREIGN KEY ("matched_pricelist_item_id") REFERENCES "public"."pricelist_items"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pricelist_items" ADD CONSTRAINT "pricelist_items_pricelist_id_pricelists_id_fk" FOREIGN KEY ("pricelist_id") REFERENCES "public"."pricelists"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pricelists" ADD CONSTRAINT "pricelists_verification_organization_id_verification_organizations_id_fk" FOREIGN KEY ("verification_organization_id") REFERENCES "public"."verification_organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "measurement_types_to_devices" ADD CONSTRAINT "measurement_types_to_devices_measurement_types_id_measurement_types_id_fk" FOREIGN KEY ("measurement_types_id") REFERENCES "public"."measurement_types"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "measurement_types_to_devices" ADD CONSTRAINT "measurement_types_to_devices_device_id_devices_id_fk" FOREIGN KEY ("device_id") REFERENCES "public"."devices"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "primary_standards_to_devices" ADD CONSTRAINT "primary_standards_to_devices_primary_standarts_id_primary_standards_id_fk" FOREIGN KEY ("primary_standarts_id") REFERENCES "public"."primary_standards"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -240,6 +292,10 @@ ALTER TABLE "production_sites" ADD CONSTRAINT "production_sites_city_id_cities_i
 ALTER TABLE "system_notifications" ADD CONSTRAINT "system_notifications_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_notification_statuses" ADD CONSTRAINT "user_notification_statuses_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "user_notification_statuses" ADD CONSTRAINT "user_notification_statuses_notification_id_system_notifications_id_fk" FOREIGN KEY ("notification_id") REFERENCES "public"."system_notifications"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "pi_grsi_idx" ON "pricelist_items" USING btree ("grsi_number");--> statement-breakpoint
+CREATE INDEX "pi_csm_code_idx" ON "pricelist_items" USING btree ("csm_code");--> statement-breakpoint
+CREATE INDEX "pi_pricelist_idx" ON "pricelist_items" USING btree ("pricelist_id");--> statement-breakpoint
+CREATE INDEX "pi_match_history_sku_idx" ON "pricelist_items" USING btree ("match_history_sku");--> statement-breakpoint
 CREATE INDEX "cm_sender_id_idx" ON "chat_messages" USING btree ("sender_id");--> statement-breakpoint
 CREATE INDEX "cm_recipient_id_idx" ON "chat_messages" USING btree ("recipient_id");--> statement-breakpoint
 CREATE INDEX "cm_unread_recipient_idx" ON "chat_messages" USING btree ("recipient_id","is_read");--> statement-breakpoint

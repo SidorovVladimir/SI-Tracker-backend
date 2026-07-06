@@ -1,6 +1,7 @@
 import {
   pgTable,
   primaryKey,
+  text,
   timestamp,
   uuid,
   varchar,
@@ -12,6 +13,7 @@ import { relations } from 'drizzle-orm';
 export const primaryStandarts = pgTable('primary_standards', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 255 }).notNull().unique(),
+  description: text('description'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

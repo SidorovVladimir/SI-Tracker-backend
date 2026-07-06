@@ -7,6 +7,7 @@ type Device {
   serialNumber: String!
   releaseDate: String
   grsiNumber: String
+  csmCode: String
   measurementRange: String
   accuracy: String
   inventoryNumber: String
@@ -49,6 +50,7 @@ type DeviceWithRelations {
   serialNumber: String!
   releaseDate: String
   grsiNumber: String
+  csmCode: String
   measurementRange: String
   equipmentType: EquipmentType
   accuracy: String
@@ -145,6 +147,7 @@ input CreateDeviceInput {
   accuracy: String
   inventoryNumber: String
   receiptDate: String
+  csmCode: String
   manufacturer: String
   verificationInterval: Int
   archived: Boolean!
@@ -167,6 +170,7 @@ input UpdateDeviceInput {
   grsiNumber: String
   measurementRange: String
   accuracy: String
+  csmCode: String
   inventoryNumber: String
   receiptDate: String
   manufacturer: String

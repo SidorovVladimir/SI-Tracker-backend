@@ -5,64 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1781377489508,
-      "tag": "0000_sturdy_dormammu",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1781599943918,
-      "tag": "0001_windy_yellowjacket",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1781681210027,
-      "tag": "0002_square_stingray",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1781682272201,
-      "tag": "0003_sour_shocker",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1781684590797,
-      "tag": "0004_nostalgic_doorman",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1782362455640,
-      "tag": "0005_third_hemingway",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1782378313561,
-      "tag": "0006_overconfident_phantom_reporter",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1782453524538,
-      "tag": "0007_curved_franklin_storm",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1782801142899,
-      "tag": "0008_cold_dazzler",
+      "when": 1783325695400,
+      "tag": "0000_great_mad_thinker",
       "breakpoints": true
     }
   ]

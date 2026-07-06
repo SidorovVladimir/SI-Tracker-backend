@@ -21,6 +21,7 @@ export const CreateDeviceInputSchema = z.object({
   model: z.string().min(1, 'Model is required'),
   serialNumber: z.string(),
   releaseDate: z.coerce.date().nullable(),
+  csmCode: z.string().nullable(),
   grsiNumber: z.string().nullable(),
   measurementRange: z.string().nullable(),
   accuracy: z.string().nullable(),

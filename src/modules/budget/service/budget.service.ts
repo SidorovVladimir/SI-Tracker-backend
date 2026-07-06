@@ -418,7 +418,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           // ПРОДАКШЕН: Полноценный, быстрый поиск Postgres со стеммингом и ранжированием
           const searchString = cleanSearchQuery.join(' & ');
 
-          console.log('⏳ [ПРОД] Шаг 1: Запуск полнотекстового поиска...');
+          // console.log('⏳ [ПРОД] Шаг 1: Запуск полнотекстового поиска...');
 
           const [res] = await this.db
             .select()
@@ -436,9 +436,9 @@ ORDER BY "rowName" ASC, "monthNum" ASC
 
           ftsItem = res;
           if (!ftsItem) {
-            console.log(
-              '🔍 [ПРОД] Шаг 2: Полнотекстовый поиск пуст. Включаем триграммный ассистент pg_trgm...'
-            );
+            // console.log(
+            //   '🔍 [ПРОД] Шаг 2: Полнотекстовый поиск пуст. Включаем триграммный ассистент pg_trgm...'
+            // );
 
             // 0.4 означает минимум 40% схожести символов и их порядка
             const similarityThreshold = 0.4;
@@ -460,10 +460,10 @@ ORDER BY "rowName" ASC, "monthNum" ASC
               .limit(1);
 
             if (trgmResult) {
-              console.log(
-                '✅ [ПРОД] Триграммный ассистент успешно подобрал позицию:',
-                trgmResult.name
-              );
+              // console.log(
+              //   '✅ [ПРОД] Триграммный ассистент успешно подобрал позицию:',
+              //   trgmResult.name
+              // );
               ftsItem = trgmResult;
             }
           }
@@ -1233,7 +1233,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       }
     } else {
       // 📱 ЛОКАЛЬНО: Мок-ответ (для защиты PGlite от зависаний)
-      console.log(`🤖 [СЕРВИС] Имитация графика для ключа: "${idOrSku}"`);
+      // console.log(`🤖 [СЕРВИС] Имитация графика для ключа: "${idOrSku}"`);
       return {
         serviceName: isUuid
           ? `Динамика затрат объекта холдинга (Участок #${idOrSku.slice(0, 4)})`

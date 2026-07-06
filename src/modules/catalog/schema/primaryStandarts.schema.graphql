@@ -1,6 +1,7 @@
 type PrimaryStandart {
   id: ID!
   name: String!
+  description: String
   createdAt: String!
   updatedAt: String!
 }
@@ -12,10 +13,12 @@ type Query {
 
 input CreatePrimaryStandartInput {
   name: String!
+  description: String
 }
 
 input UpdatePrimaryStandartInput {
   name: String!
+  description: String
 }
 
 type Mutation {

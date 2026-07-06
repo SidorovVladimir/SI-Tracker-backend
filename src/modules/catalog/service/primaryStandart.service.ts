@@ -23,6 +23,7 @@ export class PrimaryStandartService {
   async createPrimaryStandart(input: CreatePrimaryStandartInput) {
     const primaryStandartData: NewPrimaryStandart = {
       name: input.name.toLowerCase(),
+      description: input?.description?.toLowerCase() ?? null,
     };
     const [primaryStandart] = await this.db
       .insert(primaryStandarts)

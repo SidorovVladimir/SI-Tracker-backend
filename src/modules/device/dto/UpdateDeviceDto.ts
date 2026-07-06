@@ -32,6 +32,7 @@ export const UpdateDeviceInputSchema = z.object({
   accuracy: z.string().nullable(),
   inventoryNumber: z.string().nullable(),
   receiptDate: z.coerce.date().nullable(),
+  csmCode: z.string().nullable(),
   manufacturer: z.string().nullable(),
   verificationInterval: z.number().int().nullable(),
   archived: z.boolean(),

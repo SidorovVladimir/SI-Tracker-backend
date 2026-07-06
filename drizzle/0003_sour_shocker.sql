@@ -1,1 +1,0 @@
-ALTER TABLE "verification_batches" ALTER COLUMN "planned_date" SET DATA TYPE timestamp;
