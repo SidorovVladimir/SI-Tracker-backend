@@ -5,6 +5,7 @@ import { devices } from '../../device/models/device.model';
 import { productionSites } from '../../location/models/productionSites.model';
 import { companies } from '../../location/models/company.model';
 import { cities } from '../../location/models/city.model';
+import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
 
 export class AnalyticsService {
   constructor(private db: DrizzleDB) {}
@@ -112,6 +113,7 @@ export class AnalyticsService {
   }
 
   async getProductionAnalytics(year: number, month?: number | null) {
+    // 1. Формируем временной интервал с учётом таймзон (как в вашей схеме)
     let startCondition = new Date(`${year}-01-01T00:00:00.000Z`);
     let endCondition = new Date(`${year}-12-31T23:59:59.999Z`);
 
@@ -126,23 +128,37 @@ export class AnalyticsService {
       sql`${verifications.date} <= ${endCondition}`
     );
 
-    // 1. ВЫЧИСЛЯЕМ ОБЩИЕ СЧЕТЧИКИ KPI (Успешно, Брак, Калибровка)
+    // 2. СЧЁТЧИКИ KPI (Считаем КАЖДЫЙ документ отдельно, разделяя по условиям)
     const [totals] = await this.db
       .select({
-        verified: sql<number>`COUNT(CASE WHEN ${verifications.result} = 'Годен' THEN 1 END)::int`,
-        rejected: sql<number>`COUNT(CASE WHEN ${verifications.result} = 'Не годен' THEN 1 END)::int`,
-        calibrated: sql<number>`COUNT(CASE WHEN ${verifications.metrologyControleTypeId} IN (
-          SELECT id FROM metrology_controle_types WHERE lower(trim(name)) = 'калибровка'
-        ) THEN 1 END)::int`,
+        // Используем полное имя таблицы metrologyControleTypes вместо алиаса mct
+        verified: sql<number>`
+      COUNT(CASE WHEN 
+        lower(${metrologyControleTypes.name}) LIKE '%поверка%' AND ${verifications.result} = 'Годен' 
+      THEN 1 END)::int`,
+
+        calibrated: sql<number>`
+      COUNT(CASE WHEN 
+        lower(${metrologyControleTypes.name}) LIKE '%калибровка%' AND ${verifications.result} = 'Годен' 
+      THEN 1 END)::int`,
+
+        rejected: sql<number>`
+      COUNT(CASE WHEN 
+        ${verifications.result} = 'Не годен' 
+      THEN 1 END)::int`,
       })
       .from(verifications)
+      .leftJoin(
+        metrologyControleTypes,
+        eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+      )
       .where(dateCondition);
 
-    // 2. ОБЪЕМЫ ПО ЦЕХАМ (В ШТУКАХ СИ) С НАШЕЙ УНИКАЛЬНОЙ СКЛЕЙКОЙ НАЗВАНИЙ
+    // 3. ОБЪЕМЫ ПО ЦЕХАМ (Считаем количество документов verifications.id)
     const byProductionSites = await this.db
       .select({
         label: sql<string>`CONCAT(${companies.name}, ' (', ${cities.name}, ') — ', ${productionSites.name})`,
-        count: sql<number>`COUNT(DISTINCT ${verifications.id})::int`,
+        count: sql<number>`COUNT(${verifications.id})::int`, // Считаем каждую операцию
       })
       .from(verifications)
       .innerJoin(devices, eq(verifications.deviceId, devices.id))
@@ -159,13 +175,13 @@ export class AnalyticsService {
         companies.name,
         cities.name
       )
-      .orderBy(sql`COUNT(DISTINCT ${verifications.id}) DESC`);
+      .orderBy(sql`COUNT(${verifications.id}) DESC`);
 
-    // 3. ОБЪЕМЫ ПО ЮРЛИЦАМ (ЮЛ)
+    // 4. ОБЪЕМЫ ПО ЮРЛИЦАМ
     const byCompanies = await this.db
       .select({
         label: companies.name,
-        count: sql<number>`COUNT(DISTINCT ${verifications.id})::int`,
+        count: sql<number>`COUNT(${verifications.id})::int`,
       })
       .from(verifications)
       .innerJoin(devices, eq(verifications.deviceId, devices.id))
@@ -176,13 +192,13 @@ export class AnalyticsService {
       .innerJoin(companies, eq(productionSites.companyId, companies.id))
       .where(dateCondition)
       .groupBy(companies.name)
-      .orderBy(sql`COUNT(DISTINCT ${verifications.id}) DESC`);
+      .orderBy(sql`COUNT(${verifications.id}) DESC`);
 
-    // 4. ОБЪЕМЫ ПО ГОРОДАМ
+    // 5. ОБЪЕМЫ ПО ГОРОДАМ
     const byCities = await this.db
       .select({
         label: cities.name,
-        count: sql<number>`COUNT(DISTINCT ${verifications.id})::int`,
+        count: sql<number>`COUNT(${verifications.id})::int`,
       })
       .from(verifications)
       .innerJoin(devices, eq(verifications.deviceId, devices.id))
@@ -193,7 +209,7 @@ export class AnalyticsService {
       .innerJoin(cities, eq(productionSites.cityId, cities.id))
       .where(dateCondition)
       .groupBy(cities.name)
-      .orderBy(sql`COUNT(DISTINCT ${verifications.id}) DESC`);
+      .orderBy(sql`COUNT(${verifications.id}) DESC`);
 
     return {
       totalVerified: totals?.verified || 0,
