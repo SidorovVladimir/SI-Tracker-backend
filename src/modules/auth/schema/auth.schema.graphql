@@ -8,7 +8,7 @@ type Query {
 }
 
 input LoginUserInput {
-  email: String!
+  login: String!
   password: String!
 }
 

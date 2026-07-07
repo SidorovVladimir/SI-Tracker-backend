@@ -31,7 +31,7 @@ async function main() {
     await tx
       .insert(users)
       .values({
-        email: process.env.ADMIN_EMAIL!,
+        login: process.env.ADMIN_EMAIL!,
         firstName: process.env.ADMIN_FIRSTNAME!,
         lastName: process.env.ADMIN_LASTNAME!,
         passwordHash,

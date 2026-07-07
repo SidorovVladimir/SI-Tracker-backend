@@ -9,7 +9,7 @@ export type UserRole = 'admin' | 'user' | 'superadmin';
 
 export interface TokenPayload extends JwtPayload {
   id: string;
-  email: string;
+  login: string;
   firstName: string;
   lastName: string;
   role: UserRole;
@@ -22,7 +22,7 @@ export interface Context {
   res: Response;
   currentUser: {
     id: string;
-    email: string;
+    login: string | null;
     firstName: string;
     lastName: string;
     role: UserRole;
@@ -57,7 +57,7 @@ export const createContext = async ({
           id: userExists.id,
           firstName: userExists.firstName,
           lastName: userExists.lastName,
-          email: userExists.email,
+          login: userExists.login,
           role: userExists.role,
         };
       } else {

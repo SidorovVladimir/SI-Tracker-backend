@@ -2,8 +2,9 @@ type User {
   id: ID!
   firstName: String!
   lastName: String!
-  email: String!
+  # email: String!
   role: String!
+  login: String!
   createdAt: String!
   updatedAt: String!
 }
@@ -16,7 +17,8 @@ type Query {
 input CreateUserInput {
   firstName: String!
   lastName: String!
-  email: String!
+  # email: String!
+  login: String!
   password: String!
   role: String!
 }

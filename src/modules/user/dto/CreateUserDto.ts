@@ -9,11 +9,12 @@ export const CreateUserInputSchema = z.object({
     .string()
     .min(1, 'Last name is required')
     .max(50, 'Фамилия должна быть не более 50 символов'),
-  email: z.email('Некорректный формат почты'),
+  // email: z.email('Некорректный формат почты'),
+  login: z.string().min(8, 'Логин должен состоять как минимум из 8 символов'),
   password: z
     .string()
     .min(8, 'Пароль должен состоять как минимум из 8 символов'),
-  role: z.enum(['admin', 'user']),
+  role: z.enum(['admin', 'user', 'superadmin']),
 });
 
 export type CreateUserInput = z.infer<typeof CreateUserInputSchema>;

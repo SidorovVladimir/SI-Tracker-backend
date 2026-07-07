@@ -41,7 +41,7 @@ export const Mutation = {
   // },
   login: async (
     _: unknown,
-    { input }: { input: { email: string; password: string } },
+    { input }: { input: { login: string; password: string } },
     { res, db }: Context
   ) => {
     try {

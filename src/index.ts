@@ -102,7 +102,7 @@ async function startApolloServer() {
         id: userExists.id,
         firstName: userExists.firstName,
         lastName: userExists.lastName,
-        email: userExists.email,
+        login: userExists.login,
         role: userExists.role,
       };
 

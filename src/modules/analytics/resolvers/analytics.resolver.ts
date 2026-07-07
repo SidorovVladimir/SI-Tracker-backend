@@ -38,4 +38,17 @@ export const Query = {
     }
     return await new AnalyticsService(db).getProductionAnalytics(year, month);
   },
+
+  getAdminDashboardStats: async (
+    _: unknown,
+    __: unknown,
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    return await new AnalyticsService(db).getAdminDashboardStats();
+  },
 };

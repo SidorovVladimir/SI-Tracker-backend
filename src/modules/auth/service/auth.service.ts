@@ -11,8 +11,8 @@ export class AuthService {
   // async register(input: CreateUserInput) {
   //   return new UserService(this.db).createUser(input);
   // }
-  async Login(input: { email: string; password: string }) {
-    const user = await new UserService(this.db).getByEmail(input.email);
+  async Login(input: { login: string; password: string }) {
+    const user = await new UserService(this.db).getByEmail(input.login);
 
     if (!user || !(await verifyPasword(input.password, user.passwordHash))) {
       throw new AuthenticationError('Неверная почта или пароль');

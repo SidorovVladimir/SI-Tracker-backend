@@ -21,7 +21,7 @@ export const setAuthCookie = (res: Response, user: User) => {
   const token = jwt.sign(
     {
       id: user.id,
-      email: user.email,
+      login: user.login,
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role,

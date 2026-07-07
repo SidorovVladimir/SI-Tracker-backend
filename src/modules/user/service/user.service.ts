@@ -17,7 +17,7 @@ export class UserService {
         firstName: users.firstName,
         lastName: users.lastName,
         role: users.role,
-        email: users.email,
+        login: users.login,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -31,7 +31,7 @@ export class UserService {
         firstName: users.firstName,
         lastName: users.lastName,
         role: users.role,
-        email: users.email,
+        login: users.login,
         createdAt: users.createdAt,
         updatedAt: users.updatedAt,
       })
@@ -45,11 +45,11 @@ export class UserService {
     return result[0];
   }
 
-  async getByEmail(email: string) {
+  async getByEmail(login: string) {
     const result = await this.db
       .select()
       .from(users)
-      .where(eq(users.email, email))
+      .where(eq(users.login, login))
       .limit(1);
     if (!result[0]) {
       return null;
@@ -58,7 +58,7 @@ export class UserService {
   }
 
   async createUser(input: CreateUserInput) {
-    const existsUser = await this.getByEmail(input.email);
+    const existsUser = await this.getByEmail(input.login);
 
     if (existsUser)
       throw new AuthenticationError(
@@ -67,7 +67,7 @@ export class UserService {
     const userData: NewUser = {
       firstName: input.firstName.toLowerCase(),
       lastName: input.lastName.toLowerCase(),
-      email: input.email,
+      login: input.login,
       passwordHash: await hashPassword(input.password),
       // role: input.email === process.env.ADMIN_EMAIL ? 'admin' : 'user',
       role: input.role,

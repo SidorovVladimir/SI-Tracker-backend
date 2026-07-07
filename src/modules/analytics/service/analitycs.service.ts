@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { verifications } from '../../device/models/verification.model';
 import { devices } from '../../device/models/device.model';
@@ -6,6 +6,10 @@ import { productionSites } from '../../location/models/productionSites.model';
 import { companies } from '../../location/models/company.model';
 import { cities } from '../../location/models/city.model';
 import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
+import { pricelistItems } from '../../budget/models/budget.model';
+import { primaryStandarts } from '../../catalog/models/primaryStandarts.model';
+import { statuses } from '../../catalog/models/status.model';
+import { users } from '../../user/user.model';
 
 export class AnalyticsService {
   constructor(private db: DrizzleDB) {}
@@ -218,6 +222,283 @@ export class AnalyticsService {
       byProductionSites,
       byCompanies,
       byCities,
+    };
+  }
+
+  // async getAdminDashboardStats() {
+  //   const resultRows = await this.db
+  //     .select({
+  //       devices: sql<number>`COUNT(CASE WHEN ${devices.archived} = false THEN 1 END)::int`,
+  //       users: sql<number>`(SELECT COUNT(*)::int FROM ${users})`,
+  //       companies: sql<number>`(SELECT COUNT(*)::int FROM ${companies})`,
+  //       sites: sql<number>`(SELECT COUNT(*)::int FROM ${productionSites})`,
+  //       standards: sql<number>`(SELECT COUNT(*)::int FROM ${primaryStandarts})`,
+  //       tariffs: sql<number>`(SELECT COUNT(*)::int FROM ${pricelistItems})`,
+  //     })
+  //     .from(devices);
+
+  //   const counts = resultRows[0];
+
+  //   // Подзапросы хронологии для поиска крайнего контроля прибора
+  //   const latestDates = this.db
+  //     .select({
+  //       deviceId: verifications.deviceId,
+  //       maxDate: sql`MAX(${verifications.date})`.as('max_date'),
+  //     })
+  //     .from(verifications)
+  //     .groupBy(verifications.deviceId)
+  //     .as('latest_dates');
+
+  //   const latestVerifications = this.db
+  //     .select({
+  //       deviceId: verifications.deviceId,
+  //       result: verifications.result,
+  //     })
+  //     .from(verifications)
+  //     .innerJoin(
+  //       latestDates,
+  //       and(
+  //         eq(verifications.deviceId, latestDates.deviceId),
+  //         eq(verifications.date, latestDates.maxDate)
+  //       )
+  //     )
+  //     .as('latest_verifications');
+
+  //   // 2. Выборка приборов по 4 типам метрологических аномалий
+  //   const missingMpi = await this.db
+  //     .select({
+  //       id: devices.id,
+  //       name: devices.name,
+  //       model: devices.model,
+  //       serialNumber: devices.serialNumber,
+  //     })
+  //     .from(devices)
+  //     .innerJoin(statuses, eq(statuses.id, devices.statusId))
+  //     .where(
+  //       and(
+  //         eq(devices.archived, false),
+  //         eq(sql`lower(${statuses.name})`, 'исправен'),
+  //         isNull(devices.verificationInterval)
+  //       )
+  //     );
+
+  //   const missingControlType = await this.db
+  //     .select({
+  //       id: devices.id,
+  //       name: devices.name,
+  //       model: devices.model,
+  //       serialNumber: devices.serialNumber,
+  //     })
+  //     .from(devices)
+  //     .innerJoin(verifications, eq(verifications.deviceId, devices.id))
+  //     .where(
+  //       and(
+  //         eq(devices.archived, false),
+  //         isNull(verifications.metrologyControleTypeId)
+  //       )
+  //     );
+
+  //   const missingHistory = await this.db
+  //     .select({
+  //       id: devices.id,
+  //       name: devices.name,
+  //       model: devices.model,
+  //       serialNumber: devices.serialNumber,
+  //     })
+  //     .from(devices)
+  //     .innerJoin(statuses, eq(statuses.id, devices.statusId))
+  //     .leftJoin(
+  //       latestVerifications,
+  //       eq(latestVerifications.deviceId, devices.id)
+  //     )
+  //     .where(
+  //       and(
+  //         eq(devices.archived, false),
+  //         eq(sql`lower(${statuses.name})`, 'исправен'),
+  //         isNull(latestVerifications.deviceId)
+  //       )
+  //     );
+
+  //   const statusMismatch = await this.db
+  //     .select({
+  //       id: devices.id,
+  //       name: devices.name,
+  //       model: devices.model,
+  //       serialNumber: devices.serialNumber,
+  //     })
+  //     .from(devices)
+  //     .innerJoin(statuses, eq(statuses.id, devices.statusId))
+  //     .innerJoin(
+  //       latestVerifications,
+  //       eq(latestVerifications.deviceId, devices.id)
+  //     )
+  //     .where(
+  //       and(
+  //         eq(devices.archived, false),
+  //         eq(sql`lower(${statuses.name})`, 'исправен'),
+  //         eq(latestVerifications.result, 'Не годен')
+  //       )
+  //     );
+
+  //   return {
+  //     stats: counts || {
+  //       devices: 0,
+  //       users: 0,
+  //       companies: 0,
+  //       sites: 0,
+  //       standards: 0,
+  //       tariffs: 0,
+  //     },
+  //     anomalies: {
+  //       missingMpi,
+  //       missingControlType,
+  //       missingHistory,
+  //       statusMismatch,
+  //     },
+  //   };
+  // }
+  async getAdminDashboardStats() {
+    // 1. Быстрый подсчет общего объема НСИ
+    const [counts] = await this.db
+      .select({
+        devices: sql<number>`COUNT(CASE WHEN ${devices.archived} = false THEN 1 END)::int`,
+        users: sql<number>`(SELECT COUNT(*)::int FROM ${users})`,
+        companies: sql<number>`(SELECT COUNT(*)::int FROM ${companies})`,
+        sites: sql<number>`(SELECT COUNT(*)::int FROM ${productionSites})`,
+        standards: sql<number>`(SELECT COUNT(*)::int FROM ${primaryStandarts})`,
+        tariffs: sql<number>`(SELECT COUNT(*)::int FROM ${pricelistItems})`,
+      })
+      .from(devices);
+
+    // Подзапрос А: Находим дату САМОГО СВЕЖЕГО контроля для каждого прибора
+    const latestDates = this.db
+      .select({
+        deviceId: verifications.deviceId,
+        maxDate: sql`MAX(${verifications.date})`.as('max_date'),
+      })
+      .from(verifications)
+      .groupBy(verifications.deviceId)
+      .as('latest_dates');
+
+    // Подзапрос Б: Вытаскиваем результат и тип контроля строго для этой КРАЙНЕЙ даты
+    const latestVerifications = this.db
+      .select({
+        deviceId: verifications.deviceId,
+        result: verifications.result,
+        metrologyControleTypeId: verifications.metrologyControleTypeId,
+      })
+      .from(verifications)
+      .innerJoin(
+        latestDates,
+        and(
+          eq(verifications.deviceId, latestDates.deviceId),
+          eq(verifications.date, latestDates.maxDate)
+        )
+      )
+      .as('latest_verifications');
+
+    // 2. Выборка приборов по точным метрологическим аномалиям
+
+    // Аномалия 1: Пропуск МПИ у активных приборов
+    const missingMpi = await this.db
+      .select({
+        id: devices.id,
+        name: devices.name,
+        model: devices.model,
+        serialNumber: devices.serialNumber,
+      })
+      .from(devices)
+      .innerJoin(statuses, eq(statuses.id, devices.statusId))
+      .where(
+        and(
+          eq(devices.archived, false),
+          eq(sql`lower(${statuses.name})`, 'исправен'),
+          isNull(devices.verificationInterval)
+        )
+      );
+
+    // Аномалия 2: В КРАЙНЕЙ поверке забыли указать тип контроля (переписано!)
+    const missingControlType = await this.db
+      .select({
+        id: devices.id,
+        name: devices.name,
+        model: devices.model,
+        serialNumber: devices.serialNumber,
+      })
+      .from(devices)
+      .innerJoin(
+        latestVerifications,
+        eq(latestVerifications.deviceId, devices.id)
+      )
+      .where(
+        and(
+          eq(devices.archived, false),
+          isNull(latestVerifications.metrologyControleTypeId)
+        )
+      );
+
+    // Аномалия 3: Исправен, но истории нет И ПРИБОР НЕ НОВЫЙ (введен более 30 дней назад)
+    const missingHistory = await this.db
+      .select({
+        id: devices.id,
+        name: devices.name,
+        model: devices.model,
+        serialNumber: devices.serialNumber,
+      })
+      .from(devices)
+      .innerJoin(statuses, eq(statuses.id, devices.statusId))
+      .leftJoin(
+        latestVerifications,
+        eq(latestVerifications.deviceId, devices.id)
+      )
+      .where(
+        and(
+          eq(devices.archived, false),
+          eq(sql`lower(${statuses.name})`, 'исправен'),
+          isNull(latestVerifications.deviceId),
+
+          // 🌟 ИСПРАВЛЕНО: Безопасный каскад дат. Если receiptDate пустая, берем createdAt
+          sql`COALESCE(${devices.receiptDate}, ${devices.createdAt}) < NOW() - INTERVAL '30 days'`
+        )
+      );
+
+    // Аномалия 4: Рассинхрон — крайний контроль "Не годен", но статус висит "Исправен"
+    const statusMismatch = await this.db
+      .select({
+        id: devices.id,
+        name: devices.name,
+        model: devices.model,
+        serialNumber: devices.serialNumber,
+      })
+      .from(devices)
+      .innerJoin(statuses, eq(statuses.id, devices.statusId))
+      .innerJoin(
+        latestVerifications,
+        eq(latestVerifications.deviceId, devices.id)
+      )
+      .where(
+        and(
+          eq(devices.archived, false),
+          eq(sql`lower(${statuses.name})`, 'исправен'),
+          eq(latestVerifications.result, 'Не годен')
+        )
+      );
+
+    return {
+      stats: counts || {
+        devices: 0,
+        users: 0,
+        companies: 0,
+        sites: 0,
+        standards: 0,
+        tariffs: 0,
+      },
+      anomalies: {
+        missingMpi,
+        missingControlType,
+        missingHistory,
+        statusMismatch,
+      },
     };
   }
 }

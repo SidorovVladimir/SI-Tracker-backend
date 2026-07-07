@@ -1,4 +1,14 @@
-import { sql, and, eq, inArray, desc, ilike, count, or } from 'drizzle-orm';
+import {
+  sql,
+  and,
+  eq,
+  inArray,
+  desc,
+  ilike,
+  count,
+  or,
+  isNull,
+} from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 
 import { productionSites } from '../../location/models/productionSites.model';
@@ -1126,330 +1136,619 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     }));
   }
 
+  // async getCsmTariffTrend(idOrSku: string) {
+  //   if (!idOrSku) {
+  //     throw new Error('Параметр idOrSku обязателен для получения аналитики.');
+  //   }
+
+  //   const isProduction = process.env.NODE_ENV === 'production';
+
+  //   // Проверяем, является ли переданная строка валидным UUID
+  //   const isUuid =
+  //     /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+  //       idOrSku
+  //     );
+
+  //   if (isProduction) {
+  //     if (isUuid) {
+  //       // =========================================================================
+  //       // СЦЕНАРИЙ А: Передан UUID цеха/площадки (Вызов с общего дашборда аналитики)
+  //       // =========================================================================
+  //       const result = await this.db.execute(sql`
+  //         SELECT
+  //           pi.year,
+  //           CAST(SUM(pi.price) AS DOUBLE PRECISION) as price,
+  //           (SELECT ps.name FROM production_sites ps WHERE ps.id = ${idOrSku}::uuid LIMIT 1) as service_name,
+  //           (SELECT pl.title FROM pricelists pl WHERE pl.id = pi.pricelist_id LIMIT 1) as csm_name
+  //         FROM pricelist_items pi
+  //         INNER JOIN devices d ON d.production_site_id = ${idOrSku}::uuid
+  //         WHERE pi.grsi_number = d.grsi_number OR pi.csm_code = d.csm_code
+  //         GROUP BY pi.year, pi.pricelist_id
+  //         ORDER BY pi.year;
+  //       `);
+
+  //       // ✅ Безопасно достаем массив строк через свойство .rows
+  //       const rows = (result as any)?.rows as any[];
+
+  //       if (!rows || rows.length === 0) {
+  //         return { serviceName: 'Данные по цеху не найдены', timeline: [] };
+  //       }
+
+  //       const firstRow = rows[0];
+
+  //       return {
+  //         serviceName: `Динамика стоимости обслуживания: ${
+  //           firstRow?.service_name || 'Цех'
+  //         }`,
+  //         timeline: rows.map((row: any) => ({
+  //           year: Number(row.year),
+  //           price: Number(row.price),
+  //           csmName: row.csm_name || 'Региональный ЦСМ',
+  //         })),
+  //       };
+  //     } else {
+  //       // =========================================================================
+  //       // СЦЕНАРИЙ Б: Передан текстовый SKU прибора (Вызов при клике в списке бюджета)
+  //       // =========================================================================
+  //       const result = await this.db.execute(sql`
+  //         SELECT
+  //           pi.year,
+  //           CAST(pi.price AS DOUBLE PRECISION) as price,
+  //           pi.name as service_name,
+  //           (SELECT pl.title FROM pricelists pl WHERE pl.id = pi.pricelist_id LIMIT 1) as csm_name
+  //         FROM pricelist_items pi
+  //         WHERE pi.match_history_sku = ${idOrSku}
+  //         ORDER BY pi.year;
+  //       `);
+
+  //       // ✅ Достаем строки из объекта QueryResult
+  //       let rows = (result as any)?.rows as any[];
+
+  //       if (!rows || rows.length === 0) {
+  //         // Спасательный круг: если по точному SKU в новой базе пока пусто, ищем по ILIKE по тексту
+  //         const cleanText = idOrSku.replace('TEXT-', '').replace(/-/g, ' ');
+  //         const fallbackResult = await this.db.execute(sql`
+  //           SELECT
+  //             pi.year,
+  //             CAST(pi.price AS DOUBLE PRECISION) as price,
+  //             pi.name as service_name,
+  //             (SELECT pl.title FROM pricelists pl WHERE pl.id = pi.pricelist_id LIMIT 1) as csm_name
+  //           FROM pricelist_items pi
+  //           WHERE pi.name ILIKE ${'%' + cleanText + '%'}
+  //           ORDER BY pi.year;
+  //         `);
+
+  //         rows = (fallbackResult as any)?.rows as any[];
+
+  //         if (!rows || rows.length === 0) {
+  //           return {
+  //             serviceName: `Анализ инфляции: "${cleanText}"`,
+  //             timeline: [],
+  //           };
+  //         }
+  //       }
+
+  //       // Безопасно забираем имя из последней строки массива через .at(-1)
+  //       const latestServiceName =
+  //         rows.at(-1)?.service_name || 'Услуга поверки СИ';
+
+  //       return {
+  //         serviceName: latestServiceName,
+  //         timeline: rows.map((row: any) => ({
+  //           year: Number(row.year),
+  //           price: Number(row.price),
+  //           csmName: row.csm_name || 'Региональный ЦСМ',
+  //         })),
+  //       };
+  //     }
+  //   } else {
+  //     // 📱 ЛОКАЛЬНО: Мок-ответ (для защиты PGlite от зависаний)
+  //     // console.log(`🤖 [СЕРВИС] Имитация графика для ключа: "${idOrSku}"`);
+  //     return {
+  //       serviceName: isUuid
+  //         ? `Динамика затрат объекта холдинга (Участок #${idOrSku.slice(0, 4)})`
+  //         : `Анализ инфляции тарифа: "${idOrSku
+  //             .replace('TEXT-', '')
+  //             .replace(/-/g, ' ')
+  //             .toUpperCase()}"`,
+  //       timeline: [
+  //         { year: 2024, price: 1200.0, csmName: 'Новосибирский ЦСМ' },
+  //         { year: 2025, price: 1450.0, csmName: 'Новосибирский ЦСМ' },
+  //         { year: 2026, price: 1800.0, csmName: 'Новосибирский ЦСМ' },
+  //       ],
+  //     };
+  //   }
+  // }
+
+  // async getVerificationRisks() {
+  //   const isProduction = process.env.NODE_ENV === 'production';
+
+  //   if (isProduction) {
+  //     // 🖥️ ПРОДАКШЕН: Универсальный SQL-запрос, привязанный к текстовым бизнес-маркерам (без хардкода UUID)
+  //     const rawRows = await this.db.execute(sql`
+  //       WITH latest_verifications AS (
+  //         SELECT
+  //           v.device_id,
+  //           v.valid_until,
+  //           ROW_NUMBER() OVER (PARTITION BY v.device_id ORDER BY v.date DESC) as rn
+  //         FROM verifications v
+  //         -- 🎯 УНИВЕРСАЛЬНЫЙ ФИЛЬТР: Привязываемся к именам типов контроля, а не к UUID
+  //         INNER JOIN metrology_controle_types mct ON mct.id = v.metrology_controle_type_id
+  //         WHERE mct.name ILIKE '%поверка%' OR mct.name ILIKE '%калибровка%'
+  //       ),
+  //       device_statuses AS (
+  //         SELECT
+  //           d.id as device_id,
+  //           d.production_site_id,
+  //           CASE
+  //             -- 🎯 УНИВЕРСАЛЬНЫЙ ФИЛЬТР СТАТУСОВ: Консервация и утеря не создают операционных рисков
+  //             WHEN s.name ILIKE '%хранение%' OR s.name ILIKE '%утерян%' THEN 'green'
+
+  //             -- Если прибор активен (Исправен/Неисправен), но дата пустая или просрочена
+  //             WHEN lv.valid_until IS NULL THEN 'expired'
+  //             WHEN lv.valid_until < NOW() THEN 'expired'
+
+  //             -- Предупреждение за 30 дней до окончания поверочного клейма
+  //             WHEN lv.valid_until BETWEEN NOW() AND NOW() + INTERVAL '30 days' THEN 'warning'
+  //             ELSE 'green'
+  //           END as status_type
+  //         FROM devices d
+  //         INNER JOIN statuses s ON s.id = d.status_id
+  //         LEFT JOIN latest_verifications lv ON lv.device_id = d.id AND lv.rn = 1
+  //         WHERE d.archived = false -- Строго отсекаем архивные карточки приборов
+  //       )
+  //       SELECT
+  //         c.id as city_id,
+  //         c.name as city_name,
+  //         co.id as company_id,
+  //         co.name as company_name,
+  //         ps.id as site_id,
+  //         ps.name as site_name,
+  //         COUNT(ds.device_id) as total_count,
+  //         COUNT(CASE WHEN ds.status_type = 'expired' THEN 1 END) as expired_count,
+  //         COUNT(CASE WHEN ds.status_type = 'warning' THEN 1 END) as warning_count
+  //       FROM production_sites ps
+  //       INNER JOIN cities c ON c.id = ps.city_id
+  //       INNER JOIN companies co ON co.id = ps.company_id
+  //       LEFT JOIN device_statuses ds ON ds.production_site_id = ps.id
+  //       GROUP BY c.id, c.name, co.id, co.name, ps.id, ps.name
+  //       ORDER BY c.name, co.name, ps.name;
+  //     `);
+
+  //     // (Логика сборки дерева Map -> Array остаётся прежней без изменений)
+  //     const citiesMap = new Map<string, any>();
+  //     rawRows.rows.forEach((row: any) => {
+  //       if (!citiesMap.has(row.city_id)) {
+  //         citiesMap.set(row.city_id, {
+  //           id: row.city_id,
+  //           name: row.city_name,
+  //           status: 'green',
+  //           totalCount: 0,
+  //           expiredCount: 0,
+  //           warningCount: 0,
+  //           companiesMap: new Map(),
+  //         });
+  //       }
+  //       const cityNode = citiesMap.get(row.city_id);
+
+  //       if (!cityNode.companiesMap.has(row.company_id)) {
+  //         cityNode.companiesMap.set(row.company_id, {
+  //           id: row.company_id,
+  //           name: row.company_name,
+  //           status: 'green',
+  //           totalCount: 0,
+  //           expiredCount: 0,
+  //           warningCount: 0,
+  //           sites: [],
+  //         });
+  //       }
+  //       const companyNode = cityNode.companiesMap.get(row.company_id);
+
+  //       const total = Number(row.total_count) || 0;
+  //       const expired = Number(row.expired_count) || 0;
+  //       const warning = Number(row.warning_count) || 0;
+
+  //       let siteStatus = 'green';
+  //       if (expired > 0) siteStatus = 'error';
+  //       else if (warning > 0) siteStatus = 'warning';
+
+  //       companyNode.sites.push({
+  //         id: row.site_id,
+  //         name: row.site_name,
+  //         status: siteStatus,
+  //         totalCount: total,
+  //         expiredCount: expired,
+  //         warningCount: warning,
+  //       });
+
+  //       companyNode.totalCount += total;
+  //       companyNode.expiredCount += expired;
+  //       companyNode.warningCount += warning;
+  //       if (siteStatus === 'error') companyNode.status = 'error';
+  //       else if (siteStatus === 'warning' && companyNode.status !== 'error')
+  //         companyNode.status = 'warning';
+
+  //       cityNode.totalCount += total;
+  //       cityNode.expiredCount += expired;
+  //       cityNode.warningCount += warning;
+  //       if (siteStatus === 'error') cityNode.status = 'error';
+  //       else if (siteStatus === 'warning' && cityNode.status !== 'error')
+  //         cityNode.status = 'warning';
+  //     });
+
+  //     return {
+  //       cities: Array.from(citiesMap.values()).map((city) => ({
+  //         ...city,
+  //         companies: Array.from(city.companiesMap.values()),
+  //       })),
+  //     };
+  //   } else {
+  //     // 📱 ЛОКАЛЬНО: Демонстрационное интерактивное дерево рисков (Mock), чтобы PGlite не зависал
+  //     return {
+  //       cities: [
+  //         {
+  //           id: 'cit-nsk',
+  //           name: 'Новосибирск',
+  //           status: 'error',
+  //           totalCount: 450,
+  //           expiredCount: 12,
+  //           warningCount: 45,
+  //           companies: [
+  //             {
+  //               id: 'co-sib-met',
+  //               name: 'Новосибирский Завод Электросигнал',
+  //               status: 'error',
+  //               totalCount: 300,
+  //               expiredCount: 12,
+  //               warningCount: 25,
+  //               sites: [
+  //                 {
+  //                   id: 'site-sm-1',
+  //                   name: 'Цех №1 КИПиА',
+  //                   status: 'error',
+  //                   totalCount: 120,
+  //                   expiredCount: 8,
+  //                   warningCount: 10,
+  //                 },
+  //                 {
+  //                   id: 'site-sm-2',
+  //                   name: 'Участок тепловой автоматики',
+  //                   status: 'warning',
+  //                   totalCount: 100,
+  //                   expiredCount: 0,
+  //                   warningCount: 15,
+  //                 },
+  //                 {
+  //                   id: 'site-sm-3',
+  //                   name: 'Энергоблок',
+  //                   status: 'green',
+  //                   totalCount: 80,
+  //                   expiredCount: 0,
+  //                   warningCount: 0,
+  //                 },
+  //               ],
+  //             },
+  //           ],
+  //         },
+  //         {
+  //           id: 'cit-omsk',
+  //           name: 'Омск',
+  //           status: 'green',
+  //           totalCount: 180,
+  //           expiredCount: 0,
+  //           warningCount: 0,
+  //           companies: [
+  //             {
+  //               id: 'co-omsk-ref',
+  //               name: 'ОмскНефтеПродукт',
+  //               status: 'green',
+  //               totalCount: 180,
+  //               expiredCount: 0,
+  //               warningCount: 0,
+  //               sites: [
+  //                 {
+  //                   id: 'site-or-1',
+  //                   name: 'Участок поверки датчиков давления',
+  //                   status: 'green',
+  //                   totalCount: 180,
+  //                   expiredCount: 0,
+  //                   warningCount: 0,
+  //                 },
+  //               ],
+  //             },
+  //           ],
+  //         },
+  //       ],
+  //     };
+  //   }
+  // }
+
   async getCsmTariffTrend(idOrSku: string) {
     if (!idOrSku) {
       throw new Error('Параметр idOrSku обязателен для получения аналитики.');
     }
 
-    const isProduction = process.env.NODE_ENV === 'production';
-
-    // Проверяем, является ли переданная строка валидным UUID
     const isUuid =
       /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
         idOrSku
       );
 
-    if (isProduction) {
-      if (isUuid) {
-        // =========================================================================
-        // СЦЕНАРИЙ А: Передан UUID цеха/площадки (Вызов с общего дашборда аналитики)
-        // =========================================================================
-        const result = await this.db.execute(sql`
-          SELECT 
-            pi.year,
-            CAST(SUM(pi.price) AS DOUBLE PRECISION) as price,
-            (SELECT ps.name FROM production_sites ps WHERE ps.id = ${idOrSku}::uuid LIMIT 1) as service_name,
-            (SELECT pl.title FROM pricelists pl WHERE pl.id = pi.pricelist_id LIMIT 1) as csm_name
-          FROM pricelist_items pi
-          INNER JOIN devices d ON d.production_site_id = ${idOrSku}::uuid
-          WHERE pi.grsi_number = d.grsi_number OR pi.csm_code = d.csm_code
-          GROUP BY pi.year, pi.pricelist_id
-          ORDER BY pi.year;
-        `);
+    if (isUuid) {
+      // =========================================================================
+      // СЦЕНАРИЙ А: Передан UUID цеха/площадки (Вызов с общего дашборда аналитики)
+      // =========================================================================
 
-        // ✅ Безопасно достаем массив строк через свойство .rows
-        const rows = (result as any)?.rows as any[];
+      const rows = await this.db
+        .select({
+          year: pricelistItems.year,
+          // Кастуем numeric цену в double precision для графиков на фронтенде
+          price: sql<number>`SUM(${pricelistItems.price})::double precision`,
+          csmName: pricelists.title, // 🌟 ИСПРАВЛЕНО: Прямая ссылка без подзапросов
+          serviceName: productionSites.name, // 🌟 ИСПРАВЛЕНО: Прямая ссылка без подзапросов
+        })
+        .from(pricelistItems)
+        // Честный INNER JOIN с приборами по ГРСИ или коду ЦСМ
+        .innerJoin(
+          devices,
+          and(
+            eq(devices.productionSiteId, idOrSku),
+            or(
+              eq(pricelistItems.grsiNumber, devices.grsiNumber),
+              eq(pricelistItems.csmCode, devices.csmCode)
+            )
+          )
+        )
+        // 🌟 ИСПРАВЛЕНО: Связываем прайс-листы через стандартный левый джойн
+        .leftJoin(pricelists, eq(pricelists.id, pricelistItems.pricelistId))
+        // 🌟 ИСПРАВЛЕНО: Связываем площадку через стандартный левый джойн
+        .leftJoin(
+          productionSites,
+          eq(productionSites.id, devices.productionSiteId)
+        )
+        .groupBy(
+          pricelistItems.year,
+          pricelistItems.pricelistId,
+          pricelists.title,
+          productionSites.name
+        )
+        .orderBy(pricelistItems.year);
 
-        if (!rows || rows.length === 0) {
-          return { serviceName: 'Данные по цеху не найдены', timeline: [] };
-        }
-
-        const firstRow = rows[0];
-
-        return {
-          serviceName: `Динамика стоимости обслуживания: ${
-            firstRow?.service_name || 'Цех'
-          }`,
-          timeline: rows.map((row: any) => ({
-            year: Number(row.year),
-            price: Number(row.price),
-            csmName: row.csm_name || 'Региональный ЦСМ',
-          })),
-        };
-      } else {
-        // =========================================================================
-        // СЦЕНАРИЙ Б: Передан текстовый SKU прибора (Вызов при клике в списке бюджета)
-        // =========================================================================
-        const result = await this.db.execute(sql`
-          SELECT 
-            pi.year,
-            CAST(pi.price AS DOUBLE PRECISION) as price,
-            pi.name as service_name,
-            (SELECT pl.title FROM pricelists pl WHERE pl.id = pi.pricelist_id LIMIT 1) as csm_name
-          FROM pricelist_items pi
-          WHERE pi.match_history_sku = ${idOrSku}
-          ORDER BY pi.year;
-        `);
-
-        // ✅ Достаем строки из объекта QueryResult
-        let rows = (result as any)?.rows as any[];
-
-        if (!rows || rows.length === 0) {
-          // Спасательный круг: если по точному SKU в новой базе пока пусто, ищем по ILIKE по тексту
-          const cleanText = idOrSku.replace('TEXT-', '').replace(/-/g, ' ');
-          const fallbackResult = await this.db.execute(sql`
-            SELECT 
-              pi.year,
-              CAST(pi.price AS DOUBLE PRECISION) as price,
-              pi.name as service_name,
-              (SELECT pl.title FROM pricelists pl WHERE pl.id = pi.pricelist_id LIMIT 1) as csm_name
-            FROM pricelist_items pi
-            WHERE pi.name ILIKE ${'%' + cleanText + '%'}
-            ORDER BY pi.year;
-          `);
-
-          rows = (fallbackResult as any)?.rows as any[];
-
-          if (!rows || rows.length === 0) {
-            return {
-              serviceName: `Анализ инфляции: "${cleanText}"`,
-              timeline: [],
-            };
-          }
-        }
-
-        // Безопасно забираем имя из последней строки массива через .at(-1)
-        const latestServiceName =
-          rows.at(-1)?.service_name || 'Услуга поверки СИ';
-
-        return {
-          serviceName: latestServiceName,
-          timeline: rows.map((row: any) => ({
-            year: Number(row.year),
-            price: Number(row.price),
-            csmName: row.csm_name || 'Региональный ЦСМ',
-          })),
-        };
+      if (!rows || rows.length === 0) {
+        return { serviceName: 'Данные по цеху не найдены', timeline: [] };
       }
-    } else {
-      // 📱 ЛОКАЛЬНО: Мок-ответ (для защиты PGlite от зависаний)
-      // console.log(`🤖 [СЕРВИС] Имитация графика для ключа: "${idOrSku}"`);
+
+      const firstRow = rows[0];
+
       return {
-        serviceName: isUuid
-          ? `Динамика затрат объекта холдинга (Участок #${idOrSku.slice(0, 4)})`
-          : `Анализ инфляции тарифа: "${idOrSku
-              .replace('TEXT-', '')
-              .replace(/-/g, ' ')
-              .toUpperCase()}"`,
-        timeline: [
-          { year: 2024, price: 1200.0, csmName: 'Новосибирский ЦСМ' },
-          { year: 2025, price: 1450.0, csmName: 'Новосибирский ЦСМ' },
-          { year: 2026, price: 1800.0, csmName: 'Новосибирский ЦСМ' },
-        ],
+        serviceName: `Динамика стоимости обслуживания: ${
+          firstRow?.serviceName || 'Цех'
+        }`,
+        timeline: rows.map((row) => ({
+          year: Number(row.year),
+          price: Number(row.price),
+          csmName: row.csmName || 'Региональный ЦСМ',
+        })),
+      };
+    } else {
+      // =========================================================================
+      // СЦЕНАРИЙ Б: Передан текстовый SKU прибора (Вызов при клике в списке бюджета)
+      // =========================================================================
+
+      // Шаг 1: Пробуем найти по точному совпадению артикула matchHistorySku
+      let rows = await this.db
+        .select({
+          year: pricelistItems.year,
+          price: sql<number>`${pricelistItems.price}::double precision`,
+          serviceName: pricelistItems.name,
+          csmName: pricelists.title, // 🌟 ИСПРАВЛЕНО: Прямая ссылка через LEFT JOIN
+        })
+        .from(pricelistItems)
+        .leftJoin(pricelists, eq(pricelists.id, pricelistItems.pricelistId)) // Добавили связь с заголовком
+        .where(eq(pricelistItems.matchHistorySku, idOrSku))
+        .orderBy(pricelistItems.year);
+
+      // Шаг 2: Спасательный круг (Fallback) — если по SKU пусто, ищем текстовым поиском по названию позиции
+      if (!rows || rows.length === 0) {
+        const cleanText = idOrSku.replace('TEXT-', '').replace(/-/g, ' ');
+
+        rows = await this.db
+          .select({
+            year: pricelistItems.year,
+            price: sql<number>`${pricelistItems.price}::double precision`,
+            serviceName: pricelistItems.name,
+            csmName: pricelists.title,
+          })
+          .from(pricelistItems)
+          .leftJoin(pricelists, eq(pricelists.id, pricelistItems.pricelistId))
+          .where(ilike(pricelistItems.name, `%${cleanText}%`))
+          .orderBy(pricelistItems.year);
+
+        if (!rows || rows.length === 0) {
+          return {
+            serviceName: `Анализ инфляции: "${cleanText}"`,
+            timeline: [],
+          };
+        }
+      }
+
+      // Забираем название услуги из самой свежей по году строки тарифа
+      const latestServiceName =
+        rows[rows.length - 1]?.serviceName || 'Услуга поверки СИ';
+
+      return {
+        serviceName: latestServiceName,
+        timeline: rows.map((row) => ({
+          year: Number(row.year),
+          price: Number(row.price),
+          csmName: row.csmName || 'Региональный ЦСМ',
+        })),
       };
     }
   }
 
   async getVerificationRisks() {
-    const isProduction = process.env.NODE_ENV === 'production';
-
-    if (isProduction) {
-      // 🖥️ ПРОДАКШЕН: Универсальный SQL-запрос, привязанный к текстовым бизнес-маркерам (без хардкода UUID)
-      const rawRows = await this.db.execute(sql`
-        WITH latest_verifications AS (
-          SELECT 
-            v.device_id,
-            v.valid_until,
-            ROW_NUMBER() OVER (PARTITION BY v.device_id ORDER BY v.date DESC) as rn
-          FROM verifications v
-          -- 🎯 УНИВЕРСАЛЬНЫЙ ФИЛЬТР: Привязываемся к именам типов контроля, а не к UUID
-          INNER JOIN metrology_controle_types mct ON mct.id = v.metrology_controle_type_id
-          WHERE mct.name ILIKE '%поверка%' OR mct.name ILIKE '%калибровка%'
-        ),
-        device_statuses AS (
-          SELECT 
-            d.id as device_id,
-            d.production_site_id,
-            CASE 
-              -- 🎯 УНИВЕРСАЛЬНЫЙ ФИЛЬТР СТАТУСОВ: Консервация и утеря не создают операционных рисков
-              WHEN s.name ILIKE '%хранение%' OR s.name ILIKE '%утерян%' THEN 'green'
-              
-              -- Если прибор активен (Исправен/Неисправен), но дата пустая или просрочена
-              WHEN lv.valid_until IS NULL THEN 'expired' 
-              WHEN lv.valid_until < NOW() THEN 'expired'
-              
-              -- Предупреждение за 30 дней до окончания поверочного клейма
-              WHEN lv.valid_until BETWEEN NOW() AND NOW() + INTERVAL '30 days' THEN 'warning'
-              ELSE 'green'
-            END as status_type
-          FROM devices d
-          INNER JOIN statuses s ON s.id = d.status_id
-          LEFT JOIN latest_verifications lv ON lv.device_id = d.id AND lv.rn = 1
-          WHERE d.archived = false -- Строго отсекаем архивные карточки приборов
+    // 1. ПОДЗАПРОС А: Находим дату самого свежего контроля для каждого прибора
+    const latestDatesSub = this.db
+      .select({
+        deviceId: verifications.deviceId,
+        maxDate: sql`MAX(${verifications.date})`.as('max_date'),
+      })
+      .from(verifications)
+      .leftJoin(
+        metrologyControleTypes,
+        eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+      )
+      .where(
+        or(
+          inArray(sql`lower(${metrologyControleTypes.name})`, [
+            'поверка',
+            'калибровка',
+          ]),
+          isNull(verifications.metrologyControleTypeId)
         )
-        SELECT 
-          c.id as city_id,
-          c.name as city_name,
-          co.id as company_id,
-          co.name as company_name,
-          ps.id as site_id,
-          ps.name as site_name,
-          COUNT(ds.device_id) as total_count,
-          COUNT(CASE WHEN ds.status_type = 'expired' THEN 1 END) as expired_count,
-          COUNT(CASE WHEN ds.status_type = 'warning' THEN 1 END) as warning_count
-        FROM production_sites ps
-        INNER JOIN cities c ON c.id = ps.city_id
-        INNER JOIN companies co ON co.id = ps.company_id
-        LEFT JOIN device_statuses ds ON ds.production_site_id = ps.id
-        GROUP BY c.id, c.name, co.id, co.name, ps.id, ps.name
-        ORDER BY c.name, co.name, ps.name;
-      `);
+      )
+      .groupBy(verifications.deviceId)
+      .as('latest_dates_sub');
 
-      // (Логика сборки дерева Map -> Array остаётся прежней без изменений)
-      const citiesMap = new Map<string, any>();
-      rawRows.rows.forEach((row: any) => {
-        if (!citiesMap.has(row.city_id)) {
-          citiesMap.set(row.city_id, {
-            id: row.city_id,
-            name: row.city_name,
-            status: 'green',
-            totalCount: 0,
-            expiredCount: 0,
-            warningCount: 0,
-            companiesMap: new Map(),
-          });
-        }
-        const cityNode = citiesMap.get(row.city_id);
+    // 2. ПОДЗАПРОС Б: Вытаскиваем valid_until и result строго для этой максимальной даты
+    const latestVerificationsSub = this.db
+      .select({
+        deviceId: verifications.deviceId,
+        validUntil: sql`MAX(${verifications.validUntil})`.as('valid_until'),
+        result: sql`MAX(${verifications.result})`.as('result'),
+      })
+      .from(verifications)
+      .innerJoin(
+        latestDatesSub,
+        and(
+          eq(verifications.deviceId, latestDatesSub.deviceId),
+          eq(verifications.date, latestDatesSub.maxDate)
+        )
+      )
+      .groupBy(verifications.deviceId)
+      .as('latest_verifications_sub');
 
-        if (!cityNode.companiesMap.has(row.company_id)) {
-          cityNode.companiesMap.set(row.company_id, {
-            id: row.company_id,
-            name: row.company_name,
-            status: 'green',
-            totalCount: 0,
-            expiredCount: 0,
-            warningCount: 0,
-            sites: [],
-          });
-        }
-        const companyNode = cityNode.companiesMap.get(row.company_id);
+    // 3. ГЛАВНЫЙ ЗАПРОС: Группируем приборы и рассчитываем статусы риска (чистый Drizzle ORM)
+    const result = await this.db
+      .select({
+        cityId: cities.id,
+        cityName: cities.name,
+        companyId: companies.id,
+        companyName: companies.name,
+        siteId: productionSites.id,
+        siteName: productionSites.name,
+        // Считаем общее количество активных СИ
+        totalCount: sql<number>`COUNT(${devices.id})::int`,
+        // Рассчитываем просроченные приборы (Красные)
+        expiredCount: sql<number>`
+        COUNT(CASE WHEN 
+          lower(${statuses.name}) = 'исправен' AND 
+          (${latestVerificationsSub.result} = 'Не годен' OR ${latestVerificationsSub.validUntil} IS NULL OR ${latestVerificationsSub.validUntil} < CURRENT_DATE)
+        THEN 1 END)::int`,
+        // Рассчитываем предупреждения (Желтые)
+        warningCount: sql<number>`
+        COUNT(CASE WHEN 
+          lower(${statuses.name}) LIKE '%на поверке%' OR
+          (lower(${statuses.name}) = 'исправен' AND ${latestVerificationsSub.validUntil} BETWEEN CURRENT_DATE AND CURRENT_DATE + 30)
+        THEN 1 END)::int`,
+      })
+      .from(productionSites)
+      .innerJoin(cities, eq(cities.id, productionSites.cityId))
+      .innerJoin(companies, eq(companies.id, productionSites.companyId))
+      // Цепляем приборы к площадкам
+      .leftJoin(
+        devices,
+        and(
+          eq(devices.productionSiteId, productionSites.id),
+          eq(devices.archived, false)
+        )
+      )
+      // Цепляем статус прибора
+      .leftJoin(statuses, eq(statuses.id, devices.statusId))
+      // Цецепляем данные нашей последней поверки из подзапроса
+      .leftJoin(
+        latestVerificationsSub,
+        eq(latestVerificationsSub.deviceId, devices.id)
+      )
+      .groupBy(
+        cities.id,
+        cities.name,
+        companies.id,
+        companies.name,
+        productionSites.id,
+        productionSites.name
+      )
+      .orderBy(cities.name, companies.name, productionSites.name);
 
-        const total = Number(row.total_count) || 0;
-        const expired = Number(row.expired_count) || 0;
-        const warning = Number(row.warning_count) || 0;
+    // 4. СБОРКА ИЕРАРХИЧЕСКОГО ДЕРЕВА MAP -> ARRAY ДЛЯ ФРОНТЕНДА
+    const citiesMap = new Map<string, any>();
 
-        let siteStatus = 'green';
-        if (expired > 0) siteStatus = 'error';
-        else if (warning > 0) siteStatus = 'warning';
-
-        companyNode.sites.push({
-          id: row.site_id,
-          name: row.site_name,
-          status: siteStatus,
-          totalCount: total,
-          expiredCount: expired,
-          warningCount: warning,
+    for (const row of result) {
+      if (!citiesMap.has(row.cityId)) {
+        citiesMap.set(row.cityId, {
+          id: row.cityId,
+          name: row.cityName,
+          status: 'green',
+          totalCount: 0,
+          expiredCount: 0,
+          warningCount: 0,
+          companiesMap: new Map(),
         });
+      }
+      const cityNode = citiesMap.get(row.cityId);
 
-        companyNode.totalCount += total;
-        companyNode.expiredCount += expired;
-        companyNode.warningCount += warning;
-        if (siteStatus === 'error') companyNode.status = 'error';
-        else if (siteStatus === 'warning' && companyNode.status !== 'error')
-          companyNode.status = 'warning';
+      if (!cityNode.companiesMap.has(row.companyId)) {
+        cityNode.companiesMap.set(row.companyId, {
+          id: row.companyId,
+          name: row.companyName,
+          status: 'green',
+          totalCount: 0,
+          expiredCount: 0,
+          warningCount: 0,
+          sites: [],
+        });
+      }
+      const companyNode = cityNode.companiesMap.get(row.companyId);
 
-        cityNode.totalCount += total;
-        cityNode.expiredCount += expired;
-        cityNode.warningCount += warning;
-        if (siteStatus === 'error') cityNode.status = 'error';
-        else if (siteStatus === 'warning' && cityNode.status !== 'error')
-          cityNode.status = 'warning';
+      const total = Number(row.totalCount) || 0;
+      const expired = Number(row.expiredCount) || 0;
+      const warning = Number(row.warningCount) || 0;
+
+      let siteStatus = 'green';
+      if (expired > 0) siteStatus = 'error';
+      else if (warning > 0) siteStatus = 'warning';
+
+      companyNode.sites.push({
+        id: row.siteId,
+        name: row.siteName,
+        status: siteStatus,
+        totalCount: total,
+        expiredCount: expired,
+        warningCount: warning,
       });
 
-      return {
-        cities: Array.from(citiesMap.values()).map((city) => ({
-          ...city,
-          companies: Array.from(city.companiesMap.values()),
-        })),
-      };
-    } else {
-      // 📱 ЛОКАЛЬНО: Демонстрационное интерактивное дерево рисков (Mock), чтобы PGlite не зависал
-      return {
-        cities: [
-          {
-            id: 'cit-nsk',
-            name: 'Новосибирск',
-            status: 'error',
-            totalCount: 450,
-            expiredCount: 12,
-            warningCount: 45,
-            companies: [
-              {
-                id: 'co-sib-met',
-                name: 'Новосибирский Завод Электросигнал',
-                status: 'error',
-                totalCount: 300,
-                expiredCount: 12,
-                warningCount: 25,
-                sites: [
-                  {
-                    id: 'site-sm-1',
-                    name: 'Цех №1 КИПиА',
-                    status: 'error',
-                    totalCount: 120,
-                    expiredCount: 8,
-                    warningCount: 10,
-                  },
-                  {
-                    id: 'site-sm-2',
-                    name: 'Участок тепловой автоматики',
-                    status: 'warning',
-                    totalCount: 100,
-                    expiredCount: 0,
-                    warningCount: 15,
-                  },
-                  {
-                    id: 'site-sm-3',
-                    name: 'Энергоблок',
-                    status: 'green',
-                    totalCount: 80,
-                    expiredCount: 0,
-                    warningCount: 0,
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            id: 'cit-omsk',
-            name: 'Омск',
-            status: 'green',
-            totalCount: 180,
-            expiredCount: 0,
-            warningCount: 0,
-            companies: [
-              {
-                id: 'co-omsk-ref',
-                name: 'ОмскНефтеПродукт',
-                status: 'green',
-                totalCount: 180,
-                expiredCount: 0,
-                warningCount: 0,
-                sites: [
-                  {
-                    id: 'site-or-1',
-                    name: 'Участок поверки датчиков давления',
-                    status: 'green',
-                    totalCount: 180,
-                    expiredCount: 0,
-                    warningCount: 0,
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      };
+      companyNode.totalCount += total;
+      companyNode.expiredCount += expired;
+      companyNode.warningCount += warning;
+      if (siteStatus === 'error') companyNode.status = 'error';
+      else if (siteStatus === 'warning' && companyNode.status !== 'error') {
+        companyNode.status = 'warning';
+      }
+
+      cityNode.totalCount += total;
+      cityNode.expiredCount += expired;
+      cityNode.warningCount += warning;
+      if (siteStatus === 'error') cityNode.status = 'error';
+      else if (siteStatus === 'warning' && cityNode.status !== 'error') {
+        cityNode.status = 'warning';
+      }
     }
+
+    return {
+      cities: Array.from(citiesMap.values()).map((city) => ({
+        ...city,
+        companies: Array.from(city.companiesMap.values()),
+      })),
+    };
   }
 }

@@ -147,7 +147,7 @@ export class ChatService {
         id: users.id,
         firstName: users.firstName,
         lastName: users.lastName,
-        email: users.email,
+        login: users.login,
         role: users.role,
       })
       .from(users)

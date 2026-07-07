@@ -15,7 +15,7 @@ export const UpdateUserInputSchema = z.object({
     .string()
     .min(1, 'Last name is required')
     .max(50, 'Фамилия должна быть не более 50 символов'),
-  role: z.enum(['admin', 'user']),
+  role: z.enum(['admin', 'user', 'superadmin']),
 });
 
 export type UpdateUserInput = z.infer<typeof UpdateUserInputSchema>;

@@ -27,6 +27,35 @@ type FinancialAnalyticsResponse {
   byProductionSites: [FinancialByProductionSite!]!
 }
 
+type AdminStats {
+  devices: Int!
+  users: Int!
+  companies: Int!
+  sites: Int!
+  standards: Int!
+  tariffs: Int!
+}
+
+type AnomalyDevice {
+  id: ID!
+  name: String!
+  model: String!
+  serialNumber: String!
+}
+
+type AdminAnomalies {
+  missingMpi: [AnomalyDevice!]!
+  missingControlType: [AnomalyDevice!]!
+  missingHistory: [AnomalyDevice!]!
+  statusMismatch: [AnomalyDevice!]!
+}
+
+type AdminDashboardResponse {
+  stats: AdminStats!
+  anomalies: AdminAnomalies!
+}
+
 type Query {
   getFinancialAnalytics(year: Int!, month: Int): FinancialAnalyticsResponse!
+  getAdminDashboardStats: AdminDashboardResponse!
 }
