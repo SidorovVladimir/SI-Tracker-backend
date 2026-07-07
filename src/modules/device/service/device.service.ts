@@ -240,7 +240,7 @@ export class DeviceService {
           },
         },
         verifications: {
-          orderBy: (verifications, { asc }) => [asc(verifications.validUntil)],
+          // orderBy: (verifications, { asc }) => [asc(verifications.validUntil)],
           with: {
             metrologyControleType: true,
             verificationOrganization: true,
@@ -248,6 +248,13 @@ export class DeviceService {
         },
       },
     });
+    const sortedVerifications = data?.verifications
+      ? [...data.verifications].sort((a, b) => {
+          const dateA = a.validUntil ? new Date(a.validUntil).getTime() : 0;
+          const dateB = b.validUntil ? new Date(b.validUntil).getTime() : 0;
+          return dateA - dateB; // Сортировка по возрастанию (asc)
+        })
+      : [];
     const scopes = data?.scopesToDevices.map((sd) => sd.scope);
     const primaryStandarts = data?.primaryStandartsToDevices.map(
       (psd) => psd.primaryStandart
@@ -255,7 +262,13 @@ export class DeviceService {
     const measurementTypes = data?.measurementTypesToDevices.map(
       (mt) => mt.measurementType
     );
-    return { ...data, scopes, primaryStandarts, measurementTypes };
+    return {
+      ...data,
+      verifications: sortedVerifications,
+      scopes,
+      primaryStandarts,
+      measurementTypes,
+    };
   }
 
   private async getFlatAuditSnapshot(deviceId: string) {
