@@ -212,171 +212,164 @@ export class DeviceService {
     };
   }
 
-  // async getDevice(id: string) {
-  //   const data = await this.db.query.devices.findFirst({
-  //     where: eq(devices.id, id),
-  //     with: {
-  //       status: true,
-  //       equipmentType: true,
-  //       productionSite: {
-  //         with: {
-  //           city: true,
-  //           company: true,
-  //         },
-  //       },
-  //       scopesToDevices: {
-  //         with: {
-  //           scope: true,
-  //         },
-  //       },
-  //       primaryStandartsToDevices: {
-  //         with: {
-  //           primaryStandart: true,
-  //         },
-  //       },
-  //       measurementTypesToDevices: {
-  //         with: {
-  //           measurementType: true,
-  //         },
-  //       },
-  //       verifications: {
-  //         // orderBy: (verifications, { asc }) => [asc(verifications.validUntil)],
-  //         with: {
-  //           metrologyControleType: true,
-  //           verificationOrganization: true,
-  //         },
-  //       },
-  //     },
-  //   });
-  //   const sortedVerifications = data?.verifications
-  //     ? [...data.verifications].sort((a, b) => {
-  //         const dateA = a.validUntil ? new Date(a.validUntil).getTime() : 0;
-  //         const dateB = b.validUntil ? new Date(b.validUntil).getTime() : 0;
-  //         return dateA - dateB; // Сортировка по возрастанию (asc)
-  //       })
-  //     : [];
-  //   const scopes = data?.scopesToDevices.map((sd) => sd.scope);
-  //   const primaryStandarts = data?.primaryStandartsToDevices.map(
-  //     (psd) => psd.primaryStandart
-  //   );
-  //   const measurementTypes = data?.measurementTypesToDevices.map(
-  //     (mt) => mt.measurementType
-  //   );
-  //   return {
-  //     ...data,
-  //     verifications: sortedVerifications,
-  //     scopes,
-  //     primaryStandarts,
-  //     measurementTypes,
-  //   };
-  // }
-
   async getDevice(id: string) {
-    // 1. Извлекаем плоскую базовую строку прибора и его прякие связи 1-to-1
-    const [baseDevice] = await this.db
-      .select({
-        device: devices,
-        status: statuses,
-        equipmentType: equipmentTypes,
-        productionSite: productionSites,
-        city: cities,
-        company: companies,
-      })
-      .from(devices)
-      .leftJoin(statuses, eq(statuses.id, devices.statusId))
-      .leftJoin(equipmentTypes, eq(equipmentTypes.id, devices.equipmentTypeId))
-      .leftJoin(
-        productionSites,
-        eq(productionSites.id, devices.productionSiteId)
-      )
-      .leftJoin(cities, eq(cities.id, productionSites.cityId))
-      .leftJoin(companies, eq(companies.id, productionSites.companyId))
-      .where(eq(devices.id, id))
-      .execute();
+    const data = await this.db.query.devices.findFirst({
+      where: eq(devices.id, id),
+      with: {
+        status: true,
+        equipmentType: true,
+        productionSite: {
+          with: {
+            city: true,
+            company: true,
+          },
+        },
+        scopesToDevices: {
+          with: {
+            scope: true,
+          },
+        },
+        primaryStandartsToDevices: {
+          with: {
+            primaryStandart: true,
+          },
+        },
+        measurementTypesToDevices: {
+          with: {
+            measurementType: true,
+          },
+        },
+        verifications: {
+          orderBy: (verifications, { asc }) => [asc(verifications.validUntil)],
+          with: {
+            metrologyControleType: true,
+            verificationOrganization: true,
+          },
+        },
+      },
+    });
 
-    if (!baseDevice) return null;
-
-    // 2. Изолированно вытаскиваем историю поверок (без каши в подзапросах)
-    const rawVerifications = await this.db
-      .select({
-        verification: verifications,
-        metrologyControleType: metrologyControleTypes,
-        verificationOrganization: verificationOrganizations,
-      })
-      .from(verifications)
-      .leftJoin(
-        metrologyControleTypes,
-        eq(metrologyControleTypes.id, verifications.metrologyControleTypeId)
-      )
-      .leftJoin(
-        verificationOrganizations,
-        eq(
-          verificationOrganizations.id,
-          verifications.verificationOrganizationId
-        )
-      )
-      .where(eq(verifications.deviceId, id))
-      .execute();
-
-    // Сортируем поверки на уровне JS (asc по validUntil)
-    const sortedVerifications = rawVerifications
-      .map((v) => ({
-        ...v.verification,
-        metrologyControleType: v.metrologyControleType,
-        verificationOrganization: v.verificationOrganization,
-      }))
-      .sort((a, b) => {
-        const dateA = a.validUntil ? new Date(a.validUntil).getTime() : 0;
-        const dateB = b.validUntil ? new Date(b.validUntil).getTime() : 0;
-        return dateA - dateB;
-      });
-
-    // 3. Извлекаем связанные Many-to-Many массивы справочников (Сферы, Эталоны, Виды измерений)
-    const rawScopes = await this.db
-      .select({ scope: scopes })
-      .from(scopesToDevices)
-      .innerJoin(scopes, eq(scopes.id, scopesToDevices.scopeId))
-      .where(eq(scopesToDevices.deviceId, id))
-      .execute();
-
-    const rawStandards = await this.db
-      .select({ standard: primaryStandarts })
-      .from(primaryStandartsToDevices)
-      .innerJoin(
-        primaryStandarts,
-        eq(primaryStandarts.id, primaryStandartsToDevices.primaryStandartId)
-      )
-      .where(eq(primaryStandartsToDevices.deviceId, id))
-      .execute();
-
-    const rawMeasurements = await this.db
-      .select({ measurement: measurementTypes })
-      .from(measurementTypesToDevices)
-      .innerJoin(
-        measurementTypes,
-        eq(measurementTypes.id, measurementTypesToDevices.measurementTypeId)
-      )
-      .where(eq(measurementTypesToDevices.deviceId, id))
-      .execute();
-
-    // 4. Собираем идеальный GraphQL-ответ, полностью повторяющий вашу прошлую структуру объекта
+    const scopes = data?.scopesToDevices.map((sd) => sd.scope);
+    const primaryStandarts = data?.primaryStandartsToDevices.map(
+      (psd) => psd.primaryStandart
+    );
+    const measurementTypes = data?.measurementTypesToDevices.map(
+      (mt) => mt.measurementType
+    );
     return {
-      ...baseDevice.device,
-      status: baseDevice.status,
-      equipmentType: baseDevice.equipmentType,
-      productionSite: baseDevice.productionSite
-        ? {
-            ...baseDevice.productionSite,
-            city: baseDevice.city,
-            company: baseDevice.company,
-          }
-        : null,
-      verifications: sortedVerifications,
-      scopes: rawScopes.map((r) => r.scope),
-      primaryStandarts: rawStandards.map((r) => r.standard),
-      measurementTypes: rawMeasurements.map((r) => r.measurement),
+      ...data,
+      scopes,
+      primaryStandarts,
+      measurementTypes,
     };
   }
+
+  // async getDevice(id: string) {
+  //   // 1. Извлекаем плоскую базовую строку прибора и его прякие связи 1-to-1
+  //   const [baseDevice] = await this.db
+  //     .select({
+  //       device: devices,
+  //       status: statuses,
+  //       equipmentType: equipmentTypes,
+  //       productionSite: productionSites,
+  //       city: cities,
+  //       company: companies,
+  //     })
+  //     .from(devices)
+  //     .leftJoin(statuses, eq(statuses.id, devices.statusId))
+  //     .leftJoin(equipmentTypes, eq(equipmentTypes.id, devices.equipmentTypeId))
+  //     .leftJoin(
+  //       productionSites,
+  //       eq(productionSites.id, devices.productionSiteId)
+  //     )
+  //     .leftJoin(cities, eq(cities.id, productionSites.cityId))
+  //     .leftJoin(companies, eq(companies.id, productionSites.companyId))
+  //     .where(eq(devices.id, id))
+  //     .execute();
+
+  //   if (!baseDevice) return null;
+
+  //   // 2. Изолированно вытаскиваем историю поверок (без каши в подзапросах)
+  //   const rawVerifications = await this.db
+  //     .select({
+  //       verification: verifications,
+  //       metrologyControleType: metrologyControleTypes,
+  //       verificationOrganization: verificationOrganizations,
+  //     })
+  //     .from(verifications)
+  //     .leftJoin(
+  //       metrologyControleTypes,
+  //       eq(metrologyControleTypes.id, verifications.metrologyControleTypeId)
+  //     )
+  //     .leftJoin(
+  //       verificationOrganizations,
+  //       eq(
+  //         verificationOrganizations.id,
+  //         verifications.verificationOrganizationId
+  //       )
+  //     )
+  //     .where(eq(verifications.deviceId, id))
+  //     .execute();
+
+  //   // Сортируем поверки на уровне JS (asc по validUntil)
+  //   const sortedVerifications = rawVerifications
+  //     .map((v) => ({
+  //       ...v.verification,
+  //       metrologyControleType: v.metrologyControleType,
+  //       verificationOrganization: v.verificationOrganization,
+  //     }))
+  //     .sort((a, b) => {
+  //       const dateA = a.validUntil ? new Date(a.validUntil).getTime() : 0;
+  //       const dateB = b.validUntil ? new Date(b.validUntil).getTime() : 0;
+  //       return dateA - dateB;
+  //     });
+
+  //   // 3. Извлекаем связанные Many-to-Many массивы справочников (Сферы, Эталоны, Виды измерений)
+  //   const rawScopes = await this.db
+  //     .select({ scope: scopes })
+  //     .from(scopesToDevices)
+  //     .innerJoin(scopes, eq(scopes.id, scopesToDevices.scopeId))
+  //     .where(eq(scopesToDevices.deviceId, id))
+  //     .execute();
+
+  //   const rawStandards = await this.db
+  //     .select({ standard: primaryStandarts })
+  //     .from(primaryStandartsToDevices)
+  //     .innerJoin(
+  //       primaryStandarts,
+  //       eq(primaryStandarts.id, primaryStandartsToDevices.primaryStandartId)
+  //     )
+  //     .where(eq(primaryStandartsToDevices.deviceId, id))
+  //     .execute();
+
+  //   const rawMeasurements = await this.db
+  //     .select({ measurement: measurementTypes })
+  //     .from(measurementTypesToDevices)
+  //     .innerJoin(
+  //       measurementTypes,
+  //       eq(measurementTypes.id, measurementTypesToDevices.measurementTypeId)
+  //     )
+  //     .where(eq(measurementTypesToDevices.deviceId, id))
+  //     .execute();
+
+  //   // 4. Собираем идеальный GraphQL-ответ, полностью повторяющий вашу прошлую структуру объекта
+  //   return {
+  //     ...baseDevice.device,
+  //     status: baseDevice.status,
+  //     equipmentType: baseDevice.equipmentType,
+  //     productionSite: baseDevice.productionSite
+  //       ? {
+  //           ...baseDevice.productionSite,
+  //           city: baseDevice.city,
+  //           company: baseDevice.company,
+  //         }
+  //       : null,
+  //     verifications: sortedVerifications,
+  //     scopes: rawScopes.map((r) => r.scope),
+  //     primaryStandarts: rawStandards.map((r) => r.standard),
+  //     measurementTypes: rawMeasurements.map((r) => r.measurement),
+  //   };
+  // }
 
   private async getFlatAuditSnapshot(deviceId: string) {
     const data = await this.db.query.devices.findFirst({
