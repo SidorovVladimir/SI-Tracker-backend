@@ -19,6 +19,10 @@ export async function getOrCache<T>(
 
   const data = await fetcher();
 
+  if (data && Array.isArray(data) && data.length === 0) {
+    return data;
+  }
+
   try {
     await redis.setex(key, ttl, JSON.stringify(data));
   } catch {}

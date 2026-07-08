@@ -50,9 +50,6 @@ export const createImportWorker = () => {
               await new Promise((resolve) => setTimeout(resolve, 200));
             }
           }
-          console.log(
-            `[Import Worker] Успешно завершено: ${importedTotal}/${totalItems} импортировано`
-          );
 
           await notificationQueue.add('send-notification', {
             type: 'import-complete',

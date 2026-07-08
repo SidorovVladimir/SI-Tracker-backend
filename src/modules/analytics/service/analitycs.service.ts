@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { verifications } from '../../device/models/verification.model';
 import { devices } from '../../device/models/device.model';
@@ -150,6 +150,13 @@ export class AnalyticsService {
       COUNT(CASE WHEN 
         ${verifications.result} = 'Не годен' 
       THEN 1 END)::int`,
+
+        inspected: sql<number>`
+      COUNT(CASE WHEN 
+        lower(${metrologyControleTypes.name}) LIKE '%осмотр%' OR 
+        lower(${metrologyControleTypes.name}) LIKE '%верификация%' OR
+        lower(${metrologyControleTypes.name}) LIKE '%контроль%'
+      THEN 1 END)::int`,
       })
       .from(verifications)
       .leftJoin(
@@ -219,144 +226,13 @@ export class AnalyticsService {
       totalVerified: totals?.verified || 0,
       totalRejected: totals?.rejected || 0,
       totalCalibrated: totals?.calibrated || 0,
+      totalInspected: totals?.inspected || 0,
       byProductionSites,
       byCompanies,
       byCities,
     };
   }
 
-  // async getAdminDashboardStats() {
-  //   const resultRows = await this.db
-  //     .select({
-  //       devices: sql<number>`COUNT(CASE WHEN ${devices.archived} = false THEN 1 END)::int`,
-  //       users: sql<number>`(SELECT COUNT(*)::int FROM ${users})`,
-  //       companies: sql<number>`(SELECT COUNT(*)::int FROM ${companies})`,
-  //       sites: sql<number>`(SELECT COUNT(*)::int FROM ${productionSites})`,
-  //       standards: sql<number>`(SELECT COUNT(*)::int FROM ${primaryStandarts})`,
-  //       tariffs: sql<number>`(SELECT COUNT(*)::int FROM ${pricelistItems})`,
-  //     })
-  //     .from(devices);
-
-  //   const counts = resultRows[0];
-
-  //   // Подзапросы хронологии для поиска крайнего контроля прибора
-  //   const latestDates = this.db
-  //     .select({
-  //       deviceId: verifications.deviceId,
-  //       maxDate: sql`MAX(${verifications.date})`.as('max_date'),
-  //     })
-  //     .from(verifications)
-  //     .groupBy(verifications.deviceId)
-  //     .as('latest_dates');
-
-  //   const latestVerifications = this.db
-  //     .select({
-  //       deviceId: verifications.deviceId,
-  //       result: verifications.result,
-  //     })
-  //     .from(verifications)
-  //     .innerJoin(
-  //       latestDates,
-  //       and(
-  //         eq(verifications.deviceId, latestDates.deviceId),
-  //         eq(verifications.date, latestDates.maxDate)
-  //       )
-  //     )
-  //     .as('latest_verifications');
-
-  //   // 2. Выборка приборов по 4 типам метрологических аномалий
-  //   const missingMpi = await this.db
-  //     .select({
-  //       id: devices.id,
-  //       name: devices.name,
-  //       model: devices.model,
-  //       serialNumber: devices.serialNumber,
-  //     })
-  //     .from(devices)
-  //     .innerJoin(statuses, eq(statuses.id, devices.statusId))
-  //     .where(
-  //       and(
-  //         eq(devices.archived, false),
-  //         eq(sql`lower(${statuses.name})`, 'исправен'),
-  //         isNull(devices.verificationInterval)
-  //       )
-  //     );
-
-  //   const missingControlType = await this.db
-  //     .select({
-  //       id: devices.id,
-  //       name: devices.name,
-  //       model: devices.model,
-  //       serialNumber: devices.serialNumber,
-  //     })
-  //     .from(devices)
-  //     .innerJoin(verifications, eq(verifications.deviceId, devices.id))
-  //     .where(
-  //       and(
-  //         eq(devices.archived, false),
-  //         isNull(verifications.metrologyControleTypeId)
-  //       )
-  //     );
-
-  //   const missingHistory = await this.db
-  //     .select({
-  //       id: devices.id,
-  //       name: devices.name,
-  //       model: devices.model,
-  //       serialNumber: devices.serialNumber,
-  //     })
-  //     .from(devices)
-  //     .innerJoin(statuses, eq(statuses.id, devices.statusId))
-  //     .leftJoin(
-  //       latestVerifications,
-  //       eq(latestVerifications.deviceId, devices.id)
-  //     )
-  //     .where(
-  //       and(
-  //         eq(devices.archived, false),
-  //         eq(sql`lower(${statuses.name})`, 'исправен'),
-  //         isNull(latestVerifications.deviceId)
-  //       )
-  //     );
-
-  //   const statusMismatch = await this.db
-  //     .select({
-  //       id: devices.id,
-  //       name: devices.name,
-  //       model: devices.model,
-  //       serialNumber: devices.serialNumber,
-  //     })
-  //     .from(devices)
-  //     .innerJoin(statuses, eq(statuses.id, devices.statusId))
-  //     .innerJoin(
-  //       latestVerifications,
-  //       eq(latestVerifications.deviceId, devices.id)
-  //     )
-  //     .where(
-  //       and(
-  //         eq(devices.archived, false),
-  //         eq(sql`lower(${statuses.name})`, 'исправен'),
-  //         eq(latestVerifications.result, 'Не годен')
-  //       )
-  //     );
-
-  //   return {
-  //     stats: counts || {
-  //       devices: 0,
-  //       users: 0,
-  //       companies: 0,
-  //       sites: 0,
-  //       standards: 0,
-  //       tariffs: 0,
-  //     },
-  //     anomalies: {
-  //       missingMpi,
-  //       missingControlType,
-  //       missingHistory,
-  //       statusMismatch,
-  //     },
-  //   };
-  // }
   async getAdminDashboardStats() {
     // 1. Быстрый подсчет общего объема НСИ
     const [counts] = await this.db
@@ -484,6 +360,40 @@ export class AnalyticsService {
         )
       );
 
+    const missingEquipmentType = await this.db
+      .select({
+        id: devices.id,
+        name: devices.name,
+        model: devices.model,
+        serialNumber: devices.serialNumber,
+      })
+      .from(devices)
+      .innerJoin(statuses, eq(statuses.id, devices.statusId))
+      .where(
+        and(
+          eq(devices.archived, false),
+          eq(sql`lower(${statuses.name})`, 'исправен'),
+          isNull(devices.equipmentTypeId)
+        )
+      );
+
+    const missingCsmCode = await this.db
+      .select({
+        id: devices.id,
+        name: devices.name,
+        model: devices.model,
+        serialNumber: devices.serialNumber,
+      })
+      .from(devices)
+      .innerJoin(statuses, eq(statuses.id, devices.statusId))
+      .where(
+        and(
+          eq(devices.archived, false),
+          eq(sql`lower(${statuses.name})`, 'исправен'),
+          or(isNull(devices.csmCode), eq(sql`trim(${devices.csmCode})`, ''))
+        )
+      );
+
     return {
       stats: counts || {
         devices: 0,
@@ -498,6 +408,8 @@ export class AnalyticsService {
         missingControlType,
         missingHistory,
         statusMismatch,
+        missingEquipmentType,
+        missingCsmCode,
       },
     };
   }

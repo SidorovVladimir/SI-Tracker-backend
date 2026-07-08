@@ -46,7 +46,7 @@ type BudgetPlanItem {
   deviceName: String!
   deviceModel: String!
   matchedPricelistItemId: ID
-  matchMethod: String! # 'grsi' | 'csm_code' | 'model_exact' | 'text_fuzzy' | 'manual'
+  matchMethod: String! # 'grsi' | 'csm_code' | 'manual'
   basePrice: Float!
   vatAmount: Float!
   totalCost: Float!
@@ -86,8 +86,8 @@ type Pricelist {
 input PricelistItemInput {
   grsiNumber: String
   csmCode: String
-  name: String!
-  modelOrType: String
+  # name: String!
+  # modelOrType: String
   price: Float!
 }
 

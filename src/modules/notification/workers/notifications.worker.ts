@@ -61,9 +61,6 @@ export const createNotificationWorker = () => {
                 'info',
             });
         }
-        console.log(
-          `[Queue Worker] Уведомление ${type} успешно обработано и отправлено.`
-        );
       } catch (error: any) {
         console.error(`[Queue] notification: ${type} FAILED:`, error.message);
         throw error;

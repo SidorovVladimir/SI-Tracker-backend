@@ -45,9 +45,6 @@ export const createArshinWorker = () => {
           );
 
           if (io && userId) {
-            console.log(
-              `[Queue Worker] Задача выполнена. Отправляем статус в комнату: ${cleanUserId}`
-            );
             io.to(cleanUserId).emit('job-status-changed', {
               jobId: job.id,
               batchId,

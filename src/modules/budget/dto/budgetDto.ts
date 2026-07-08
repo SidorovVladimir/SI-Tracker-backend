@@ -44,8 +44,8 @@ export const UpdateBudgetPlanItemPriceInputSchema = z.object({
 export const PricelistItemInputSchema = z.object({
   grsiNumber: z.string().optional(),
   csmCode: z.string().optional(),
-  name: z.string().min(1),
-  modelOrType: z.string().optional(),
+  // name: z.string().min(1),
+  // modelOrType: z.string().optional(),
   price: z.number().nonnegative(),
 });
 

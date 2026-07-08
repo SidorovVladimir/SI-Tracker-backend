@@ -70,10 +70,6 @@ export const createPricelistWorker = () => {
             }
           }
 
-          console.log(
-            `[Pricelist Worker] Успешно импортировано позиций: ${importedTotal}/${totalItems}`
-          );
-
           // Отправляем системное уведомление в колокольчик (если нужно)
           await notificationQueue.add('send-notification', {
             type: 'pricelist-import-complete',

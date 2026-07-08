@@ -37,8 +37,8 @@ export const pricelistItems = pgTable(
       .references(() => pricelists.id, { onDelete: 'cascade' }),
     grsiNumber: text('grsi_number'),
     csmCode: text('csm_code'),
-    modelOrType: text('model_or_type'),
-    name: text('name').notNull(),
+    // modelOrType: text('model_or_type'),
+    // name: text('name').notNull(),
 
     price: numeric('price', { precision: 10, scale: 2 }).notNull(),
     // 🎯 ДОБАВЛЕНО: Год действия конкретного тарифа (2025, 2026, 2027)

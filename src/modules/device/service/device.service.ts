@@ -1064,7 +1064,7 @@ export class DeviceService {
   async executeBatchArshinSync(
     batchId: string,
     userId: string,
-    onProgress?: (synced: number, total: number) => Promise<void> // <- Добавляем колбэк
+    onProgress?: (synced: number, total: number) => Promise<void>
   ) {
     const delay = (ms: number) =>
       new Promise((resolve) => setTimeout(resolve, ms));

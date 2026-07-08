@@ -48,6 +48,8 @@ type AdminAnomalies {
   missingControlType: [AnomalyDevice!]!
   missingHistory: [AnomalyDevice!]!
   statusMismatch: [AnomalyDevice!]!
+  missingEquipmentType: [AnomalyDevice!]!
+  missingCsmCode: [AnomalyDevice!]!
 }
 
 type AdminDashboardResponse {
