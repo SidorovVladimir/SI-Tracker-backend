@@ -44,8 +44,6 @@ export const pricelistItems = pgTable(
     // 🎯 ДОБАВЛЕНО: Год действия конкретного тарифа (2025, 2026, 2027)
     year: integer('year').notNull().default(2026),
 
-    // 🎯 ДОБАВЛЕНО: Универсальный ключ инфляции услуг ("GRSI-12345" или "CSM-3.2.НЦСМ")
-    matchHistorySku: text('match_history_sku'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -54,9 +52,6 @@ export const pricelistItems = pgTable(
     grsiIdx: index('pi_grsi_idx').on(table.grsiNumber),
     csmCodeIdx: index('pi_csm_code_idx').on(table.csmCode),
     pricelistIdx: index('pi_pricelist_idx').on(table.pricelistId),
-    matchHistorySkuIdx: index('pi_match_history_sku_idx').on(
-      table.matchHistorySku
-    ),
   })
 );
 

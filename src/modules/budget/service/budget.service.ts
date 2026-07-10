@@ -326,7 +326,6 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     if (device.grsiNumber) {
       const item = maps.byGrsi.get(device.grsiNumber.toLowerCase().trim());
       if (item) {
-        item.matchHistorySku = `GRSI-${device.grsiNumber.toLowerCase().trim()}`;
         return { item, method: 'grsi' };
       }
     }
@@ -335,151 +334,9 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     if (device.csmCode) {
       const item = maps.byCsmCode.get(device.csmCode.trim());
       if (item) {
-        // 🎯 ДОБАВЛЕНО: Генерируем ключ инфляции для договорного тарифа
-        item.matchHistorySku = `CSM-${device.csmCode.trim()}`;
         return { item, method: 'csm_code' };
       }
     }
-
-    // // Подготавливаем очищенную модель прибора для текстового анализа
-    // const deviceModelClean = device.model?.toLowerCase().trim();
-    // if (deviceModelClean && deviceModelClean.length > 1) {
-    //   let bestModelItem: typeof pricelistItems.$inferSelect | null = null;
-    //   let highestModelScore = 0;
-    //   const isShortModel = deviceModelClean.length <= 2;
-
-    //   for (const item of maps.all) {
-    //     if (!item.modelOrType) continue;
-    //     const pricelistModelLower = item.modelOrType.toLowerCase();
-
-    //     if (pricelistModelLower.includes(deviceModelClean)) {
-    //       if (isShortModel) {
-    //         const exactWordRegex = new RegExp(
-    //           `\\b${deviceModelClean}\\b|[^a-zа-я0-9]${deviceModelClean}[^a-zа-я0-9]`,
-    //           'i'
-    //         );
-    //         if (!exactWordRegex.test(pricelistModelLower)) continue;
-    //       }
-
-    //       const score = 1000 - pricelistModelLower.length;
-    //       if (score > highestModelScore) {
-    //         highestModelScore = score;
-    //         bestModelItem = item;
-    //       }
-    //     }
-    //   }
-
-    //   if (bestModelItem) {
-    //     // 🎯 ДОБАВЛЕНО: Генерируем ключ инфляции по модели
-    //     bestModelItem.matchHistorySku = `MODEL-${deviceModelClean}`;
-    //     return { item: bestModelItem, method: 'model_exact' };
-    //   }
-    // }
-
-    // // 🐘 Шаг 4: Полнотекстовый векторный поиск в БД с поддержкой РУССКОЙ МОРФОЛОГИИ
-    // // Выполняется ТОЛЬКО для проблемных приборов, если первые 3 шага не дали результатов
-    // if (device.name && device.name.trim().length > 3) {
-    //   if (
-    //     !pricelistIds ||
-    //     !Array.isArray(pricelistIds) ||
-    //     pricelistIds.length === 0
-    //   ) {
-    //     return null;
-    //   }
-    //   const cleanSearchQuery = device.name
-    //     .replace(/[^a-zA-Zа-яА-Я0-9\s]/g, '')
-    //     .split(/\s+/)
-    //     .map((w: string) => w.trim())
-    //     .filter((w: string) => w.length > 2);
-    //   // .join(' & ');
-
-    //   if (cleanSearchQuery) {
-    //     const isProduction = process.env.NODE_ENV === 'production';
-
-    //     let ftsItem: any = null;
-
-    //     if (isProduction) {
-    //       // ПРОДАКШЕН: Полноценный, быстрый поиск Postgres со стеммингом и ранжированием
-    //       const searchString = cleanSearchQuery.join(' & ');
-
-    //       // console.log('⏳ [ПРОД] Шаг 1: Запуск полнотекстового поиска...');
-
-    //       const [res] = await this.db
-    //         .select()
-    //         .from(pricelistItems)
-    //         .where(
-    //           and(
-    //             inArray(pricelistItems.pricelistId, pricelistIds),
-    //             sql`to_tsvector('russian', ${pricelistItems.name}) @@ to_tsquery('russian', ${searchString})`
-    //           )
-    //         )
-    //         .orderBy(
-    //           sql`ts_rank(to_tsvector('russian', ${pricelistItems.name}), to_tsquery('russian', ${searchString})) DESC`
-    //         )
-    //         .limit(1);
-
-    //       ftsItem = res;
-    //       if (!ftsItem) {
-    //         // console.log(
-    //         //   '🔍 [ПРОД] Шаг 2: Полнотекстовый поиск пуст. Включаем триграммный ассистент pg_trgm...'
-    //         // );
-
-    //         // 0.4 означает минимум 40% схожести символов и их порядка
-    //         const similarityThreshold = 0.4;
-
-    //         const [trgmResult] = await this.db
-    //           .select()
-    //           .from(pricelistItems)
-    //           .where(
-    //             and(
-    //               inArray(pricelistItems.pricelistId, pricelistIds),
-    //               // Поиск по схожести выше порога с использованием индекса GIN
-    //               sql`similarity(${pricelistItems.name}, ${device.name}) > ${similarityThreshold}`
-    //             )
-    //           )
-    //           // Сначала выводим максимально похожие позиции
-    //           .orderBy(
-    //             sql`similarity(${pricelistItems.name}, ${device.name}) DESC`
-    //           )
-    //           .limit(1);
-
-    //         if (trgmResult) {
-    //           // console.log(
-    //           //   '✅ [ПРОД] Триграммный ассистент успешно подобрал позицию:',
-    //           //   trgmResult.name
-    //           // );
-    //           ftsItem = trgmResult;
-    //         }
-    //       }
-    //     } else {
-    //       // ЛОКАЛЬНО Мок-ответ
-    //       // База PGlite перегружена тысячами строк и падает по памяти в WASM.
-
-    //       ftsItem = {
-    //         id: `mock-item-id-${Math.random()}`,
-    //         pricelistId: pricelistIds[0],
-    //         name: `[ТЕСТ ПРАЙСА] ${device.name.toUpperCase()} (Поверка в ЦСМ)`,
-    //         price: 1500.0,
-    //         vatAmount: 300.0,
-    //         totalCost: 1800.0,
-    //         csmCode: 'ЦСМ-МOCK-100',
-    //         grsiNumber: '12345-67',
-    //       };
-    //     }
-
-    //     if (ftsItem) {
-    //       if (!ftsItem.matchHistorySku) {
-    //         ftsItem.matchHistorySku = ftsItem.grsiNumber
-    //           ? `GRSI-${ftsItem.grsiNumber.trim()}` // Если в прайсе в столбце ГРСИ есть номер
-    //           : ftsItem.csmCode
-    //           ? `CSM-${ftsItem.csmCode.trim()}` // Если в прайсе в столбце Код СИ есть шифр
-    //           : `TEXT-${cleanSearchQuery.join('-')}`; // Если это общая текстовая строка
-    //       }
-
-    //       return { item: ftsItem, method: 'text_fuzzy' };
-    //     }
-    //   }
-    // }
 
     return null;
   }
@@ -490,7 +347,6 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     cityId?: string | undefined;
     companyId?: string | undefined;
     productionSiteId?: string | undefined;
-    // Настройки режима калькуляции
     calculationMethod: 'pricelist' | 'history';
     pricelistIds?: string[] | undefined;
   }) {
@@ -528,9 +384,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         ? sql`AND d.production_site_id IN (${sql.join(siteIds, sql`, `)})`
         : sql``;
 
-    // 2. 🐘 АНАЛИТИЧЕСКИЙ ОТБОР ПРИБОРОВ НА ЦЕЛЕВОЙ ГОД
-    // Вытаскиваем девайсы по МПИ/крайней поверке, исключая архив и нерабочие статусы.
-    // Дополнительно сразу подтягиваем цену крайней поверки (cost) для режима 'history'.
+    // 2. АНАЛИТИЧЕСКИЙ ОТБОР ПРИБОРОВ НА ЦЕЛЕВОЙ ГОД
     const targetDevicesRaw = await this.db.execute(sql`
       WITH last_verifications AS (
         SELECT DISTINCT ON (device_id) id, device_id, valid_until, cost
@@ -544,7 +398,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           d.model,
           d.grsi_number as "grsiNumber",
           d.csm_code as "csmCode",
-          COALESCE(lv.cost, 0)::numeric as "historicalCost", -- Историческая цена
+          COALESCE(lv.cost, 0)::numeric as "historicalCost",
           COALESCE(
             lv.valid_until, 
             d.receipt_date + (COALESCE(d.verification_interval, 12) || ' month')::interval
@@ -578,7 +432,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       );
     }
 
-    // 3. Если выбран режим прайсов — инициализируем кэш в оперативной памяти
+    // 3. Инициализация кэша в оперативной памяти для прайс-листов
     let pricelistMaps: any = null;
     if (input.calculationMethod === 'pricelist') {
       if (!input.pricelistIds || input.pricelistIds.length === 0) {
@@ -610,6 +464,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       for (const device of targetDevices) {
         let basePrice = 0;
         let matchMethod = 'not_found';
+        let matchedPricelistItemId: string | null = null;
 
         // РЕЖИМ 1: Расчёт цен по прайс-листам ЦСМ
         if (input.calculationMethod === 'pricelist') {
@@ -621,14 +476,15 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           if (matchResult) {
             basePrice = parseFloat(matchResult.item.price);
             matchMethod = matchResult.method;
+            matchedPricelistItemId = matchResult.item.id;
           }
         }
-        // РЕЖИМ 2: Расчёт цен на основе исторической стоимости прошлой поверки
+        // РЕЖИМ 2: Расчёт цен на основе исторической стоимости
         else {
           const historical = parseFloat(device.historicalCost || '0.00');
           if (historical > 0) {
             basePrice = historical;
-            matchMethod = 'historical'; // Маркируем строку как посчитанную по истории
+            matchMethod = 'historical';
           }
         }
 
@@ -640,7 +496,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           deviceId: device.id,
           deviceName: device.name ?? 'Неизвестный прибор',
           deviceModel: device.model ?? '',
-          matchedPricelistItemId: null, // Для истории поле остается пустым
+          matchedPricelistItemId: matchedPricelistItemId,
           matchMethod: matchMethod,
           basePrice: basePrice.toFixed(2),
           vatAmount: vatAmount.toFixed(2),
@@ -655,12 +511,10 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           .insert(budgetPlanItems)
           .values(itemsToInsert.slice(i, i + CHUNK_SIZE));
       }
-
       return newPlan;
     });
   }
 
-  // 5. Импорт прейскуранта через транзакцию
   async createPricelist(input: {
     verificationOrganizationId: string;
     title: string;
@@ -755,35 +609,41 @@ ORDER BY "rowName" ASC, "monthNum" ASC
   }
 
   async updateBudgetPlanItemPrice(itemId: string, manualPrice: number) {
-    const [item] = await this.db
-      .select()
-      .from(budgetPlanItems)
-      .where(eq(budgetPlanItems.id, itemId))
-      .limit(1);
-    if (!item) throw new Error('Строка бюджета не найдена');
+    const VAT_RATE = 0.2;
 
-    const [plan] = await this.db
-      .select()
-      .from(budgetPlans)
-      .where(eq(budgetPlans.id, item.budgetPlanId))
-      .limit(1);
-    if (plan?.status === 'approved') throw new Error('Бюджет заблокирован');
+    return await this.db.transaction(async (tx) => {
+      // 1. Ищем строку спецификации бюджета
+      const [item] = await tx
+        .select()
+        .from(budgetPlanItems)
+        .where(eq(budgetPlanItems.id, itemId))
+        .limit(1);
+      if (!item) throw new Error('Строка бюджета не найдена');
 
-    const vatAmount = manualPrice * 0.2;
-    const totalCost = manualPrice + vatAmount;
+      // 2. Проверяем статус блокировки плана
+      const [plan] = await tx
+        .select()
+        .from(budgetPlans)
+        .where(eq(budgetPlans.id, item.budgetPlanId))
+        .limit(1);
+      if (plan?.status === 'approved') throw new Error('Бюджет заблокирован');
 
-    const [updated] = await this.db
-      .update(budgetPlanItems)
-      .set({
-        basePrice: manualPrice.toFixed(2),
-        vatAmount: vatAmount.toFixed(2),
-        totalCost: totalCost.toFixed(2),
-        matchMethod: 'manual',
-      })
-      .where(eq(budgetPlanItems.id, itemId))
-      .returning();
+      const vatAmount = manualPrice * VAT_RATE;
+      const totalCost = manualPrice + vatAmount;
 
-    return updated;
+      const [updated] = await tx
+        .update(budgetPlanItems)
+        .set({
+          basePrice: manualPrice.toFixed(2),
+          vatAmount: vatAmount.toFixed(2),
+          totalCost: totalCost.toFixed(2),
+          matchMethod: 'manual',
+          matchedPricelistItemId: null,
+        })
+        .where(eq(budgetPlanItems.id, itemId))
+        .returning();
+      return updated;
+    });
   }
 
   async approveBudgetPlan(id: string) {
@@ -917,268 +777,109 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     }));
   }
 
-  // async getCsmTariffTrend(idOrSku: string) {
-  //   if (!idOrSku) {
-  //     throw new Error('Параметр idOrSku обязателен для получения аналитики.');
-  //   }
-
-  //   const isUuid =
-  //     /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-  //       idOrSku
-  //     );
-
-  //   if (isUuid) {
-  //     // =========================================================================
-  //     // СЦЕНАРИЙ А: Передан UUID цеха/площадки (Вызов с общего дашборда аналитики)
-  //     // =========================================================================
-
-  //     const rows = await this.db
-  //       .select({
-  //         year: pricelistItems.year,
-  //         // Кастуем numeric цену в double precision для графиков на фронтенде
-  //         price: sql<number>`SUM(${pricelistItems.price})::double precision`,
-  //         csmName: pricelists.title, // 🌟 ИСПРАВЛЕНО: Прямая ссылка без подзапросов
-  //         serviceName: productionSites.name, // 🌟 ИСПРАВЛЕНО: Прямая ссылка без подзапросов
-  //       })
-  //       .from(pricelistItems)
-  //       .innerJoin(
-  //         devices,
-  //         and(
-  //           eq(devices.productionSiteId, idOrSku),
-  //           eq(devices.archived, false),
-  //           or(
-  //             eq(pricelistItems.grsiNumber, devices.grsiNumber),
-  //             eq(pricelistItems.csmCode, devices.csmCode)
-  //           )
-  //         )
-  //       )
-  //       .leftJoin(
-  //         equipmentTypes,
-  //         eq(equipmentTypes.id, devices.equipmentTypeId)
-  //       )
-  //       .leftJoin(statuses, eq(statuses.id, devices.statusId))
-  //       .leftJoin(pricelists, eq(pricelists.id, pricelistItems.pricelistId))
-  //       .leftJoin(
-  //         productionSites,
-  //         eq(productionSites.id, devices.productionSiteId)
-  //       )
-  //       .where(
-  //         and(
-  //           eq(sql`lower(${statuses.name})`, 'исправен'),
-
-  //           or(
-  //             isNull(devices.equipmentTypeId),
-  //             inArray(sql`lower(${equipmentTypes.name})`, [
-  //               'средство измерений (си)',
-  //               'испытательное оборудование (ио)',
-  //               'средство контроля (ск)',
-  //             ])
-  //           )
-  //         )
-  //       )
-  //       .groupBy(
-  //         pricelistItems.year,
-  //         pricelistItems.pricelistId,
-  //         pricelists.title,
-  //         productionSites.name
-  //       )
-  //       .orderBy(pricelistItems.year);
-
-  //     if (!rows || rows.length === 0) {
-  //       return { serviceName: 'Данные по цеху не найдены', timeline: [] };
-  //     }
-
-  //     const firstRow = rows[0];
-
-  //     return {
-  //       serviceName: `Динамика стоимости обслуживания: ${
-  //         firstRow?.serviceName || 'Цех'
-  //       }`,
-  //       timeline: rows.map((row) => ({
-  //         year: Number(row.year),
-  //         price: Number(row.price),
-  //         csmName: row.csmName || 'Региональный ЦСМ',
-  //       })),
-  //     };
-  //   } else {
-  //     // =========================================================================
-  //     // СЦЕНАРИЙ Б: Передан текстовый SKU прибора (Вызов при клике в списке бюджета)
-  //     // =========================================================================
-
-  //     // Шаг 1: Пробуем найти по точному совпадению артикула matchHistorySku
-  //     const rows = await this.db
-  //       .select({
-  //         year: pricelistItems.year,
-  //         price: sql<number>`${pricelistItems.price}::double precision`,
-  //         // serviceName: pricelistItems.name,
-  //         csmName: pricelists.title,
-  //       })
-  //       .from(pricelistItems)
-  //       .leftJoin(pricelists, eq(pricelists.id, pricelistItems.pricelistId)) // Добавили связь с заголовком
-  //       .where(eq(pricelistItems.matchHistorySku, idOrSku))
-  //       .orderBy(pricelistItems.year);
-
-  //     // Шаг 2: Спасательный круг (Fallback) — если по SKU пусто, ищем текстовым поиском по названию позиции
-  //     // if (!rows || rows.length === 0) {
-  //     //   const cleanText = idOrSku.replace('TEXT-', '').replace(/-/g, ' ');
-
-  //     //   rows = await this.db
-  //     //     .select({
-  //     //       year: pricelistItems.year,
-  //     //       price: sql<number>`${pricelistItems.price}::double precision`,
-  //     //       serviceName: pricelistItems.name,
-  //     //       csmName: pricelists.title,
-  //     //     })
-  //     //     .from(pricelistItems)
-  //     //     .leftJoin(pricelists, eq(pricelists.id, pricelistItems.pricelistId))
-  //     //     .where(ilike(pricelistItems.name, `%${cleanText}%`))
-  //     //     .orderBy(pricelistItems.year);
-
-  //     //   if (!rows || rows.length === 0) {
-  //     //     return {
-  //     //       serviceName: `Анализ инфляции: "${cleanText}"`,
-  //     //       timeline: [],
-  //     //     };
-  //     //   }
-  //     // }
-
-  //     if (!rows || rows.length === 0) {
-  //       return {
-  //         serviceName: 'История тарифов по данному СИ отсутствует',
-  //         timeline: [],
-  //       };
-  //     }
-
-  //     return {
-  //       serviceName: `Анализ инфляции тарифа: ${idOrSku}`,
-  //       timeline: rows.map((row) => ({
-  //         year: Number(row.year),
-  //         price: Number(row.price),
-  //         csmName: row.csmName || 'Региональный ЦСМ',
-  //       })),
-  //     };
-
-  //     // Забираем название услуги из самой свежей по году строки тарифа
-  //     // const latestServiceName =
-  //     //   rows[rows.length - 1]?.serviceName || 'Услуга поверки СИ';
-
-  //     // return {
-  //     //   serviceName: latestServiceName,
-  //     //   timeline: rows.map((row) => ({
-  //     //     year: Number(row.year),
-  //     //     price: Number(row.price),
-  //     //     csmName: row.csmName || 'Региональный ЦСМ',
-  //     //   })),
-  //     // };
-  //   }
-  // }
-
-  async getCsmTariffTrend(idOrSku: string) {
-    if (!idOrSku) {
-      throw new Error(
-        'Параметр idOrSku обязателен для анализа инфляции тарифов.'
-      );
+  async getCsmTariffTrend(siteId: string) {
+    if (!siteId) {
+      throw new Error('Параметр siteId обязателен для построения графика.');
     }
 
+    // Проверяем, пришел UUID цеха/прибора или строка
     const isUuid =
       /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-        idOrSku
+        siteId
       );
 
+    // Карта для слияния цен по годам: Map<Год, { цена, источник }>
+    const universalMap = new Map<number, { price: number; source: string }>();
+
     if (isUuid) {
-      // =========================================================================
-      // СЦЕНАРИЙ А: Анализ роста тарифов ЦСМ по всему УЧАСТКУ (Цеху)
-      // Считаем сумму ЕДИНИЧНЫХ расценок ЦСМ строго для планового парка СИ / ИО / СК
-      // =========================================================================
-      const rows = await this.db
-        .select({
-          year: pricelistItems.year,
-          // Складываем базовые тарифы уникального платного оборудования цеха
-          price: sql<number>`SUM(${pricelistItems.price})::double precision`,
-        })
-        .from(pricelistItems)
-        .innerJoin(
-          devices,
-          and(
-            eq(devices.productionSiteId, idOrSku),
-            eq(devices.archived, false), // Исключаем архивные приборы
-            or(
-              eq(
-                sql`lower(${pricelistItems.grsiNumber})`,
-                sql`lower(${devices.grsiNumber})`
-              ),
-              eq(
-                sql`lower(${pricelistItems.csmCode})`,
-                sql`lower(${devices.csmCode})`
-              )
+      // Проверяем по базе, передан UUID прибора или UUID цеха
+      const [isDevice] = await this.db
+        .select({ id: devices.id })
+        .from(devices)
+        .where(eq(devices.id, siteId))
+        .limit(1);
+
+      if (isDevice) {
+        // =========================================================================
+        // ВАРИАНТ Б: Передан UUID КОНКРЕТНОГО ПРИБОРА
+        // Вытаскиваем его финальную стоимость из бюджетов всех лет (со всеми правками!)
+        // =========================================================================
+        const planRows = await this.db
+          .select({
+            year: budgetPlans.year,
+            price: sql<number>`${budgetPlanItems.totalCost}::double precision`,
+            method: budgetPlanItems.matchMethod,
+          })
+          .from(budgetPlanItems)
+          .innerJoin(
+            budgetPlans,
+            eq(budgetPlans.id, budgetPlanItems.budgetPlanId)
+          )
+          .where(
+            and(
+              eq(budgetPlanItems.deviceId, siteId),
+              sql`${budgetPlanItems.totalCost} > 0`
+            )
+          );
+
+        planRows.forEach((r) => {
+          const label =
+            r.method === 'manual'
+              ? 'Изменено вручную в бюджете'
+              : r.method === 'history'
+              ? 'Утвержденный план по Истории'
+              : 'Утвержденный план по Прайс-листу';
+          universalMap.set(r.year, { price: Number(r.price), source: label });
+        });
+      } else {
+        // =========================================================================
+        // ВАРИАНТ А: Передан UUID УЧАСТКА (ЦЕХА)
+        // Вытаскиваем общую сумму сформированного бюджета этого цеха по годам
+        // =========================================================================
+        const planRows = await this.db
+          .select({
+            year: budgetPlans.year,
+            price: sql<number>`SUM(${budgetPlanItems.totalCost})::double precision`,
+          })
+          .from(budgetPlanItems)
+          .innerJoin(
+            budgetPlans,
+            eq(budgetPlans.id, budgetPlanItems.budgetPlanId)
+          )
+          .innerJoin(devices, eq(devices.id, budgetPlanItems.deviceId))
+          .where(
+            and(
+              eq(devices.productionSiteId, siteId),
+              sql`${budgetPlanItems.totalCost} > 0`
             )
           )
-        )
-        // 🌟 ДОБАВЛЕНО: Подключаем типы оборудования для жесткой фильтрации
-        .leftJoin(
-          equipmentTypes,
-          eq(equipmentTypes.id, devices.equipmentTypeId)
-        )
-        .leftJoin(statuses, eq(statuses.id, devices.statusId))
-        .where(
-          and(
-            // График строится по работающим на линии исправным приборам
-            eq(sql`lower(${statuses.name})`, 'исправен'),
+          .groupBy(budgetPlans.year);
 
-            // 🔒 КАТАЛОЖНЫЙ ФИЛЬТР: Отсекаем бесплатные ВО и Индикаторы, защищая суммы от искажений
-            or(
-              isNull(devices.equipmentTypeId), // Страховка ручного ввода (СИ по умолчанию)
-              inArray(sql`lower(${equipmentTypes.name})`, [
-                'средство измерений (си)',
-                'испытательное оборудование (ио)',
-                'средство контроля (ск)',
-              ])
-            )
-          )
-        )
-        .groupBy(pricelistItems.year)
-        .orderBy(pricelistItems.year);
-
-      return {
-        serviceName: 'Индекс изменения тарифов ЦСМ по номенклатуре участка',
-        timeline: rows.map((row) => ({
-          year: Number(row.year),
-          price: Number(row.price),
-          csmName: 'Официальный прейскурант ЦСМ',
-        })),
-      };
-    } else {
-      // =========================================================================
-      // СЦЕНАРИЙ Б: Анализ инфляции тарифа конкретного ПРИБОРА (По его SKU)
-      // Показывает чистый рост цены за 1 шт. конкретной услуги по годам
-      // =========================================================================
-      const rows = await this.db
-        .select({
-          year: pricelistItems.year,
-          price: sql<number>`${pricelistItems.price}::double precision`,
-        })
-        .from(pricelistItems)
-        .where(
-          and(
-            // Бьем точно по вашему новому уникальному индексу сквозного артикула
-            eq(
-              sql`lower(${pricelistItems.matchHistorySku})`,
-              idOrSku.toLowerCase().trim()
-            ),
-            sql`${pricelistItems.price} > 0`
-          )
-        )
-        .orderBy(pricelistItems.year);
-
-      return {
-        serviceName: `Динамика стоимости 1 шт. СИ в ЦСМ: ${idOrSku.toUpperCase()}`,
-        timeline: rows.map((row) => ({
-          year: Number(row.year),
-          price: Number(row.price),
-          csmName: 'Тариф прейскуранта за единицу',
-        })),
-      };
+        planRows.forEach((r) =>
+          universalMap.set(r.year, {
+            price: r.price,
+            source: 'Сформированный план бюджета цеха',
+          })
+        );
+      }
     }
+
+    // Формируем отсортированный массив для графика x-charts
+    const sortedTimeline = Array.from(universalMap.entries())
+      .map(([year, data]) => ({
+        year,
+        price: data.price,
+        csmName: data.source,
+      }))
+      .sort((a, b) => a.year - b.year);
+
+    return {
+      serviceName:
+        isUuid && !universalMap.values().next().value?.source.includes('цеха')
+          ? 'Динамика плановой стоимости СИ в бюджетах'
+          : 'Динамика общего финансирования участка по годам',
+      timeline: sortedTimeline,
+    };
   }
 
   async getVerificationRisks() {
