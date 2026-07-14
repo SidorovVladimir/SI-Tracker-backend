@@ -216,7 +216,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           deviceModel: budgetPlanItems.deviceModel,
           matchMethod: budgetPlanItems.matchMethod,
           basePrice: budgetPlanItems.basePrice,
-          vatAmount: budgetPlanItems.vatAmount,
+          vatRate: budgetPlanItems.vatRate,
           totalCost: budgetPlanItems.totalCost,
           deviceId: devices.id,
           serialNumber: devices.serialNumber,
@@ -270,7 +270,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       deviceModel: row.deviceModel,
       matchMethod: row.matchMethod,
       basePrice: parseFloat(row.basePrice),
-      vatAmount: parseFloat(row.vatAmount),
+      vatRate: parseFloat(row.vatRate),
       totalCost: parseFloat(row.totalCost),
       device: {
         id: row.deviceId,
@@ -345,12 +345,13 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     year: number;
     comment?: string | undefined;
     cityId?: string | undefined;
+    vatRate: number;
     companyId?: string | undefined;
     productionSiteId?: string | undefined;
     calculationMethod: 'pricelist' | 'history';
     pricelistIds?: string[] | undefined;
   }) {
-    const VAT_RATE = 0.2;
+    const VAT_RATE = input.vatRate;
     const targetYear = input.year;
 
     // 1. Каскадная сборка фильтров площадок холдинга
@@ -488,8 +489,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           }
         }
 
-        const vatAmount = basePrice * VAT_RATE;
-        const totalCost = basePrice + vatAmount;
+        const totalCost = basePrice * (1 + VAT_RATE);
 
         itemsToInsert.push({
           budgetPlanId: newPlan.id,
@@ -499,7 +499,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           matchedPricelistItemId: matchedPricelistItemId,
           matchMethod: matchMethod,
           basePrice: basePrice.toFixed(2),
-          vatAmount: vatAmount.toFixed(2),
+          vatRate: VAT_RATE.toFixed(4),
           totalCost: totalCost.toFixed(2),
         });
       }
@@ -609,8 +609,6 @@ ORDER BY "rowName" ASC, "monthNum" ASC
   }
 
   async updateBudgetPlanItemPrice(itemId: string, manualPrice: number) {
-    const VAT_RATE = 0.2;
-
     return await this.db.transaction(async (tx) => {
       // 1. Ищем строку спецификации бюджета
       const [item] = await tx
@@ -628,14 +626,14 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         .limit(1);
       if (plan?.status === 'approved') throw new Error('Бюджет заблокирован');
 
-      const vatAmount = manualPrice * VAT_RATE;
-      const totalCost = manualPrice + vatAmount;
+      const currentVatRate = parseFloat(item.vatRate); // Достаем зафиксированные, например, 0.2000
+
+      const totalCost = manualPrice * (1 + currentVatRate);
 
       const [updated] = await tx
         .update(budgetPlanItems)
         .set({
           basePrice: manualPrice.toFixed(2),
-          vatAmount: vatAmount.toFixed(2),
           totalCost: totalCost.toFixed(2),
           matchMethod: 'manual',
           matchedPricelistItemId: null,

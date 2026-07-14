@@ -85,9 +85,9 @@ export const budgetPlanItems = pgTable('budget_plan_items', {
   ),
   matchMethod: text('match_method').notNull(),
   basePrice: numeric('base_price', { precision: 10, scale: 2 }).notNull(),
-  vatAmount: numeric('vat_amount', { precision: 10, scale: 2 })
+  vatRate: numeric('vat_rate', { precision: 5, scale: 4 })
     .notNull()
-    .default('0.00'),
+    .default('0.2200'),
   totalCost: numeric('total_cost', { precision: 10, scale: 2 }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()

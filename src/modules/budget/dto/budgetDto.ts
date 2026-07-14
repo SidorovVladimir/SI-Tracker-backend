@@ -15,6 +15,7 @@ export const CreateBudgetPlanInputSchema = z
   .object({
     year: z.number().int().min(2000).max(2100),
     comment: z.string().optional(),
+    vatRate: z.number(),
     calculationMethod: BudgetCalculationMethodSchema,
     pricelistIds: z.array(z.uuid()).optional(),
     cityId: z.uuid().optional(),

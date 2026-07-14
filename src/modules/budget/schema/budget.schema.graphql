@@ -48,7 +48,7 @@ type BudgetPlanItem {
   matchedPricelistItemId: ID
   matchMethod: String! # 'grsi' | 'csm_code' | 'manual'
   basePrice: Float!
-  vatAmount: Float!
+  vatRate: Float!
   totalCost: Float!
   matchHistorySku: String
   device: Device! # Связка с текущей карточкой прибора
@@ -148,6 +148,7 @@ type Query {
 input CreateBudgetPlanInput {
   year: Int!
   comment: String
+  vatRate: Float!
   calculationMethod: String!
   pricelistIds: [ID!] # Какие прайсы использовать для каскада
   cityId: ID
