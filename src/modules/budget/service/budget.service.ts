@@ -805,7 +805,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         const planRows = await this.db
           .select({
             year: budgetPlans.year,
-            price: sql<number>`${budgetPlanItems.totalCost}::double precision`,
+            price: sql<number>`${budgetPlanItems.basePrice}::double precision`,
             method: budgetPlanItems.matchMethod,
           })
           .from(budgetPlanItems)
@@ -816,7 +816,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           .where(
             and(
               eq(budgetPlanItems.deviceId, siteId),
-              sql`${budgetPlanItems.totalCost} > 0`
+              sql`${budgetPlanItems.basePrice} > 0`
             )
           );
 
@@ -837,7 +837,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         const planRows = await this.db
           .select({
             year: budgetPlans.year,
-            price: sql<number>`SUM(${budgetPlanItems.totalCost})::double precision`,
+            price: sql<number>`SUM(${budgetPlanItems.basePrice})::double precision`,
           })
           .from(budgetPlanItems)
           .innerJoin(
@@ -848,7 +848,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           .where(
             and(
               eq(devices.productionSiteId, siteId),
-              sql`${budgetPlanItems.totalCost} > 0`
+              sql`${budgetPlanItems.basePrice} > 0`
             )
           )
           .groupBy(budgetPlans.year);
