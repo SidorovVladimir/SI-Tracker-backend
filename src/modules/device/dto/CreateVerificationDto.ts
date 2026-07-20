@@ -43,6 +43,12 @@ export const CreateVerificationModalInputSchema = z.object({
     .optional(),
 });
 
+export const FetchArshinVerificationsInputSchema = z.object({
+  grsiNumber: z.string().default(''),
+  serialNumber: z.string().min(1, 'Заводской номер обязателен для поиска'),
+  count: z.number().int().min(1).max(10).default(3),
+});
+
 // Типизация на основе Zod-схемы для сервиса
 export type CreateVerificationDto = z.infer<
   typeof CreateVerificationModalInputSchema

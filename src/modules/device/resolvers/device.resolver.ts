@@ -7,13 +7,17 @@ import { CreateDeviceInputSchema } from '../dto/CreateDeviceDto';
 import { DeviceService } from '../service/device.service';
 import { UpdateDeviceInputSchema } from '../dto/UpdateDeviceDto';
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
-import { CreateVerificationModalInputSchema } from '../dto/CreateVerificationDto';
+import {
+  CreateVerificationModalInputSchema,
+  FetchArshinVerificationsInputSchema,
+} from '../dto/CreateVerificationDto';
 import { SyncDeviceWithArshinInputSchema } from '../../arshin/dto/SyncDeviceWithArshinDto';
 import { ImportDevicesExcelInputSchema } from '../dto/ImportDeviceItemDto';
 import { GraphQLScalarType, Kind } from 'graphql';
 
 import { arshinQueue } from '../queues/arshin.queue';
 import { importQueue } from '../queues/import.queue';
+import { ArshinService } from '../../arshin/service/arshin.service';
 
 const JSONScalar = new GraphQLScalarType({
   name: 'JSON',
@@ -139,6 +143,58 @@ export const Query = {
       isFailed: state === 'failed',
       failedReason: job.failedReason || null,
     };
+  },
+
+  fetchArshinVerifications: async (
+    _: unknown,
+    { input }: { input: unknown },
+    { currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: требуются права администратора');
+    }
+
+    try {
+      // 3. Валидация входных данных
+      const validatedInput = FetchArshinVerificationsInputSchema.parse(input);
+
+      // 4. Вызов бизнес-логики безопасного опроса Аршина
+      const arshinService = new ArshinService();
+      return await arshinService.fetchFlexibleVerificationsFromArshin(
+        validatedInput.grsiNumber,
+        validatedInput.serialNumber,
+        validatedInput.count
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new Error(JSON.stringify(formatZodErrors(err)));
+      }
+      throw err;
+    }
+  },
+
+  findArshinDocumentUrl: async (
+    _: unknown,
+    { protocolNumber }: { protocolNumber: string },
+    { currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: требуются права администратора/метролога'
+      );
+    }
+
+    if (!protocolNumber || !protocolNumber.trim()) {
+      throw new Error('Номер свидетельства/протокола не может быть пустым');
+    }
+
+    const arshinService = new ArshinService();
+    return await arshinService.findSingleVerificationUrlByProtocol(
+      protocolNumber
+    );
   },
 };
 

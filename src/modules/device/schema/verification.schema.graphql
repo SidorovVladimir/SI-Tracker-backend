@@ -74,6 +74,30 @@ input CreateVerificationInput {
   cost: Float
 }
 
+type ArshinFlexibleVerification {
+  arshinId: ID!
+  protocolNumber: String!
+  date: String!
+  validUntil: String
+  isApplicable: Boolean!
+  organizationName: String!
+  documentUrl: String!
+}
+
+input FetchArshinVerificationsInput {
+  grsiNumber: String!
+  serialNumber: String!
+  count: Int!
+}
+
+type Query {
+  fetchArshinVerifications(
+    input: FetchArshinVerificationsInput!
+  ): [ArshinFlexibleVerification!]!
+
+  findArshinDocumentUrl(protocolNumber: String!): String
+}
+
 type Mutation {
   createVerification(input: CreateVerificationInput!): VerificationModal!
 }
