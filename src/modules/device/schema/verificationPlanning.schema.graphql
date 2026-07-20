@@ -37,6 +37,7 @@ type MonthlySummary {
 type ShortVerification {
   id: ID!
   batchId: ID
+  result: String
 }
 
 type DeviceInBatch {
