@@ -8,6 +8,11 @@ export const Query = {
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: требуются права администратора/метролога'
+      );
+    }
     return await new NotificationService(db).getNotifications(currentUser.id);
   },
   getUnreadNotificationsCount: async (
@@ -27,6 +32,11 @@ export const Mutation = {
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: требуются права администратора/метролога'
+      );
+    }
     return await new NotificationService(db).markAsRead(id, currentUser.id);
   },
   markAllNotificationsAsRead: async (
@@ -35,6 +45,11 @@ export const Mutation = {
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: требуются права администратора/метролога'
+      );
+    }
     return await new NotificationService(db).markAllAsRead(currentUser.id);
   },
 };

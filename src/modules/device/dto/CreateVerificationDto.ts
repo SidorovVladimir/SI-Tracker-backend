@@ -32,7 +32,7 @@ export const CreateVerificationModalInputSchema = z.object({
 
   // Дата окончания может быть null, если результат "Не годен"
   validUntil: z.coerce.date().nullable().optional(),
-
+  documentUrl: z.string().nullable(),
   metrologyControleTypeId: z.uuid('Невалидный ID типа контроля'),
   verificationOrganizationId: z.uuid('Невалидный ID организации'),
   comment: z.string().nullable().optional(),

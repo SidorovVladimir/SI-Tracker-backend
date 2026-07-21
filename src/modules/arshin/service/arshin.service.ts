@@ -7,6 +7,7 @@ export interface ArshinVerificationData {
   validUntil: string | null;
   isApplicable: boolean; // true = Годен, false = Брак
   organizationName: string;
+  documentUrl: string;
 }
 
 export interface ArshinFlexibleVerificationData {
@@ -91,6 +92,7 @@ export class ArshinService {
           validUntil: latestVri.valid_date || null,
           isApplicable: latestVri.applicability,
           organizationName: latestVri.org_title,
+          documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${latestVri.vri_id}`,
         };
       } catch (error: any) {
         const isTimeout =

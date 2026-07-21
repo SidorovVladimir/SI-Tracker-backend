@@ -52,6 +52,7 @@ type VerificationModal {
   protocolNumber: String!
   result: String!
   date: String!
+  documentUrl: String
   validUntil: String
   metrologyControleTypeId: ID!
   verificationOrganizationId: ID!
@@ -67,6 +68,7 @@ input CreateVerificationInput {
   protocolNumber: String!
   result: String!
   date: String!
+  documentUrl: String
   validUntil: String
   metrologyControleTypeId: ID!
   verificationOrganizationId: ID!
