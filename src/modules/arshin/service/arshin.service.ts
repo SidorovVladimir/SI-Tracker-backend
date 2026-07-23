@@ -211,33 +211,76 @@ export class ArshinService {
   }
 
   async findSingleVerificationUrlByProtocol(
-    protocolNumber: string
+    protocolNumber: string,
+    serialNumber?: string,
+    grsiNumber?: string,
+    date?: string
   ): Promise<string | null> {
     const cleanProtocol = protocolNumber.trim();
+    const normalize = (str: string) =>
+      str.toLowerCase().replace(/[^a-zа-я0-9]/g, '');
+    const searchNorm = normalize(cleanProtocol);
 
-    const url = `https://fgis.gost.ru/fundmetrology/eapi/vri/?result_docnum=${encodeURIComponent(
+    if (serialNumber?.trim() && grsiNumber?.trim() && date?.trim()) {
+      const url = `https://fgis.gost.ru/fundmetrology/eapi/vri/?mit_number=${encodeURIComponent(
+        grsiNumber.trim()
+      )}&mi_number=${encodeURIComponent(
+        serialNumber.trim()
+      )}&verification_date=${encodeURIComponent(date.trim())}&rows=10`;
+
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+        });
+
+        if (response.ok) {
+          const rawData = await response.json();
+          const parsed = ArshinVriResponseSchema.safeParse(rawData);
+
+          if (parsed.success && parsed.data.result.items?.length > 0) {
+            const matchedItem = parsed.data.result.items.find((item) => {
+              const docNorm = normalize(item.result_docnum || '');
+              return (
+                docNorm.includes(searchNorm) || searchNorm.includes(docNorm)
+              );
+            });
+
+            if (matchedItem) {
+              return `https://fgis.gost.ru/fundmetrology/cm/results/${matchedItem.vri_id}`;
+            }
+          }
+        }
+      } catch (e) {
+        return null;
+      }
+    }
+
+    const fallbackUrl = `https://fgis.gost.ru/fundmetrology/eapi/vri/?result_docnum=${encodeURIComponent(
       cleanProtocol
     )}&rows=1`;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(fallbackUrl, {
         method: 'GET',
         headers: { Accept: 'application/json' },
       });
-      if (!response.ok) return null;
 
-      const rawData = await response.json();
-      const parsed = ArshinVriResponseSchema.safeParse(rawData);
+      if (response.ok) {
+        const rawData = await response.json();
+        const parsed = ArshinVriResponseSchema.safeParse(rawData);
 
-      if (parsed.success && parsed.data.result.items?.length > 0) {
-        const firstItem = parsed.data.result.items[0];
-        if (firstItem) {
-          return `https://fgis.gost.ru/fundmetrology/cm/results/${firstItem.vri_id}`;
+        if (parsed.success && parsed.data.result.items?.length > 0) {
+          const firstItem = parsed.data.result.items[0];
+          if (firstItem) {
+            return `https://fgis.gost.ru/fundmetrology/cm/results/${firstItem.vri_id}`;
+          }
         }
       }
-    } catch {
+    } catch (e) {
       return null;
     }
+
     return null;
   }
 }

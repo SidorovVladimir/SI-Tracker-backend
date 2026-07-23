@@ -177,9 +177,20 @@ export const Query = {
 
   findArshinDocumentUrl: async (
     _: unknown,
-    { protocolNumber }: { protocolNumber: string },
+    {
+      protocolNumber,
+      serialNumber,
+      grsiNumber,
+      date,
+    }: {
+      protocolNumber: string;
+      serialNumber?: string | null;
+      grsiNumber?: string | null;
+      date?: string | null;
+    },
     { currentUser }: Context
   ) => {
+    // 1. Проверка авторизации и прав доступа
     if (!currentUser) throw new Error('Не авторизован');
     if (currentUser.role === 'user') {
       throw new Error(
@@ -187,13 +198,19 @@ export const Query = {
       );
     }
 
+    // 2. Валидация обязательного поля номера документа
     if (!protocolNumber || !protocolNumber.trim()) {
       throw new Error('Номер свидетельства/протокола не может быть пустым');
     }
 
     const arshinService = new ArshinService();
+
+    // 3. Передаем все новые точечные аргументы в обновленный метод сервиса
     return await arshinService.findSingleVerificationUrlByProtocol(
-      protocolNumber
+      protocolNumber,
+      serialNumber || undefined,
+      grsiNumber || undefined,
+      date || undefined
     );
   },
 };

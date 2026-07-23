@@ -97,7 +97,12 @@ type Query {
     input: FetchArshinVerificationsInput!
   ): [ArshinFlexibleVerification!]!
 
-  findArshinDocumentUrl(protocolNumber: String!): String
+  findArshinDocumentUrl(
+    protocolNumber: String!
+    serialNumber: String
+    grsiNumber: String
+    date: String
+  ): String
 }
 
 type Mutation {
