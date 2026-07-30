@@ -2,6 +2,7 @@ import {
   boolean,
   index,
   integer,
+  pgEnum,
   pgTable,
   text,
   timestamp,
@@ -55,6 +56,57 @@ export const devices = pgTable('devices', {
     .notNull()
     .defaultNow(),
 });
+
+export const deviceDocumentTypeEnum = pgEnum('device_document_type', [
+  'manual', // Руководство по эксплуатации (РЭ)
+  'passport', // Паспорт / Формуляр / Акты
+]);
+
+export const deviceDocuments = pgTable(
+  'device_documents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name').notNull(), // Например, "РЭ Нутромер НИ-160", "Паспорт зав. № 102213316"
+    fileUrl: text('file_url').notNull(), // Ссылка на S3 / MinIO / хранилище
+    fileSize: integer('file_size'), // Размер файла в байтах
+    mimeType: varchar('mime_type', { length: 100 }), // application/pdf
+    type: deviceDocumentTypeEnum('type').notNull(),
+
+    // 1. Для Паспортов: жесткая привязка к конкретному серийнику
+    deviceId: uuid('device_id').references(() => devices.id, {
+      onDelete: 'cascade',
+    }),
+
+    // 2. Для Руководств (РЭ): комбинированная привязка, чтобы разделять модификации внутри ГРСИ
+    grsiNumber: varchar('grsi_number', { length: 100 }), // Заполняется для СИ
+    modelName: varchar('model_name'), // Модель (заполняется для всех: СИ, ВО, ИО)
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    deviceIdIdx: index('doc_device_id_idx').on(table.deviceId),
+    // Составной индекс для мгновенного поиска руководств по ГРСИ и Модели вместе
+    grsiModelIdx: index('doc_grsi_model_idx').on(
+      table.grsiNumber,
+      table.modelName
+    ),
+  })
+);
+
+export const deviceDocumentsRelations = relations(
+  deviceDocuments,
+  ({ one }) => ({
+    device: one(devices, {
+      fields: [deviceDocuments.deviceId],
+      references: [devices.id],
+    }),
+  })
+);
 
 export const verificationBatches = pgTable('verification_batches', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -140,4 +192,5 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
   primaryStandartsToDevices: many(primaryStandartsToDevices),
   measurementTypesToDevices: many(measurementTypesToDevices),
   devicesToBatches: many(devicesToBatches),
+  documents: many(deviceDocuments),
 }));

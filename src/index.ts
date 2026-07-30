@@ -1,7 +1,8 @@
-import { ApolloServer, ApolloServerPlugin } from '@apollo/server';
+import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express4';
 import express from 'express';
 import { createServer } from 'http';
+import { eq } from 'drizzle-orm';
 import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
 import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
 import cors from 'cors';
@@ -24,6 +25,8 @@ import fs from 'fs';
 import path from 'path';
 import { dbRestoreQueue } from './modules/admin/workers/restore.worker';
 import { checkRateLimit, RATE_LIMITS } from './middleware/rateLimiter';
+import multer from 'multer';
+import { deviceDocuments } from './db/schema';
 
 export let io: Server;
 
@@ -377,6 +380,147 @@ async function startApolloServer() {
       if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
       res.status(500).send(`Ошибка при загрузке файла дампа: ${err.message}`);
     });
+  });
+
+  const DOCUMENTS_DIR = path.join(__dirname, '../docs');
+
+  if (!fs.existsSync(DOCUMENTS_DIR)) {
+    fs.mkdirSync(DOCUMENTS_DIR, { recursive: true });
+  }
+
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, DOCUMENTS_DIR);
+    },
+    filename: (req, file, cb) => {
+      // Генерируем уникальное имя (UUID + оригинальное расширение), чтобы файлы не перезаписывали друг друга
+      const uniqueId = crypto.randomUUID();
+      const ext = path.extname(file.originalname);
+      cb(null, `${uniqueId}${ext}`);
+    },
+  });
+
+  const upload = multer({
+    storage: storage,
+    limits: {
+      fileSize: 20 * 1024 * 1024, // Наше железное ограничение бэкенда: 20 МБ
+    },
+    fileFilter: (req, file, cb) => {
+      // Разрешенные форматы (MIME-типы)
+      const allowedTypes = [
+        'application/pdf',
+        'image/jpeg',
+        'image/png',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(
+          new Error(
+            'Недопустимый формат файла. Разрешены только PDF, изображения и DOC/DOCX.'
+          )
+        );
+      }
+    },
+  });
+
+  app.post('/api/documents/upload', upload.single('file'), async (req, res) => {
+    const user = (req as any).currentUser;
+
+    // Проверка авторизации (обычный 'user' может смотреть, но не может загружать файлы)
+    if (!user || user.role === 'user') {
+      if (req.file && fs.existsSync(req.file.path))
+        fs.unlinkSync(req.file.path);
+      return res
+        .status(403)
+        .send('Доступ запрещен: недостаточно прав для загрузки документов');
+    }
+
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: 'Файл не найден в запросе' });
+      }
+
+      // Достаем метаданные, которые прислал нам React-компонент через FormData
+      const { type, name, deviceId, modelName, grsiNumber } = req.body;
+
+      if (!type || !name) {
+        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        return res.status(400).json({ error: 'Поля name и type обязательны' });
+      }
+
+      // Формируем URL, по которому Caddy будет отдавать этот файл фронтенду
+      const fileUrl = `/uploads/${req.file.filename}`;
+
+      // Сохраняем запись в базу данных через Drizzle ORM
+      // (Используем структуру context.db или глобальный инстанс db, в зависимости от вашего проекта)
+      const [insertedDoc] = await db
+        .insert(deviceDocuments)
+        .values({
+          name: name,
+          fileUrl: fileUrl,
+          fileSize: req.file.size,
+          mimeType: req.file.mimetype,
+          type: type, // 'manual' | 'passport'
+          deviceId: deviceId || null,
+          modelName: modelName || null,
+          grsiNumber: grsiNumber || null,
+        })
+        .returning();
+
+      // Возвращаем созданную запись клиенту
+      return res.status(201).json(insertedDoc);
+    } catch (error: any) {
+      // Если на этапе записи в базу произошел сбой — удаляем файл с диска, чтобы не оставлять мусор
+      if (req.file && fs.existsSync(req.file.path))
+        fs.unlinkSync(req.file.path);
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  // =======================================================================
+  // 2. РОУТ УДАЛЕНИЯ ДОКУМЕНТА (REST DELETE)
+  // =======================================================================
+  app.delete('/api/documents/:id', async (req, res) => {
+    const user = (req as any).currentUser;
+    const { id } = req.params;
+
+    // Проверка прав
+    if (!user || user.role === 'user') {
+      return res
+        .status(403)
+        .send('Доступ запрещен: недостаточно прав для удаления документов');
+    }
+
+    try {
+      // 1. Ищем документ в базе, чтобы узнать имя файла на диске
+      const [document] = await db
+        .select()
+        .from(deviceDocuments)
+        .where(eq(deviceDocuments.id, id));
+
+      if (!document) {
+        return res.status(404).json({ error: 'Документ не найден в системе' });
+      }
+
+      // Вытаскиваем имя файла из относительного URL (например, из "/uploads/uuid.pdf" получаем "uuid.pdf")
+      const fileName = path.basename(document.fileUrl);
+      const fullFilePath = path.join(DOCUMENTS_DIR, fileName);
+
+      // 2. Физически удаляем файл с жесткого диска сервера
+      if (fs.existsSync(fullFilePath)) {
+        fs.unlinkSync(fullFilePath);
+      }
+
+      // 3. Удаляем саму строчку записи из таблицы PostgreSQL
+      await db.delete(deviceDocuments).where(eq(deviceDocuments.id, id));
+
+      return res.json({ success: true, message: 'Документ успешно удален' });
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
+    }
   });
 
   app.use(

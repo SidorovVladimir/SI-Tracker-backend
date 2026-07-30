@@ -1,5 +1,19 @@
 scalar JSON
 
+enum DocumentType {
+  manual
+  passport
+}
+
+type DeviceDocument {
+  id: ID!
+  name: String!
+  fileUrl: String!
+  fileSize: Int
+  mimeType: String
+  type: DocumentType!
+}
+
 type Device {
   id: ID!
   name: String!
@@ -62,6 +76,7 @@ type DeviceWithRelations {
   nomenclature: String
   comment: String
   status: Status!
+  documents: [DeviceDocument!]!
   productionSite: ProductionSiteRelation!
   verifications: [VerificationRelation!]!
   scopes: [Scope!]!

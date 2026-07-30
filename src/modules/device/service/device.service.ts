@@ -1,4 +1,4 @@
-import { and, eq, ilike, inArray, ne, sql } from 'drizzle-orm';
+import { and, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity } from '../types/device.types';
@@ -218,6 +218,7 @@ export class DeviceService {
       with: {
         status: true,
         equipmentType: true,
+        documents: true,
         productionSite: {
           with: {
             city: true,
@@ -249,6 +250,32 @@ export class DeviceService {
       },
     });
 
+    if (!data) return null;
+
+    const manualDocs = await this.db.query.deviceDocuments.findMany({
+      where: (doc) => {
+        return or(
+          // Если это СИ с ГРСИ: ищем РЭ, где совпадает И ГРСИ, И Модель (а deviceId пустой)
+          data.grsiNumber && data.model
+            ? and(
+                eq(doc.grsiNumber, data.grsiNumber),
+                eq(doc.modelName, data.model),
+                isNull(doc.deviceId)
+              )
+            : undefined,
+
+          // Если это ИО/ВО (ГРСИ нет): ищем РЭ, где совпадает только Модель (а ГРСИ и deviceId пустые)
+          !data.grsiNumber && data.model
+            ? and(
+                eq(doc.modelName, data.model),
+                isNull(doc.grsiNumber),
+                isNull(doc.deviceId)
+              )
+            : undefined
+        );
+      },
+    });
+
     const scopes = data?.scopesToDevices.map((sd) => sd.scope);
     const primaryStandarts = data?.primaryStandartsToDevices.map(
       (psd) => psd.primaryStandart
@@ -256,11 +283,14 @@ export class DeviceService {
     const measurementTypes = data?.measurementTypesToDevices.map(
       (mt) => mt.measurementType
     );
+
+    const allDocuments = [...(data.documents || []), ...manualDocs];
     return {
       ...data,
       scopes,
       primaryStandarts,
       measurementTypes,
+      documents: allDocuments,
     };
   }
 
