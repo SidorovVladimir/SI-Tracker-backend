@@ -7,6 +7,7 @@ import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHt
 import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import { ZipArchive } from 'archiver';
 
 import { typeDefs } from './graphql/typeDefs';
 import { resolvers } from './graphql/resolvers';
@@ -27,6 +28,12 @@ import { dbRestoreQueue } from './modules/admin/workers/restore.worker';
 import { checkRateLimit, RATE_LIMITS } from './middleware/rateLimiter';
 import multer from 'multer';
 import { deviceDocuments } from './db/schema';
+import AdmZip from 'adm-zip';
+import {
+  DOCUMENTS_DIR,
+  initStorageFolders,
+  UPLOAD_DIR,
+} from './config/path.config';
 
 export let io: Server;
 
@@ -264,6 +271,8 @@ async function startApolloServer() {
     });
   });
 
+  initStorageFolders();
+
   app.get('/api/admin/backup', (req, res) => {
     const user = (req as any).currentUser;
     if (!user || user.role !== 'superadmin') {
@@ -342,13 +351,12 @@ async function startApolloServer() {
         .send('Доступ запрещен: требуется роль суперадминистратора');
     }
 
-    const uploadDir = path.join(__dirname, '../../uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    if (!fs.existsSync(UPLOAD_DIR)) {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
     }
 
     const tempFilePath = path.join(
-      uploadDir,
+      UPLOAD_DIR,
       `backup_restore_${Date.now()}.sql`
     );
     const writeStream = fs.createWriteStream(tempFilePath);
@@ -382,12 +390,6 @@ async function startApolloServer() {
     });
   });
 
-  const DOCUMENTS_DIR = path.join(__dirname, '../docs');
-
-  if (!fs.existsSync(DOCUMENTS_DIR)) {
-    fs.mkdirSync(DOCUMENTS_DIR, { recursive: true });
-  }
-
   const storage = multer.diskStorage({
     destination: (req, file, cb) => {
       cb(null, DOCUMENTS_DIR);
@@ -403,7 +405,7 @@ async function startApolloServer() {
   const upload = multer({
     storage: storage,
     limits: {
-      fileSize: 20 * 1024 * 1024, // Наше железное ограничение бэкенда: 20 МБ
+      fileSize: 20 * 1024 * 1024,
     },
     fileFilter: (req, file, cb) => {
       // Разрешенные форматы (MIME-типы)
@@ -442,8 +444,6 @@ async function startApolloServer() {
       if (!req.file) {
         return res.status(400).json({ error: 'Файл не найден в запросе' });
       }
-
-      // Достаем метаданные, которые прислал нам React-компонент через FormData
       const { type, name, deviceId, modelName, grsiNumber } = req.body;
 
       if (!type || !name) {
@@ -451,11 +451,8 @@ async function startApolloServer() {
         return res.status(400).json({ error: 'Поля name и type обязательны' });
       }
 
-      // Формируем URL, по которому Caddy будет отдавать этот файл фронтенду
       const fileUrl = `/uploads/${req.file.filename}`;
 
-      // Сохраняем запись в базу данных через Drizzle ORM
-      // (Используем структуру context.db или глобальный инстанс db, в зависимости от вашего проекта)
       const [insertedDoc] = await db
         .insert(deviceDocuments)
         .values({
@@ -470,24 +467,18 @@ async function startApolloServer() {
         })
         .returning();
 
-      // Возвращаем созданную запись клиенту
       return res.status(201).json(insertedDoc);
     } catch (error: any) {
-      // Если на этапе записи в базу произошел сбой — удаляем файл с диска, чтобы не оставлять мусор
       if (req.file && fs.existsSync(req.file.path))
         fs.unlinkSync(req.file.path);
       return res.status(500).json({ error: error.message });
     }
   });
 
-  // =======================================================================
-  // 2. РОУТ УДАЛЕНИЯ ДОКУМЕНТА (REST DELETE)
-  // =======================================================================
   app.delete('/api/documents/:id', async (req, res) => {
     const user = (req as any).currentUser;
     const { id } = req.params;
 
-    // Проверка прав
     if (!user || user.role === 'user') {
       return res
         .status(403)
@@ -495,7 +486,6 @@ async function startApolloServer() {
     }
 
     try {
-      // 1. Ищем документ в базе, чтобы узнать имя файла на диске
       const [document] = await db
         .select()
         .from(deviceDocuments)
@@ -504,24 +494,132 @@ async function startApolloServer() {
       if (!document) {
         return res.status(404).json({ error: 'Документ не найден в системе' });
       }
+      await db.delete(deviceDocuments).where(eq(deviceDocuments.id, id));
 
-      // Вытаскиваем имя файла из относительного URL (например, из "/uploads/uuid.pdf" получаем "uuid.pdf")
       const fileName = path.basename(document.fileUrl);
       const fullFilePath = path.join(DOCUMENTS_DIR, fileName);
 
-      // 2. Физически удаляем файл с жесткого диска сервера
-      if (fs.existsSync(fullFilePath)) {
-        fs.unlinkSync(fullFilePath);
+      try {
+        if (fs.existsSync(fullFilePath)) {
+          fs.unlinkSync(fullFilePath);
+        }
+      } catch (fileError) {
+        console.error(
+          `Не удалось стереть файл ${fullFilePath} с диска:`,
+          fileError
+        );
       }
-
-      // 3. Удаляем саму строчку записи из таблицы PostgreSQL
-      await db.delete(deviceDocuments).where(eq(deviceDocuments.id, id));
 
       return res.json({ success: true, message: 'Документ успешно удален' });
     } catch (error: any) {
       return res.status(500).json({ error: error.message });
     }
   });
+
+  app.get('/api/admin/backup-files', (req, res) => {
+    const user = (req as any).currentUser;
+
+    if (!user || user.role !== 'superadmin') {
+      return res
+        .status(403)
+        .send('Доступ запрещен: требуется роль суперадминистратора');
+    }
+
+    if (!fs.existsSync(DOCUMENTS_DIR)) {
+      return res.status(404).send('Папка документов пуста или еще не создана');
+    }
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=lissib_files_backup_${Date.now()}.zip`
+    );
+
+    // Создаем архиватор с оптимальным уровнем сжатия, чтобы не перегружать процессор сервера клиента
+    const archive = new ZipArchive({ zlib: { level: 5 } });
+
+    // Перенаправляем поток архива прямо в HTTP-ответ клиенту
+    archive.pipe(res);
+
+    // Добавляем всю нашу папку с документами в корень ZIP-архива
+    // false означает, что файлы внутри ZIP будут лежать сразу в корне, без лишней вложенной папки docs
+    archive.directory(DOCUMENTS_DIR, false);
+
+    // Запускаем процесс финальной сборки и отправки
+    archive.finalize();
+
+    archive.on('error', (err) => {
+      console.error('Ошибка архивации файлов:', err);
+      // Если заголовки еще не ушли, можно отправить ошибку
+      if (!res.headersSent) {
+        res
+          .status(500)
+          .send(`Ошибка при создании архива документов: ${err.message}`);
+      }
+    });
+  });
+
+  app.post('/api/admin/restore-files', (req, res) => {
+    const user = (req as any).currentUser;
+    if (!user || user.role !== 'superadmin') {
+      return res
+        .status(403)
+        .send('Доступ запрещен: требуется роль суперадминистратора');
+    }
+
+    if (!fs.existsSync(UPLOAD_DIR)) {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    }
+
+    // Путь к временному файлу архива, который сейчас прилетит по сети
+    const tempZipPath = path.join(
+      UPLOAD_DIR,
+      `files_restore_${Date.now()}.zip`
+    );
+    const writeStream = fs.createWriteStream(tempZipPath);
+
+    // Принимаем бинарный поток архива через pipe
+    req.pipe(writeStream);
+
+    writeStream.on('finish', () => {
+      try {
+        // 1. Очищаем текущую папку docs перед распаковкой, чтобы полностью синхронизировать состояние
+        if (fs.existsSync(DOCUMENTS_DIR)) {
+          fs.rmSync(DOCUMENTS_DIR, { recursive: true, force: true });
+        }
+        fs.mkdirSync(DOCUMENTS_DIR, { recursive: true });
+
+        // 2. Инициализируем библиотеку AdmZip для распаковки сохраненного файла
+        const zip = new AdmZip(tempZipPath);
+
+        // Распаковываем всё содержимое напрямую в папку документов
+        zip.extractAllTo(DOCUMENTS_DIR, true);
+
+        // 3. Удаляем временный ZIP-файл, который мы приняли по сети, чтобы он не занимал место
+        fs.unlinkSync(tempZipPath);
+
+        return res.status(200).json({
+          success: true,
+          message:
+            'Архив документов успешно загружен и распакован. Все файлы приборов восстановлены.',
+        });
+      } catch (err: any) {
+        if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath);
+        return res
+          .status(500)
+          .send(`Ошибка при распаковке архива документов: ${err.message}`);
+      }
+    });
+
+    writeStream.on('error', (err) => {
+      if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath);
+      return res
+        .status(500)
+        .send(`Ошибка при загрузке ZIP-архива документов: ${err.message}`);
+    });
+  });
+
+  app.use('/uploads', express.static(DOCUMENTS_DIR));
 
   app.use(
     '/graphql',

@@ -26,6 +26,7 @@
   },
   "homepage": "https://github.com/SidorovVladimir/SI-Tracker-backend#readme",
   "devDependencies": {
+    "@types/archiver": "^8.0.0",
     "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
@@ -47,6 +48,8 @@
     "@graphql-tools/schema": "^10.0.30",
     "@types/cookie-parser": "^1.4.10",
     "@types/jsonwebtoken": "^9.0.10",
+    "adm-zip": "^0.6.0",
+    "archiver": "^8.0.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.78.0",
     "cookie-parser": "^1.4.7",

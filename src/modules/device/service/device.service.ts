@@ -2,7 +2,11 @@ import { and, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity } from '../types/device.types';
-import { devices, devicesToBatches } from '../models/device.model';
+import {
+  deviceDocuments,
+  devices,
+  devicesToBatches,
+} from '../models/device.model';
 import { scopes, scopesToDevices } from '../../catalog/models/scope.model';
 import { verifications } from '../models/verification.model';
 import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
@@ -27,6 +31,9 @@ import { companies } from '../../location/models/company.model';
 import { productionSites } from '../../location/models/productionSites.model';
 import { equipmentTypes } from '../../catalog/models/equipmentType.model';
 import { arshinQueue } from '../queues/arshin.queue';
+import { promises as fsPromises } from 'fs';
+import path from 'path';
+import { DOCUMENTS_DIR } from '../../../config/path.config';
 
 export class DeviceService {
   constructor(
@@ -743,6 +750,8 @@ export class DeviceService {
       throw new Error('Прибор для архивации не найден');
     }
 
+    const filePathsToDiskDelete: string[] = [];
+
     try {
       await this.db.transaction(async (tx) => {
         await tx
@@ -759,8 +768,33 @@ export class DeviceService {
 
         await tx.delete(verifications).where(eq(verifications.deviceId, id));
 
+        const docsToDelete = await tx
+          .select()
+          .from(deviceDocuments)
+          .where(eq(deviceDocuments.deviceId, id));
+
+        for (const doc of docsToDelete) {
+          const fileName = path.basename(doc.fileUrl);
+          const fullFilePath = path.join(DOCUMENTS_DIR, fileName);
+
+          filePathsToDiskDelete.push(fullFilePath);
+        }
+
         await tx.delete(devices).where(eq(devices.id, id));
       });
+
+      for (const filePath of filePathsToDiskDelete) {
+        try {
+          await fsPromises.access(filePath);
+          await fsPromises.unlink(filePath);
+        } catch (fileErr) {
+          console.error(
+            `Не удалось физически удалить файл ${filePath}:`,
+            fileErr
+          );
+        }
+      }
+
       // await this.db
       //   .update(devices)
       //   .set({
