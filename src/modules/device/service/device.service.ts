@@ -119,44 +119,113 @@ export class DeviceService {
     }
 
     // 7. Фильтр по виду контроля актуальной поверки (подзапрос к verifications)
+    // if (filter?.metrologyControle) {
+    //   conditions.push(
+    //     sql`${devices.id} IN (
+    //       SELECT v.device_id FROM verifications v
+    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+    //       WHERE LOWER(TRIM(mct.name)) = LOWER(TRIM(${filter.metrologyControle}))
+    //       AND v.valid_until = (
+    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
+    //       )
+    //     )`
+    //   );
+    // }
+
     if (filter?.metrologyControle) {
+      const controlName = String(filter.metrologyControle).toLowerCase().trim();
+
+      if (controlName === 'осмотр') {
+        // Если ищут приборы по Осмотру — смотрим на самый свежий осмотр
+        conditions.push(
+          sql`${devices.id} IN (
+            SELECT v.device_id FROM verifications v
+            JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+            WHERE LOWER(TRIM(mct.name)) = 'осмотр'
+            AND v.date = (
+              SELECT MAX(date) FROM verifications 
+              WHERE device_id = v.device_id 
+              AND metrology_controle_type_id = (SELECT id FROM metrology_controle_types WHERE LOWER(TRIM(name)) = 'осмотр')
+            )
+          )`
+        );
+      } else {
+        // Если ищут Поверку/Калибровку/Аттестацию — смотрим на MAX(valid_until) только среди них!
+        conditions.push(
+          sql`${devices.id} IN (
+            SELECT v.device_id FROM verifications v
+            JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+            WHERE LOWER(TRIM(mct.name)) = ${controlName}
+            AND v.valid_until = (
+              SELECT MAX(valid_until) FROM verifications v2
+              JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
+              WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
+            )
+          )`
+        );
+      }
+    }
+
+    // if (filter?.dateStart) {
+    //   // Вырезаем первые 10 символов (YYYY-MM-DD), защищаясь от полных ISO-строк
+    //   const safeDateStart = String(filter.dateStart).slice(0, 10);
+
+    //   conditions.push(
+    //     sql`${devices.id} IN (
+    //       SELECT v.device_id FROM verifications v
+    //       WHERE v.valid_until::date >= ${safeDateStart}::date
+    //       AND v.valid_until = (
+    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
+    //       )
+    //     )`
+    //   );
+    // }
+
+    // // 9. Фильтр по дате "Срок действия до..."
+    // if (filter?.dateEnd) {
+    //   const safeDateEnd = String(filter.dateEnd).slice(0, 10);
+
+    //   conditions.push(
+    //     sql`${devices.id} IN (
+    //       SELECT v.device_id FROM verifications v
+    //       WHERE v.valid_until::date <= ${safeDateEnd}::date
+    //       AND v.valid_until = (
+    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
+    //       )
+    //     )`
+    //   );
+    // }
+
+    // 5. ИСПРАВЛЕННЫЕ ДАТЫ: Фильтры по датам теперь смотрят ИСКЛЮЧИТЕЛЬНО на государеву поверку (игнорируя осмотры)
+    if (filter?.dateStart) {
+      const safeDateStart = String(filter.dateStart).slice(0, 10);
       conditions.push(
         sql`${devices.id} IN (
           SELECT v.device_id FROM verifications v
           JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-          WHERE LOWER(TRIM(mct.name)) = LOWER(TRIM(${filter.metrologyControle}))
+          WHERE LOWER(TRIM(mct.name)) != 'осмотр'
+          AND v.valid_until::date >= ${safeDateStart}::date
           AND v.valid_until = (
-            SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
+            SELECT MAX(valid_until) FROM verifications v2
+            JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
+            WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
           )
         )`
       );
     }
 
-    if (filter?.dateStart) {
-      // Вырезаем первые 10 символов (YYYY-MM-DD), защищаясь от полных ISO-строк
-      const safeDateStart = String(filter.dateStart).slice(0, 10);
-
-      conditions.push(
-        sql`${devices.id} IN (
-          SELECT v.device_id FROM verifications v
-          WHERE v.valid_until::date >= ${safeDateStart}::date
-          AND v.valid_until = (
-            SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
-          )
-        )`
-      );
-    }
-
-    // 9. Фильтр по дате "Срок действия до..."
     if (filter?.dateEnd) {
       const safeDateEnd = String(filter.dateEnd).slice(0, 10);
-
       conditions.push(
         sql`${devices.id} IN (
           SELECT v.device_id FROM verifications v
-          WHERE v.valid_until::date <= ${safeDateEnd}::date
+          JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+          WHERE LOWER(TRIM(mct.name)) != 'осмотр'
+          AND v.valid_until::date <= ${safeDateEnd}::date
           AND v.valid_until = (
-            SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
+            SELECT MAX(valid_until) FROM verifications v2
+            JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
+            WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
           )
         )`
       );
@@ -198,7 +267,7 @@ export class DeviceService {
         verifications: {
           // orderBy: (v, { desc }) => [desc(v.validUntil), desc(v.date)],
           orderBy: (v) => [sql`${v.date} DESC NULLS LAST`],
-          limit: 1,
+          // limit: 1, // Пока убрали для получения всех поверок
           columns: {
             id: true,
             date: true,
@@ -210,11 +279,48 @@ export class DeviceService {
       },
     });
 
+    // return {
+    //   items: items.map((d) => ({
+    //     ...d,
+    //     latestVerification: d.verifications[0] || null,
+    //   })),
+    //   totalCount: countResult?.count ?? 0,
+    // };
+
+    // 6. МАППИНГ (Разделение записей по логическим колонкам для DataGrid)
     return {
-      items: items.map((d) => ({
-        ...d,
-        latestVerification: d.verifications[0] || null,
-      })),
+      items: items.map((d) => {
+        // Ищем самую свежую официальную поверку / калибровку
+        const latestVerification =
+          d.verifications.find(
+            (v) =>
+              v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+          ) || null;
+
+        // Ищем самый свежий внутренний осмотр
+        const latestInspection =
+          d.verifications.find(
+            (v) =>
+              v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
+          ) || null;
+
+        return {
+          id: d.id,
+          name: d.name,
+          model: d.model,
+          grsiNumber: d.grsiNumber,
+          serialNumber: d.serialNumber,
+          inventoryNumber: d.inventoryNumber,
+          releaseDate: d.releaseDate,
+          manufacturer: d.manufacturer,
+          status: d.status,
+          productionSite: d.productionSite,
+
+          // Отдаем на фронтенд два РАЗДЕЛЬНЫХ объекта
+          latestVerification,
+          latestInspection,
+        };
+      }),
       totalCount: countResult?.count ?? 0,
     };
   }
@@ -226,6 +332,8 @@ export class DeviceService {
         status: true,
         equipmentType: true,
         documents: true,
+        createdBy: true,
+        updatedBy: true,
         productionSite: {
           with: {
             city: true,
@@ -519,6 +627,8 @@ export class DeviceService {
       statusId: input.statusId,
       productionSiteId: input.productionSiteId,
       equipmentTypeId: input.equipmentTypeId ?? null,
+      createdById: userId,
+      updatedById: userId,
     };
 
     const result = await this.db.transaction(async (tx) => {
@@ -620,6 +730,7 @@ export class DeviceService {
       productionSiteId: input.productionSiteId,
       equipmentTypeId: input.equipmentTypeId ?? null,
       updatedAt: new Date(),
+      updatedById: userId,
     };
 
     const result = await this.db.transaction(async (tx) => {

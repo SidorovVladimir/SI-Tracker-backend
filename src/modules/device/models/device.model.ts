@@ -18,6 +18,7 @@ import { scopesToDevices } from '../../catalog/models/scope.model';
 import { verifications } from './verification.model';
 import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
 import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
+import { users } from '../../user/user.model';
 
 // Прибор (Инструмент)
 export const devices = pgTable('devices', {
@@ -55,6 +56,13 @@ export const devices = pgTable('devices', {
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
+  createdById: uuid('created_by_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
+
+  updatedById: uuid('updated_by_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
 });
 
 export const deviceDocumentTypeEnum = pgEnum('device_document_type', [
@@ -193,4 +201,12 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
   measurementTypesToDevices: many(measurementTypesToDevices),
   devicesToBatches: many(devicesToBatches),
   documents: many(deviceDocuments),
+  createdBy: one(users, {
+    fields: [devices.createdById],
+    references: [users.id],
+  }),
+  updatedBy: one(users, {
+    fields: [devices.updatedById],
+    references: [users.id],
+  }),
 }));

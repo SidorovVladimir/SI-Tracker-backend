@@ -213,8 +213,32 @@ export class VerificationPlanningService {
     return updatedBatch;
   }
 
+  // private calculateNextVerificationDate(device: any): Date {
+  //   const latestVerification = device.verifications?.[0];
+
+  //   // Вариант 1: Есть прошлая поверка с датой окончания
+  //   if (latestVerification?.validUntil) {
+  //     return new Date(latestVerification.validUntil);
+  //   }
+
+  //   // Вариант 2: Прибор новый — считаем от даты выпуска/получения + МПИ в месяцах
+  //   const baseDate = device.releaseDate || device.receiptDate;
+  //   if (baseDate && device.verificationInterval) {
+  //     const nextDate = new Date(baseDate);
+  //     nextDate.setMonth(nextDate.getMonth() + device.verificationInterval);
+  //     return nextDate;
+  //   }
+
+  //   // Вариант 3: Данных нет совсем — выталкиваем на текущую дату, чтобы метролог заметил прибор
+  //   return new Date();
+  // }
+
   private calculateNextVerificationDate(device: any): Date {
-    const latestVerification = device.verifications?.[0];
+    // Ищем последний легальный контроль (НЕ осмотр)
+    const latestVerification = device.verifications?.find(
+      (v: any) =>
+        v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+    );
 
     // Вариант 1: Есть прошлая поверка с датой окончания
     if (latestVerification?.validUntil) {
@@ -229,7 +253,7 @@ export class VerificationPlanningService {
       return nextDate;
     }
 
-    // Вариант 3: Данных нет совсем — выталкиваем на текущую дату, чтобы метролог заметил прибор
+    // Вариант 3: Данных нет совсем
     return new Date();
   }
 
@@ -264,9 +288,13 @@ export class VerificationPlanningService {
           columns: { name: true },
         },
         devicesToBatches: { with: { batch: true } },
+        equipmentType: { columns: { name: true } },
+        scopesToDevices: {
+          with: { scope: { columns: { name: true } } },
+        },
         verifications: {
           orderBy: (v, { desc }) => [desc(v.date), desc(v.createdAt)],
-          limit: 1,
+          limit: 5,
           with: { metrologyControleType: { columns: { name: true } } },
         },
       },
@@ -276,22 +304,65 @@ export class VerificationPlanningService {
 
     for (const device of allDevices) {
       const statusName = device.status?.name?.toLowerCase().trim() ?? '';
+      // if (
+      //   statusName === 'длительное хранение' ||
+      //   statusName === 'неисправен' ||
+      //   statusName === 'забракован' ||
+      //   statusName === 'утерян' ||
+      //   statusName === 'не годен'
+      // ) {
+      //   continue;
+      // }
       if (
-        statusName === 'длительное хранение' ||
-        statusName === 'неисправен' ||
-        statusName === 'забракован' ||
-        statusName === 'утерян' ||
-        statusName === 'не годен'
+        [
+          'длительное хранение',
+          'неисправен',
+          'забракован',
+          'утерян',
+          'не годен',
+        ].includes(statusName)
       ) {
         continue;
       }
+
+      const eqTypeName = device.equipmentType?.name?.toLowerCase().trim() ?? '';
+      const deviceScopes =
+        device.scopesToDevices?.map((s: any) =>
+          s.scope?.name?.toLowerCase().trim()
+        ) ?? [];
+
+      // ЖЕЛЕЗНОЕ ПРАВИЛО: Индикаторы, ВО и СИ вне сферы госрегулирования ("не ГР") вообще не идут в планировщик партий!
+      if (
+        eqTypeName === 'индикатор' ||
+        eqTypeName === 'вспомогательное оборудование (во)' ||
+        (eqTypeName === 'средство измерений (си)' &&
+          deviceScopes.includes(
+            'вне сферы государственного регулирования (не гр)'
+          ))
+      ) {
+        continue;
+      }
+
       const nextVerificationDate = this.calculateNextVerificationDate(device);
       if (!nextVerificationDate) continue;
 
-      const latestVerification = device.verifications?.[0];
+      const latestVerification = device.verifications?.find(
+        (v: any) =>
+          v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+      );
 
-      const currentControlType =
-        latestVerification?.metrologyControleType?.name || 'не указан';
+      // const latestVerification = device.verifications?.[0];
+
+      // const currentControlType =
+      //   latestVerification?.metrologyControleType?.name || 'не указан';
+
+      let currentControlType = latestVerification?.metrologyControleType?.name;
+      if (!currentControlType) {
+        currentControlType =
+          eqTypeName === 'испытательное оборудование (ио)'
+            ? 'аттестация'
+            : 'поверка';
+      }
 
       const activeBatchLink = device.devicesToBatches?.find(
         (link) =>
@@ -319,7 +390,10 @@ export class VerificationPlanningService {
             targetBatchId: activeBatchLink.batch.id,
             isManualPlacement: true,
             controlType: currentControlType,
-            isOverdue: nextVerificationDate < now, // Сравниваем с реальным концом поверки
+            // isOverdue: nextVerificationDate < now, // Сравниваем с реальным концом поверки
+            isOverdue: latestVerification?.validUntil
+              ? new Date(latestVerification.validUntil) < now
+              : false,
           });
         }
         continue;
@@ -466,23 +540,57 @@ export class VerificationPlanningService {
           columns: { name: true },
         },
         devicesToBatches: { with: { batch: true } },
+        equipmentType: { columns: { name: true } },
+        scopesToDevices: {
+          with: { scope: { columns: { name: true } } },
+        },
         verifications: {
-          orderBy: (v, { desc }) => [desc(v.date)],
-          limit: 1,
+          // orderBy: (v, { desc }) => [desc(v.date)],
+          orderBy: (v, { desc }) => [desc(v.date), desc(v.createdAt)],
+          limit: 5,
         },
       },
     });
 
     for (const device of allDevices) {
       const statusName = device.status?.name?.toLowerCase().trim() ?? '';
+      // if (
+      //   statusName === 'длительное хранение' ||
+      //   statusName === 'неисправен' ||
+      //   statusName === 'забракован' ||
+      //   statusName === 'утерян' ||
+      //   statusName === 'не годен'
+      // ) {
+      //   continue;
+      // }
       if (
-        statusName === 'длительное хранение' ||
-        statusName === 'неисправен' ||
-        statusName === 'забракован' ||
-        statusName === 'утерян' ||
-        statusName === 'не годен'
+        [
+          'длительное хранение',
+          'неисправен',
+          'забракован',
+          'утерян',
+          'не годен',
+        ].includes(statusName)
       ) {
         continue;
+      }
+
+      const eqTypeName = device.equipmentType?.name?.toLowerCase().trim() ?? '';
+      const deviceScopes =
+        device.scopesToDevices?.map((s: any) =>
+          s.scope?.name?.toLowerCase().trim()
+        ) ?? [];
+
+      // ЖЕЛЕЗНОЕ ПРАВИЛО: Исключаем индикаторы, ВО и нерегулируемые СИ из годовой статистики поверки
+      if (
+        eqTypeName === 'индикатор' ||
+        eqTypeName === 'вспомогательное оборудование (во)' ||
+        (eqTypeName === 'средство измерений (си)' &&
+          deviceScopes.includes(
+            'вне сферы государственного регулирования (не гр)'
+          ))
+      ) {
+        continue; // Пропускаем, они не создают ложную нагрузку на графике
       }
       const nextVerificationDate = this.calculateNextVerificationDate(device);
       if (!nextVerificationDate) continue;

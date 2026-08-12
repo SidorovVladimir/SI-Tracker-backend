@@ -1,0 +1,28 @@
+type InspectionPoolItem {
+  id: ID!
+  name: String!
+  model: String!
+  serialNumber: String!
+  lastInspectionDate: String
+  validUntil: String! # Дата планового следующего обхода
+  isOverdue: Boolean!
+  controlType: String!
+}
+
+type InspectionPoolResponse {
+  items: [InspectionPoolItem!]!
+  totalCount: Int!
+  yearlySummary: [MonthlySummary!]!
+}
+
+extend type Query {
+  getInspectionPoolByMonth(
+    targetMonth: String!
+    limit: Int!
+    offset: Int!
+  ): InspectionPoolResponse!
+}
+
+extend type Mutation {
+  createBulkInspection(deviceIds: [ID!]!): Boolean!
+}

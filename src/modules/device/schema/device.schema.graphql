@@ -76,12 +76,21 @@ type DeviceWithRelations {
   nomenclature: String
   comment: String
   status: Status!
+  createdAt: String!
+  updatedAt: String!
+  createdBy: User
+  updatedBy: User
   documents: [DeviceDocument!]!
   productionSite: ProductionSiteRelation!
   verifications: [VerificationRelation!]!
   scopes: [Scope!]!
   primaryStandarts: [PrimaryStandart!]!
   measurementTypes: [MeasurementType!]!
+}
+
+type InspectionTableItem {
+  id: ID!
+  date: String!
 }
 
 type DeviceTableItem {
@@ -99,6 +108,7 @@ type DeviceTableItem {
   archived: Boolean
   productionSite: ProductionSiteRelation!
   latestVerification: VerificationTableItem
+  latestInspection: InspectionTableItem
 }
 
 type VerificationTableItem {
