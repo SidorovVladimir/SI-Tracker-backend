@@ -331,16 +331,27 @@ export class VerificationPlanningService {
           s.scope?.name?.toLowerCase().trim()
         ) ?? [];
 
+      const isNotGr =
+        deviceScopes.includes('не гр') ||
+        deviceScopes.includes(
+          'вне сферы государственного регулирования (не гр)'
+        );
+
       // ЖЕЛЕЗНОЕ ПРАВИЛО: Индикаторы, ВО и СИ вне сферы госрегулирования ("не ГР") вообще не идут в планировщик партий!
       if (
-        eqTypeName === 'индикатор' ||
-        eqTypeName === 'вспомогательное оборудование (во)' ||
-        (eqTypeName === 'средство измерений (си)' &&
-          deviceScopes.includes(
-            'вне сферы государственного регулирования (не гр)'
-          ))
+        isNotGr || // 1. Если стоит "не ГР" — ПРИНУДИТЕЛЬНО ИСКЛЮЧАЕМ (высший приоритет, тип не важен!)
+        eqTypeName === 'индикатор' || // 2. Если это Индикатор — исключаем
+        eqTypeName === 'вспомогательное оборудование (во)' || // 3. Если это ВО — исключаем
+        eqTypeName === 'средство контроля (ск)'
       ) {
-        continue;
+        if (
+          eqTypeName === 'средство контроля (ск)' &&
+          deviceScopes.length > 0 &&
+          !isNotGr
+        ) {
+        } else {
+          continue; // Исключаем прибор из графиков поверок ЦСМ
+        }
       }
 
       const nextVerificationDate = this.calculateNextVerificationDate(device);
@@ -581,16 +592,27 @@ export class VerificationPlanningService {
           s.scope?.name?.toLowerCase().trim()
         ) ?? [];
 
-      // ЖЕЛЕЗНОЕ ПРАВИЛО: Исключаем индикаторы, ВО и нерегулируемые СИ из годовой статистики поверки
+      const isNotGr =
+        deviceScopes.includes('не гр') ||
+        deviceScopes.includes(
+          'вне сферы государственного регулирования (не гр)'
+        );
+
+      // ЖЕЛЕЗНОЕ ПРАВИЛО: Индикаторы, ВО и СИ вне сферы госрегулирования ("не ГР") вообще не идут в планировщик партий!
       if (
-        eqTypeName === 'индикатор' ||
-        eqTypeName === 'вспомогательное оборудование (во)' ||
-        (eqTypeName === 'средство измерений (си)' &&
-          deviceScopes.includes(
-            'вне сферы государственного регулирования (не гр)'
-          ))
+        isNotGr || // 1. Если стоит "не ГР" — ПРИНУДИТЕЛЬНО ИСКЛЮЧАЕМ (высший приоритет, тип не важен!)
+        eqTypeName === 'индикатор' || // 2. Если это Индикатор — исключаем
+        eqTypeName === 'вспомогательное оборудование (во)' || // 3. Если это ВО — исключаем
+        eqTypeName === 'средство контроля (ск)'
       ) {
-        continue; // Пропускаем, они не создают ложную нагрузку на графике
+        if (
+          eqTypeName === 'средство контроля (ск)' &&
+          deviceScopes.length > 0 &&
+          !isNotGr
+        ) {
+        } else {
+          continue; // Исключаем прибор из графиков поверок ЦСМ
+        }
       }
       const nextVerificationDate = this.calculateNextVerificationDate(device);
       if (!nextVerificationDate) continue;
@@ -700,19 +722,22 @@ export class VerificationPlanningService {
   //   });
   // }
 
-  async getVerificationBatches(year?: number, status?: string) {
+  async getVerificationBatches(
+    year?: number,
+    status?: string,
+    type?: 'verification' | 'inspection', // Наш чистый параметр
+    limit?: number, // 🔥 Добавили необязательный лимит
+    offset?: number
+  ) {
     const constraints = [];
 
-    // 1. Фильтр по статусу партии
     if (status) {
       constraints.push(eq(verificationBatches.status, status));
     }
 
-    // 2. Фильтр по году (оптимальный для индексов)
     if (year) {
       const startDate = new Date(`${year}-01-01T00:00:00.000Z`);
       const endDate = new Date(`${year}-12-31T23:59:59.999Z`);
-
       constraints.push(
         and(
           gte(verificationBatches.plannedDate, startDate),
@@ -721,9 +746,15 @@ export class VerificationPlanningService {
       );
     }
 
+    // 🔥 ИСПРАВЛЕНО: Прямая, надёжная фильтрация по системному полю типа партии
+    const targetType = type ?? 'verification';
+    constraints.push(eq(verificationBatches.type, targetType));
+
     return await this.db.query.verificationBatches.findMany({
       where: constraints.length > 0 ? and(...constraints) : undefined,
       orderBy: (b, { desc }) => [desc(b.plannedDate)],
+      limit: limit, // 🔥 Передали в Drizzle (пропустит, если undefined)
+      offset: offset, // 🔥 Передали в Drizzle (пропустит, если undefined)
       with: {
         devicesToBatches: {
           with: {
@@ -737,6 +768,7 @@ export class VerificationPlanningService {
               with: {
                 verifications: {
                   orderBy: (v, { desc }) => [desc(v.date)],
+                  limit: 1,
                 },
               },
             },
@@ -745,6 +777,51 @@ export class VerificationPlanningService {
       },
     });
   }
+  // async getVerificationBatches(year?: number, status?: string) {
+  //   const constraints = [];
+
+  //   // 1. Фильтр по статусу партии
+  //   if (status) {
+  //     constraints.push(eq(verificationBatches.status, status));
+  //   }
+
+  //   // 2. Фильтр по году (оптимальный для индексов)
+  //   if (year) {
+  //     const startDate = new Date(`${year}-01-01T00:00:00.000Z`);
+  //     const endDate = new Date(`${year}-12-31T23:59:59.999Z`);
+
+  //     constraints.push(
+  //       and(
+  //         gte(verificationBatches.plannedDate, startDate),
+  //         lte(verificationBatches.plannedDate, endDate)
+  //       )
+  //     );
+  //   }
+
+  //   return await this.db.query.verificationBatches.findMany({
+  //     where: constraints.length > 0 ? and(...constraints) : undefined,
+  //     orderBy: (b, { desc }) => [desc(b.plannedDate)],
+  //     with: {
+  //       devicesToBatches: {
+  //         with: {
+  //           device: {
+  //             columns: {
+  //               id: true,
+  //               name: true,
+  //               model: true,
+  //               serialNumber: true,
+  //             },
+  //             with: {
+  //               verifications: {
+  //                 orderBy: (v, { desc }) => [desc(v.date)],
+  //               },
+  //             },
+  //           },
+  //         },
+  //       },
+  //     },
+  //   });
+  // }
 
   async deleteBatch(id: string): Promise<boolean> {
     const [batch] = await this.db

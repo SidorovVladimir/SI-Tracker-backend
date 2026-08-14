@@ -992,7 +992,7 @@ export class DeviceService {
 
       await tx
         .update(devices)
-        .set({ statusId: targetStatusId, updatedAt: now })
+        .set({ statusId: targetStatusId, updatedAt: now, updatedById: userId })
         .where(eq(devices.id, input.deviceId));
 
       logDeviceData = {

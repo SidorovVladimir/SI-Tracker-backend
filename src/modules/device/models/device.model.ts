@@ -126,6 +126,7 @@ export const verificationBatches = pgTable('verification_batches', {
   ), // Куда везем (ссылка на вашу таблицу)
   status: text('status').notNull().default('draft'), // 'draft' | 'sent' | 'completed'
   comment: text('comment'),
+  type: text('type').notNull().default('verification'), // 'verification' | 'inspection'
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

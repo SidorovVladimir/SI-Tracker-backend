@@ -1,4 +1,5 @@
 import { Context } from '../../../context';
+import { VerificationPlanningService } from '../../device/service/verificationPlanningService';
 import { InspectionService } from '../service/inspection.service';
 
 export const Query = {
@@ -23,21 +24,43 @@ export const Query = {
       offset
     );
   },
+
+  getInspectionBatchesArchive: async (
+    _: unknown,
+    {
+      limit,
+      offset,
+    }: {
+      limit: number;
+      offset: number;
+    },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    const planningService = new VerificationPlanningService(db);
+    const inspectionService = new InspectionService(db, planningService);
+
+    return await inspectionService.getInspectionBatchesArchive(limit, offset);
+  },
 };
 
 export const Mutation = {
   createBulkInspection: async (
     _: unknown,
     {
-      deviceIds,
+      items,
+      intervalMonths,
     }: {
-      deviceIds: string[];
+      items: any[];
+      intervalMonths: number;
     },
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
     return await new InspectionService(db).createBulkInspection(
-      deviceIds,
+      items,
+      intervalMonths,
       currentUser.id
     );
   },

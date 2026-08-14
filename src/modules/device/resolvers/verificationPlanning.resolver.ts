@@ -70,7 +70,11 @@ export const Query = {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
     const planningService = new VerificationPlanningService(db);
-    return await planningService.getVerificationBatches(year, status);
+    return await planningService.getVerificationBatches(
+      year,
+      status,
+      'verification'
+    );
   },
   getDraftBatchesByMonth: async (
     _: unknown,

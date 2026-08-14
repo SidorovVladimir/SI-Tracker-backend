@@ -1,3 +1,8 @@
+input InspectionItemInput {
+  deviceId: ID!
+  isSuccess: Boolean!
+}
+
 type InspectionPoolItem {
   id: ID!
   name: String!
@@ -15,14 +20,43 @@ type InspectionPoolResponse {
   yearlySummary: [MonthlySummary!]!
 }
 
+type InspectedDevice {
+  id: ID!
+  name: String!
+  model: String!
+  serialNumber: String!
+  isSuccess: Boolean!
+}
+
+type InspectionBatchItem {
+  id: ID!
+  number: String!
+  date: String!
+  comment: String
+  devices: [InspectedDevice!]!
+}
+
+type InspectionArchiveResponse {
+  items: [InspectionBatchItem!]!
+  totalCount: Int!
+}
+
 extend type Query {
   getInspectionPoolByMonth(
     targetMonth: String!
     limit: Int!
     offset: Int!
   ): InspectionPoolResponse!
+
+  getInspectionBatchesArchive(
+    limit: Int!
+    offset: Int!
+  ): InspectionArchiveResponse!
 }
 
 extend type Mutation {
-  createBulkInspection(deviceIds: [ID!]!): Boolean!
+  createBulkInspection(
+    items: [InspectionItemInput!]!
+    intervalMonths: Int!
+  ): Boolean!
 }

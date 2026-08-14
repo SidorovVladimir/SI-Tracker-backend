@@ -1,0 +1,1 @@
+ALTER TABLE "verification_batches" ADD COLUMN "type" text DEFAULT 'verification' NOT NULL;

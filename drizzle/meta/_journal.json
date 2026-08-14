@@ -43,6 +43,13 @@
       "when": 1786503502086,
       "tag": "0005_mature_bulldozer",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786699623380,
+      "tag": "0006_thin_kat_farrell",
+      "breakpoints": true
     }
   ]
 }
