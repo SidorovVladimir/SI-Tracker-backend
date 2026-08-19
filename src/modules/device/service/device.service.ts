@@ -6,6 +6,7 @@ import {
   deviceDocuments,
   devices,
   devicesToBatches,
+  verificationBatches,
 } from '../models/device.model';
 import { scopes, scopesToDevices } from '../../catalog/models/scope.model';
 import { verifications } from '../models/verification.model';
@@ -34,6 +35,12 @@ import { arshinQueue } from '../queues/arshin.queue';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
 import { DOCUMENTS_DIR } from '../../../config/path.config';
+
+export interface PrintBarcodesInput {
+  deviceIds?: string[];
+  // controlType?: string;
+  historyLinkIds?: string[];
+}
 
 export class DeviceService {
   constructor(
@@ -132,101 +139,172 @@ export class DeviceService {
     //   );
     // }
 
+    // if (filter?.metrologyControle) {
+    //   const controlName = String(filter.metrologyControle).toLowerCase().trim();
+
+    //   if (controlName === 'осмотр') {
+    //     // Если ищут приборы по Осмотру — смотрим на самый свежий осмотр
+    //     conditions.push(
+    //       sql`${devices.id} IN (
+    //         SELECT v.device_id FROM verifications v
+    //         JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+    //         WHERE LOWER(TRIM(mct.name)) = 'осмотр'
+    //         AND v.date = (
+    //           SELECT MAX(date) FROM verifications
+    //           WHERE device_id = v.device_id
+    //           AND metrology_controle_type_id = (SELECT id FROM metrology_controle_types WHERE LOWER(TRIM(name)) = 'осмотр')
+    //         )
+    //       )`
+    //     );
+    //   } else {
+    //     // Если ищут Поверку/Калибровку/Аттестацию — смотрим на MAX(valid_until) только среди них!
+    //     conditions.push(
+    //       sql`${devices.id} IN (
+    //         SELECT v.device_id FROM verifications v
+    //         JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+    //         WHERE LOWER(TRIM(mct.name)) = ${controlName}
+    //         AND v.valid_until = (
+    //           SELECT MAX(valid_until) FROM verifications v2
+    //           JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
+    //           WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
+    //         )
+    //       )`
+    //     );
+    //   }
+    // }
+
+    // // 5. ИСПРАВЛЕННЫЕ ДАТЫ: Фильтры по датам теперь смотрят ИСКЛЮЧИТЕЛЬНО на государеву поверку (игнорируя осмотры)
+    // if (filter?.dateStart) {
+    //   const safeDateStart = String(filter.dateStart).slice(0, 10);
+    //   conditions.push(
+    //     sql`${devices.id} IN (
+    //       SELECT v.device_id FROM verifications v
+    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+    //       WHERE LOWER(TRIM(mct.name)) != 'осмотр'
+    //       AND v.valid_until::date >= ${safeDateStart}::date
+    //       AND v.valid_until = (
+    //         SELECT MAX(valid_until) FROM verifications v2
+    //         JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
+    //         WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
+    //       )
+    //     )`
+    //   );
+    // }
+
+    // if (filter?.dateEnd) {
+    //   const safeDateEnd = String(filter.dateEnd).slice(0, 10);
+    //   conditions.push(
+    //     sql`${devices.id} IN (
+    //       SELECT v.device_id FROM verifications v
+    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+    //       WHERE LOWER(TRIM(mct.name)) != 'осмотр'
+    //       AND v.valid_until::date <= ${safeDateEnd}::date
+    //       AND v.valid_until = (
+    //         SELECT MAX(valid_until) FROM verifications v2
+    //         JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
+    //         WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
+    //       )
+    //     )`
+    //   );
+    // }
+
     if (filter?.metrologyControle) {
       const controlName = String(filter.metrologyControle).toLowerCase().trim();
 
-      if (controlName === 'осмотр') {
-        // Если ищут приборы по Осмотру — смотрим на самый свежий осмотр
-        conditions.push(
-          sql`${devices.id} IN (
-            SELECT v.device_id FROM verifications v
-            JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-            WHERE LOWER(TRIM(mct.name)) = 'осмотр'
-            AND v.date = (
-              SELECT MAX(date) FROM verifications 
-              WHERE device_id = v.device_id 
-              AND metrology_controle_type_id = (SELECT id FROM metrology_controle_types WHERE LOWER(TRIM(name)) = 'осмотр')
-            )
-          )`
-        );
-      } else {
-        // Если ищут Поверку/Калибровку/Аттестацию — смотрим на MAX(valid_until) только среди них!
-        conditions.push(
-          sql`${devices.id} IN (
-            SELECT v.device_id FROM verifications v
-            JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-            WHERE LOWER(TRIM(mct.name)) = ${controlName}
-            AND v.valid_until = (
-              SELECT MAX(valid_until) FROM verifications v2
-              JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
-              WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
-            )
-          )`
-        );
-      }
-    }
-
-    // if (filter?.dateStart) {
-    //   // Вырезаем первые 10 символов (YYYY-MM-DD), защищаясь от полных ISO-строк
-    //   const safeDateStart = String(filter.dateStart).slice(0, 10);
-
-    //   conditions.push(
-    //     sql`${devices.id} IN (
-    //       SELECT v.device_id FROM verifications v
-    //       WHERE v.valid_until::date >= ${safeDateStart}::date
-    //       AND v.valid_until = (
-    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
-    //       )
-    //     )`
-    //   );
-    // }
-
-    // // 9. Фильтр по дате "Срок действия до..."
-    // if (filter?.dateEnd) {
-    //   const safeDateEnd = String(filter.dateEnd).slice(0, 10);
-
-    //   conditions.push(
-    //     sql`${devices.id} IN (
-    //       SELECT v.device_id FROM verifications v
-    //       WHERE v.valid_until::date <= ${safeDateEnd}::date
-    //       AND v.valid_until = (
-    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
-    //       )
-    //     )`
-    //   );
-    // }
-
-    // 5. ИСПРАВЛЕННЫЕ ДАТЫ: Фильтры по датам теперь смотрят ИСКЛЮЧИТЕЛЬНО на государеву поверку (игнорируя осмотры)
-    if (filter?.dateStart) {
-      const safeDateStart = String(filter.dateStart).slice(0, 10);
       conditions.push(
         sql`${devices.id} IN (
           SELECT v.device_id FROM verifications v
           JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-          WHERE LOWER(TRIM(mct.name)) != 'осмотр'
-          AND v.valid_until::date >= ${safeDateStart}::date
-          AND v.valid_until = (
-            SELECT MAX(valid_until) FROM verifications v2
-            JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
-            WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
-          )
+          LEFT JOIN equipment_types eq ON ${devices.equipmentTypeId} = eq.id
+          WHERE LOWER(TRIM(mct.name)) = ${controlName}
+            -- Проверяем, что эта запись является ОПРЕДЕЛЯЮЩЕЙ по правилам метролога:
+            AND LOWER(TRIM(mct.name)) = CASE 
+              WHEN LOWER(TRIM(eq.name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
+              WHEN LOWER(TRIM(eq.name)) = 'средство измерений (си)' THEN 
+                CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' 
+                  AND ${devices.id} NOT IN (
+                    SELECT device_id FROM scopes_to_devices std 
+                    JOIN scopes sc ON std.scope_id = sc.id 
+                    WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+                  ) THEN 'поверка' ELSE 'осмотр' END
+              WHEN LOWER(TRIM(eq.name)) = 'средство контроля (ск)' THEN 
+                CASE WHEN ${devices.id} IN (
+                  SELECT device_id FROM scopes_to_devices std 
+                  JOIN scopes sc ON std.scope_id = sc.id 
+                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+                ) THEN 'осмотр'
+                WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
+                ELSE 'калибровка' END
+              WHEN LOWER(TRIM(eq.name)) = 'испытательное оборудование (ио)' THEN 
+                CASE WHEN ${devices.id} IN (
+                  SELECT device_id FROM scopes_to_devices std 
+                  JOIN scopes sc ON std.scope_id = sc.id 
+                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+                ) THEN 'осмотр' ELSE 'аттестация' END
+              ELSE 'осмотр'
+            END
+            -- И что это самый свежий документ этого типа
+            AND v.date = (
+              SELECT MAX(v3.date) FROM verifications v3 
+              WHERE v3.device_id = v.device_id AND v3.metrology_controle_type_id = v.metrology_controle_type_id
+            )
         )`
       );
     }
 
-    if (filter?.dateEnd) {
-      const safeDateEnd = String(filter.dateEnd).slice(0, 10);
+    // 8. ИСПРАВЛЕННЫЕ ФИЛЬТРЫ ПО ДАТАМ (Ищут только внутри ОПРЕДЕЛЯЮЩЕГО контроля)
+    if (filter?.dateStart || filter?.dateEnd) {
+      const dateStartCond = filter?.dateStart
+        ? sql`AND v.valid_until::date >= ${String(filter.dateStart).slice(
+            0,
+            10
+          )}::date`
+        : sql`1=1`;
+      const dateEndCond = filter?.dateEnd
+        ? sql`AND v.valid_until::date <= ${String(filter.dateEnd).slice(
+            0,
+            10
+          )}::date`
+        : sql`1=1`;
+
       conditions.push(
         sql`${devices.id} IN (
           SELECT v.device_id FROM verifications v
           JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-          WHERE LOWER(TRIM(mct.name)) != 'осмотр'
-          AND v.valid_until::date <= ${safeDateEnd}::date
-          AND v.valid_until = (
-            SELECT MAX(valid_until) FROM verifications v2
-            JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
-            WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
-          )
+          LEFT JOIN equipment_types eq ON ${devices.equipmentTypeId} = eq.id
+          WHERE 1=1
+            ${dateStartCond}
+            ${dateEndCond}
+            -- Жесткая привязка к типу контроля метролога
+            AND LOWER(TRIM(mct.name)) = CASE 
+              WHEN LOWER(TRIM(eq.name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
+              WHEN LOWER(TRIM(eq.name)) = 'средство измерений (си)' THEN 
+                CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' 
+                  AND ${devices.id} NOT IN (
+                    SELECT device_id FROM scopes_to_devices std 
+                    JOIN scopes sc ON std.scope_id = sc.id 
+                    WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+                  ) THEN 'поверка' ELSE 'осмотр' END
+              WHEN LOWER(TRIM(eq.name)) = 'средство контроля (ск)' THEN 
+                CASE WHEN ${devices.id} IN (
+                  SELECT device_id FROM scopes_to_devices std 
+                  JOIN scopes sc ON std.scope_id = sc.id 
+                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+                ) THEN 'осмотр'
+                WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
+                ELSE 'калибровка' END
+              WHEN LOWER(TRIM(eq.name)) = 'испытательное оборудование (ио)' THEN 
+                CASE WHEN ${devices.id} IN (
+                  SELECT device_id FROM scopes_to_devices std 
+                  JOIN scopes sc ON std.scope_id = sc.id 
+                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+                ) THEN 'осмотр' ELSE 'аттестация' END
+              ELSE 'осмотр'
+            END
+            AND v.date = (
+              SELECT MAX(v3.date) FROM verifications v3 
+              WHERE v3.device_id = v.device_id AND v3.metrology_controle_type_id = v.metrology_controle_type_id
+            )
         )`
       );
     }
@@ -255,6 +333,12 @@ export class DeviceService {
         manufacturer: true,
       },
       with: {
+        equipmentType: { columns: { name: true } },
+        scopesToDevices: {
+          with: {
+            scope: true,
+          },
+        },
         status: { columns: { name: true } },
         productionSite: {
           columns: { name: true },
@@ -279,29 +363,90 @@ export class DeviceService {
       },
     });
 
-    // return {
-    //   items: items.map((d) => ({
-    //     ...d,
-    //     latestVerification: d.verifications[0] || null,
-    //   })),
-    //   totalCount: countResult?.count ?? 0,
-    // };
-
     // 6. МАППИНГ (Разделение записей по логическим колонкам для DataGrid)
     return {
       items: items.map((d) => {
         // Ищем самую свежую официальную поверку / калибровку
-        const latestVerification =
-          d.verifications.find(
-            (v) =>
-              v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
-          ) || null;
+        //     const latestVerification =
+        //       d.verifications.find(
+        //         (v) =>
+        //           v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+        //       ) || null;
 
-        // Ищем самый свежий внутренний осмотр
-        const latestInspection =
+        //     // Ищем самый свежий внутренний осмотр
+        //     const latestInspection =
+        //       d.verifications.find(
+        //         (v) =>
+        //           v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
+        //       ) || null;
+
+        //     return {
+        //       id: d.id,
+        //       name: d.name,
+        //       model: d.model,
+        //       grsiNumber: d.grsiNumber,
+        //       serialNumber: d.serialNumber,
+        //       inventoryNumber: d.inventoryNumber,
+        //       releaseDate: d.releaseDate,
+        //       manufacturer: d.manufacturer,
+        //       status: d.status,
+        //       productionSite: d.productionSite,
+
+        //       // Отдаем на фронтенд два РАЗДЕЛЬНЫХ объекта
+        //       latestVerification,
+        //       latestInspection,
+        //     };
+        //   }),
+        //   totalCount: countResult?.count ?? 0,
+        // };
+        const eqTypeName = d.equipmentType?.name?.toLowerCase().trim() ?? '';
+        const grsiNumber = d.grsiNumber;
+        const hasGrsi = !!grsiNumber && grsiNumber.trim() !== '';
+
+        const deviceScopes = (d.scopesToDevices ?? [])
+          .filter((s: any) => s?.scope?.name)
+          .map((s: any) => s.scope.name.toLowerCase().trim());
+
+        const isNotGr =
+          deviceScopes.includes('не гр') ||
+          deviceScopes.includes(
+            'вне сферы государственного регулирования (не гр)'
+          );
+
+        // 1. Сначала ВСЕГДА находим самый свежий внутренний осмотр для отдельной колонки
+        const absoluteLatestInspection =
           d.verifications.find(
             (v) =>
               v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
+          ) || null;
+
+        // 2. 🎯 ВЫЧИСЛЯЕМ СТРОГОЕ НАЗВАНИЕ ЦЕЛЕВОГО КОНТРОЛЯ:
+        let targetControlName = 'осмотр';
+
+        if (
+          eqTypeName === 'индикатор' ||
+          eqTypeName === 'вспомогательное оборудование (во)'
+        ) {
+          targetControlName = 'осмотр';
+        } else if (eqTypeName === 'средство измерений (си)') {
+          targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
+        } else if (eqTypeName === 'средство контроля (ск)') {
+          targetControlName = isNotGr
+            ? 'осмотр'
+            : hasGrsi
+            ? 'поверка'
+            : 'калибровка';
+        } else if (eqTypeName === 'испытательное оборудование (ио)') {
+          targetControlName = isNotGr ? 'осмотр' : 'аттестация';
+        }
+
+        // 3. 🎯 ИЩЕМ В ИСТОРИИ ЗАПИСЬ СТРОГО С ВЫЧИСЛЕННЫМ НАЗВАНИЕМ КОНТРОЛЯ
+        // Благодаря [v.date DESC] в findMany, это будет самый свежий документ именно ЭТОГО вида
+        const targetControl =
+          d.verifications.find(
+            (v) =>
+              v.metrologyControleType?.name?.toLowerCase().trim() ===
+              targetControlName
           ) || null;
 
         return {
@@ -316,9 +461,11 @@ export class DeviceService {
           status: d.status,
           productionSite: d.productionSite,
 
-          // Отдаем на фронтенд два РАЗДЕЛЬНЫХ объекта
-          latestVerification,
-          latestInspection,
+          // Целевой контроль теперь выведет СТРОГО нужный документ (например, только калибровку для СК без ГРСИ)
+          latestVerification: targetControl,
+
+          // Колонка осмотра остается независимой
+          latestInspection: absoluteLatestInspection,
         };
       }),
       totalCount: countResult?.count ?? 0,
@@ -891,7 +1038,42 @@ export class DeviceService {
           filePathsToDiskDelete.push(fullFilePath);
         }
 
+        const relatedBatches = await tx
+          .select({ batchId: devicesToBatches.batchId })
+          .from(devicesToBatches)
+          .where(eq(devicesToBatches.deviceId, id));
+
+        const batchIdsToCheck = relatedBatches.map((b) => b.batchId);
+
         await tx.delete(devices).where(eq(devices.id, id));
+
+        if (batchIdsToCheck.length > 0) {
+          // 1. Считаем, сколько приборов осталось в каждой из этих партий
+          const remainingCounts = await tx
+            .select({
+              batchId: devicesToBatches.batchId,
+              count: sql<number>`count(*)::int`,
+            })
+            .from(devicesToBatches)
+            .where(inArray(devicesToBatches.batchId, batchIdsToCheck))
+            .groupBy(devicesToBatches.batchId);
+
+          // Находим те ID партий, которые всё еще имеют хотя бы 1 прибор
+          const activeBatchIds = remainingCounts.map((r) => r.batchId);
+
+          // 2. Вычисляем партии, которые стали абсолютно пустыми
+          // (были в списке проверки, но их нет в списке активных)
+          const emptyBatchIds = batchIdsToCheck.filter(
+            (id) => !activeBatchIds.includes(id)
+          );
+
+          // 3. Если нашли пустые партии — удаляем их из базы данных
+          if (emptyBatchIds.length > 0) {
+            await tx
+              .delete(verificationBatches)
+              .where(inArray(verificationBatches.id, emptyBatchIds));
+          }
+        }
       });
 
       for (const filePath of filePathsToDiskDelete) {
@@ -1703,37 +1885,201 @@ export class DeviceService {
     }
   }
 
-  async getDevicesBarcodeData(ids: string[]) {
-    if (!ids || ids.length === 0) return [];
+  // async getDevicesBarcodeData(ids: string[]) {
+  //   if (!ids || ids.length === 0) return [];
 
-    const cleanIds = ids.map((id) => id.toLowerCase().trim());
+  //   const cleanIds = ids.map((id) => id.toLowerCase().trim());
 
-    return await this.db
-      .select({
-        id: devices.id,
-        name: devices.name,
-        model: devices.model,
-        serialNumber: devices.serialNumber,
-        statusName: statuses.name,
-        controlType: metrologyControleTypes.name,
-        validUntil: verifications.validUntil,
-      })
-      .from(devices)
-      .leftJoin(statuses, eq(devices.statusId, statuses.id))
-      .leftJoin(
-        verifications,
-        and(
-          eq(verifications.deviceId, devices.id),
-          eq(
-            verifications.date,
-            sql`(SELECT MAX(date) FROM verifications WHERE device_id = ${devices.id})`
+  //   return await this.db
+  //     .select({
+  //       id: devices.id,
+  //       name: devices.name,
+  //       model: devices.model,
+  //       serialNumber: devices.serialNumber,
+  //       statusName: statuses.name,
+  //       controlType: metrologyControleTypes.name,
+  //       validUntil: verifications.validUntil,
+  //     })
+  //     .from(devices)
+  //     .leftJoin(statuses, eq(devices.statusId, statuses.id))
+  //     .leftJoin(
+  //       verifications,
+  //       and(
+  //         eq(verifications.deviceId, devices.id),
+  //         eq(
+  //           verifications.date,
+  //           sql`(SELECT MAX(date) FROM verifications WHERE device_id = ${devices.id})`
+  //         )
+  //       )
+  //     )
+  //     .leftJoin(
+  //       metrologyControleTypes,
+  //       eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+  //     )
+  //     .where(inArray(devices.id, cleanIds));
+  // }
+
+  async getDevicesBarcodeData(input: PrintBarcodesInput) {
+    // const { deviceIds, controlType, historyLinkIds } = input;
+    const { deviceIds, historyLinkIds } = input;
+    const results: any[] = [];
+
+    // ВЕТКА А: ПЕЧАТЬ ИЗ АРХИВА (По явным ID связей из devices_to_batches)
+    if (historyLinkIds && historyLinkIds.length > 0) {
+      const cleanLinkIds = historyLinkIds.map((id) => id.toLowerCase().trim());
+
+      const archiveRecords = await this.db
+        .select({
+          id: devicesToBatches.id, // ID самой связи, чтобы Apollo закэшировал строку
+          name: devices.name,
+          model: devices.model,
+          serialNumber: devices.serialNumber,
+          statusName: sql<string>`CASE WHEN ${verifications.result} = 'Годен' THEN 'исправен' ELSE 'неисправен' END`,
+          controlType: sql<string>`CASE WHEN ${verificationBatches.type} = 'inspection' THEN 'осмотр' ELSE 'поверка' END`,
+          validUntil: verifications.validUntil,
+        })
+        .from(devicesToBatches)
+        .leftJoin(devices, eq(devicesToBatches.deviceId, devices.id))
+        .leftJoin(statuses, eq(devices.statusId, statuses.id))
+        .leftJoin(
+          verificationBatches,
+          eq(devicesToBatches.batchId, verificationBatches.id)
+        )
+        // Привязываемся к verifications строго по совпадению deviceId и batchId!
+        .leftJoin(
+          verifications,
+          and(
+            eq(verifications.deviceId, devicesToBatches.deviceId),
+            eq(verifications.batchId, devicesToBatches.batchId)
           )
         )
-      )
-      .leftJoin(
-        metrologyControleTypes,
-        eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
-      )
-      .where(inArray(devices.id, cleanIds));
+        .where(inArray(devicesToBatches.id, cleanLinkIds));
+
+      results.push(...archiveRecords);
+    }
+
+    // ВЕТКА Б: УМНАЯ ПЕЧАТЬ С ГЛАВНОЙ СТРАНИЦЫ (По чистым ID приборов)
+    if (deviceIds && deviceIds.length > 0) {
+      const cleanDeviceIds = deviceIds.map((id) => id.toLowerCase().trim());
+
+      for (const deviceId of cleanDeviceIds) {
+        let typeConditionSql = '';
+
+        // 🎯 ЛОГИКА АВТОМАТИКИ НА СЕРВЕРЕ:
+        // Если фронтенд НЕ передал controlType (печать с главной страницы)
+        // if (!controlType) {
+        // Делаем экспресс-проверку прибора в БД: относится ли он к сфере госрегулирования (СИ)?
+        // Например, проверяем имя типа оборудования. Настройте это условие под вашу БД.
+        const [deviceCheck] = await this.db
+          .select({
+            typeName: equipmentTypes.name,
+            grsiNumber: devices.grsiNumber,
+          })
+          .from(devices)
+          .leftJoin(
+            equipmentTypes,
+            eq(devices.equipmentTypeId, equipmentTypes.id)
+          )
+          .where(eq(devices.id, deviceId));
+
+        const deviceScopesData = await this.db
+          .select({ scopeName: scopes.name })
+          .from(scopesToDevices)
+          .leftJoin(scopes, eq(scopesToDevices.scopeId, scopes.id))
+          .where(eq(scopesToDevices.deviceId, deviceId));
+
+        const eqTypeName = deviceCheck?.typeName?.toLowerCase().trim() ?? '';
+        const deviceScopes = deviceScopesData.map(
+          (s) => s.scopeName?.toLowerCase().trim() ?? ''
+        );
+
+        const hasGrsi =
+          !!deviceCheck?.grsiNumber && deviceCheck.grsiNumber.trim() !== '';
+
+        const isNotGr =
+          deviceScopes.includes('не гр') ||
+          deviceScopes.includes(
+            'вне сферы государственного регулирования (не гр)'
+          );
+
+        let targetControlName = 'осмотр';
+
+        if (
+          eqTypeName === 'индикатор' ||
+          eqTypeName === 'вспомогательное оборудование (во)'
+        ) {
+          // Индикаторы и ВО — это всегда осмотр без исключений
+          targetControlName = 'осмотр';
+        } else if (eqTypeName === 'средство измерений (си)') {
+          // СИ: Если есть ГРСИ И при этом (сферы пустые ИЛИ сфера точно НЕ "не ГР") -> ПОВЕРКА.
+          // Во всех остальных случаях (есть "не ГР" ИЛИ нет ГРСИ) -> ОСМОТР.
+          if (hasGrsi && !isNotGr) {
+            targetControlName = 'поверка';
+          } else {
+            targetControlName = 'осмотр';
+          }
+        } else if (eqTypeName === 'средство контроля (ск)') {
+          // СК: Если сфера "не ГР" -> ОСМОТР.
+          if (isNotGr) {
+            targetControlName = 'осмотр';
+          } else {
+            // Если другая сфера или пусто: смотрим на ГРСИ. Есть ГРСИ -> ПОВЕРКА, нет ГРСИ -> КАЛИБРОВКА.
+            targetControlName = hasGrsi ? 'поверка' : 'калибровка';
+          }
+        } else if (eqTypeName === 'испытательное оборудование (ио)') {
+          // ИО: Если сфера "не ГР" -> ОСМОТР. Если нет "не ГР" или пусто -> АТТЕСТАЦИЯ.
+          targetControlName = isNotGr ? 'осмотр' : 'аттестация';
+        }
+
+        // Формируем SQL-условие для подзапроса MAX(date)
+        typeConditionSql = `AND LOWER(mct.name) = '${targetControlName}'`;
+        // } else {
+        //   // Если фронтенд жестко передал тип (из конкретных журналов) — используем его напрямую
+        //   typeConditionSql = `AND LOWER(mct.name) = '${controlType
+        //     .toLowerCase()
+        //     .trim()}'`;
+        // }
+
+        // Вытаскиваем данные прибора с учетом вычисленного условия typeCondition
+        const [deviceRecord] = await this.db
+          .select({
+            id: devices.id,
+            name: devices.name,
+            model: devices.model,
+            serialNumber: devices.serialNumber,
+            statusName: sql<string>`CASE WHEN ${verifications.result} = 'Годен' THEN 'исправен' ELSE 'неисправен' END`,
+            controlType: metrologyControleTypes.name,
+            validUntil: verifications.validUntil,
+          })
+          .from(devices)
+          .leftJoin(statuses, eq(devices.statusId, statuses.id))
+          .leftJoin(
+            verifications,
+            and(
+              eq(verifications.deviceId, devices.id),
+              eq(
+                verifications.date,
+                sql`(
+                  SELECT MAX(v.date) 
+                  FROM verifications v
+                  LEFT JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+                  WHERE v.device_id = ${devices.id} ${sql.raw(typeConditionSql)}
+                )`
+              )
+            )
+          )
+          .leftJoin(
+            metrologyControleTypes,
+            eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+          )
+          .where(eq(devices.id, deviceId));
+
+        if (deviceRecord) {
+          results.push(deviceRecord);
+        }
+      }
+    }
+
+    return results;
   }
 }

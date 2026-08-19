@@ -4,7 +4,7 @@ import { formatZodErrors } from '../../../utils/errors';
 
 import { Context } from '../../../context';
 import { CreateDeviceInputSchema } from '../dto/CreateDeviceDto';
-import { DeviceService } from '../service/device.service';
+import { DeviceService, PrintBarcodesInput } from '../service/device.service';
 import { UpdateDeviceInputSchema } from '../dto/UpdateDeviceDto';
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
 import {
@@ -108,7 +108,7 @@ export const Query = {
 
   getDevicesBarcodeData: async (
     _: unknown,
-    { ids }: { ids: string[] },
+    { input }: { input: PrintBarcodesInput },
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
@@ -117,7 +117,7 @@ export const Query = {
       throw new Error('Доступ запрещен: требуются права администратора');
     }
     const deviceService = new DeviceService(db);
-    return await deviceService.getDevicesBarcodeData(ids);
+    return await deviceService.getDevicesBarcodeData(input);
   },
 
   getJobStatus: async (

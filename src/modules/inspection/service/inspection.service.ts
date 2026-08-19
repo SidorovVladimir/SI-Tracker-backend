@@ -47,6 +47,7 @@ export class InspectionService {
         name: true,
         model: true,
         serialNumber: true,
+        grsiNumber: true,
         receiptDate: true,
         releaseDate: true,
       },
@@ -67,6 +68,11 @@ export class InspectionService {
     const pool: any[] = [];
     const DEFAULT_FALLBACK_MONTHS = 12; // Если осмотров еще не было, планируем через год
 
+    const summaryMap: Record<string, number> = {};
+    for (let m = 1; m <= 12; m++) {
+      summaryMap[`${now.getFullYear()}-${String(m).padStart(2, '0')}`] = 0;
+    }
+
     for (const device of allDevices) {
       const statusName = device.status?.name?.toLowerCase().trim() ?? '';
       if (
@@ -77,6 +83,8 @@ export class InspectionService {
         continue;
       // 1. Извлекаем текстовые значения классификации прибора
       const eqTypeName = device.equipmentType?.name?.toLowerCase().trim() ?? '';
+      const grsiNumber = device.grsiNumber;
+      const hasGrsi = !!grsiNumber && grsiNumber.trim() !== '';
       const deviceScopes =
         device.scopesToDevices?.map((s: any) =>
           s.scope?.name?.toLowerCase().trim()
@@ -85,24 +93,50 @@ export class InspectionService {
       // 🎯 НОВОЕ ENTERPRISE-ПРАВИЛО ИСКЛЮЧЕНИЯ ИЗ ОСМОТРОВ:
       // Если это СИ или ИО, и метролог НЕ поставил сферу "не ГР" — значит этот прибор ТОЛЬКО поверяется.
       // Мастер цеха его не обслуживает, полностью исключаем его из Журнала ТО!
-      const isStrictMetrology =
-        eqTypeName === 'средство измерений (си)' ||
-        eqTypeName === 'испытательное оборудование (ио)';
+      // const isStrictMetrology =
+      //   eqTypeName === 'средство измерений (си)' ||
+      //   eqTypeName === 'испытательное оборудование (ио)';
       const isNotGr =
         deviceScopes.includes('не гр') ||
         deviceScopes.includes(
           'вне сферы государственного регулирования (не гр)'
         );
 
-      if (isStrictMetrology && !isNotGr) {
-        continue; // Прибор поверяется в ЦСМ, на странице осмотров он больше не мозолит глаза!
-      }
+      // if (isStrictMetrology && !isNotGr) {
+      //   continue; // Прибор поверяется в ЦСМ, на странице осмотров он больше не мозолит глаза!
+      // }
+
+      // if (
+      //   eqTypeName === 'средство контроля (ск)' &&
+      //   deviceScopes.length > 0 &&
+      //   !isNotGr
+      // ) {
+      //   continue;
+      // }
+      // 🎯 ВЫЧИСЛЯЕМ ЦЕЛЕВОЙ КОНТРОЛЬ ПО ОФИЦИАЛЬНЫМ ПРАВИЛАМ МЕТРОЛОГА
+      let targetControlName = 'осмотр';
 
       if (
-        eqTypeName === 'средство контроля (ск)' &&
-        deviceScopes.length > 0 &&
-        !isNotGr
+        eqTypeName === 'индикатор' ||
+        eqTypeName === 'вспомогательное оборудование (во)'
       ) {
+        targetControlName = 'осмотр';
+      } else if (eqTypeName === 'средство измерений (си)') {
+        targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
+      } else if (eqTypeName === 'средство контроля (ск)') {
+        targetControlName = isNotGr
+          ? 'осмотр'
+          : hasGrsi
+          ? 'поверка'
+          : 'калибровка';
+      } else if (eqTypeName === 'испытательное оборудование (ио)') {
+        targetControlName = isNotGr ? 'осмотр' : 'аттестация';
+      }
+
+      // 🎯 ЖЕЛЕЗНОЕ СЕРВЕРНОЕ ПРАВИЛО ДЛЯ ЖУРНАЛА ТО:
+      // Если по регламенту прибор должен ПОВЕРЯТЬСЯ, КАЛИБРОВАТЬСЯ или АТТЕСТОВЫВАТЬСЯ,
+      // мы принудительно исключаем его из этого пула. Он уйдет в Журнал Поверок.
+      if (targetControlName !== 'осмотр') {
         continue;
       }
 
@@ -149,80 +183,10 @@ export class InspectionService {
           controlType: 'осмотр',
         });
       }
-    }
 
-    // Построение годовой статистики
-    const summaryMap: Record<string, number> = {};
-    for (let m = 1; m <= 12; m++) {
-      summaryMap[`${now.getFullYear()}-${String(m).padStart(2, '0')}`] = 0;
-    }
-
-    for (const device of allDevices) {
-      const statusName = device.status?.name?.toLowerCase().trim() ?? '';
-      if (
-        ['длительное хранение', 'утерян', 'забракован', 'неисправен'].includes(
-          statusName
-        )
-      )
-        continue;
-
-      const eqTypeName = device.equipmentType?.name?.toLowerCase().trim() ?? '';
-      const deviceScopes =
-        device.scopesToDevices?.map((s: any) =>
-          s.scope?.name?.toLowerCase().trim()
-        ) ?? [];
-
-      // 🎯 НОВОЕ ENTERPRISE-ПРАВИЛО ИСКЛЮЧЕНИЯ ИЗ ОСМОТРОВ:
-      // Если это СИ или ИО, и метролог НЕ поставил сферу "не ГР" — значит этот прибор ТОЛЬКО поверяется.
-      // Мастер цеха его не обслуживает, полностью исключаем его из Журнала ТО!
-      const isStrictMetrology =
-        eqTypeName === 'средство измерений (си)' ||
-        eqTypeName === 'испытательное оборудование (ио)';
-      const isNotGr =
-        deviceScopes.includes('не гр') ||
-        deviceScopes.includes(
-          'вне сферы государственного регулирования (не гр)'
-        );
-
-      if (isStrictMetrology && !isNotGr) {
-        continue; // Прибор поверяется в ЦСМ, на странице осмотров он больше не мозолит глаза!
+      if (summaryMap[finalMonth] !== undefined) {
+        summaryMap[finalMonth]++;
       }
-
-      if (
-        eqTypeName === 'средство контроля (ск)' &&
-        deviceScopes.length > 0 &&
-        !isNotGr
-      ) {
-        continue;
-      }
-
-      const latestInspection = device.verifications?.[0];
-      let nextInspectDate = new Date();
-      if (latestInspection?.validUntil) {
-        nextInspectDate = new Date(latestInspection.validUntil);
-      } else if (latestInspection?.date) {
-        nextInspectDate = new Date(latestInspection.date);
-        nextInspectDate.setMonth(
-          nextInspectDate.getMonth() + DEFAULT_FALLBACK_MONTHS
-        );
-      } else {
-        const baseDate = device.receiptDate || device.releaseDate;
-        if (baseDate) {
-          nextInspectDate = new Date(baseDate);
-          nextInspectDate.setMonth(
-            nextInspectDate.getMonth() + DEFAULT_FALLBACK_MONTHS
-          );
-        }
-      }
-
-      const mKey = `${nextInspectDate.getFullYear()}-${String(
-        nextInspectDate.getMonth() + 1
-      ).padStart(2, '0')}`;
-      const isOvd =
-        nextInspectDate < new Date(now.getFullYear(), now.getMonth(), 1);
-      const targetM = isOvd ? currentMonthKey : mKey;
-
-      if (summaryMap[targetM] !== undefined) summaryMap[targetM]++;
     }
 
     const formattedSummary = Object.entries(summaryMap).map(
@@ -232,6 +196,88 @@ export class InspectionService {
         manualCount: 0,
       })
     );
+
+    // Построение годовой статистики
+    // const summaryMap: Record<string, number> = {};
+    // for (let m = 1; m <= 12; m++) {
+    //   summaryMap[`${now.getFullYear()}-${String(m).padStart(2, '0')}`] = 0;
+    // }
+
+    // for (const device of allDevices) {
+    //   const statusName = device.status?.name?.toLowerCase().trim() ?? '';
+    //   if (
+    //     ['длительное хранение', 'утерян', 'забракован', 'неисправен'].includes(
+    //       statusName
+    //     )
+    //   )
+    //     continue;
+
+    //   const eqTypeName = device.equipmentType?.name?.toLowerCase().trim() ?? '';
+    //   const deviceScopes =
+    //     device.scopesToDevices?.map((s: any) =>
+    //       s.scope?.name?.toLowerCase().trim()
+    //     ) ?? [];
+
+    //   // 🎯 НОВОЕ ENTERPRISE-ПРАВИЛО ИСКЛЮЧЕНИЯ ИЗ ОСМОТРОВ:
+    //   // Если это СИ или ИО, и метролог НЕ поставил сферу "не ГР" — значит этот прибор ТОЛЬКО поверяется.
+    //   // Мастер цеха его не обслуживает, полностью исключаем его из Журнала ТО!
+    //   const isStrictMetrology =
+    //     eqTypeName === 'средство измерений (си)' ||
+    //     eqTypeName === 'испытательное оборудование (ио)';
+    //   const isNotGr =
+    //     deviceScopes.includes('не гр') ||
+    //     deviceScopes.includes(
+    //       'вне сферы государственного регулирования (не гр)'
+    //     );
+
+    //   if (isStrictMetrology && !isNotGr) {
+    //     continue; // Прибор поверяется в ЦСМ, на странице осмотров он больше не мозолит глаза!
+    //   }
+
+    //   if (
+    //     eqTypeName === 'средство контроля (ск)' &&
+    //     deviceScopes.length > 0 &&
+    //     !isNotGr
+    //   ) {
+    //     continue;
+    //   }
+
+    //   const latestInspection = device.verifications?.[0];
+    //   let nextInspectDate = new Date();
+    //   if (latestInspection?.validUntil) {
+    //     nextInspectDate = new Date(latestInspection.validUntil);
+    //   } else if (latestInspection?.date) {
+    //     nextInspectDate = new Date(latestInspection.date);
+    //     nextInspectDate.setMonth(
+    //       nextInspectDate.getMonth() + DEFAULT_FALLBACK_MONTHS
+    //     );
+    //   } else {
+    //     const baseDate = device.receiptDate || device.releaseDate;
+    //     if (baseDate) {
+    //       nextInspectDate = new Date(baseDate);
+    //       nextInspectDate.setMonth(
+    //         nextInspectDate.getMonth() + DEFAULT_FALLBACK_MONTHS
+    //       );
+    //     }
+    //   }
+
+    //   const mKey = `${nextInspectDate.getFullYear()}-${String(
+    //     nextInspectDate.getMonth() + 1
+    //   ).padStart(2, '0')}`;
+    //   const isOvd =
+    //     nextInspectDate < new Date(now.getFullYear(), now.getMonth(), 1);
+    //   const targetM = isOvd ? currentMonthKey : mKey;
+
+    //   if (summaryMap[targetM] !== undefined) summaryMap[targetM]++;
+    // }
+
+    // const formattedSummary = Object.entries(summaryMap).map(
+    //   ([month, count]) => ({
+    //     month,
+    //     autoCount: count,
+    //     manualCount: 0,
+    //   })
+    // );
 
     return {
       items: pool.slice(offset, offset + limit),
@@ -311,7 +357,7 @@ export class InspectionService {
           plannedDate: now,
           status: 'completed',
           type: 'inspection',
-          comment: `Внутренний обход цеха. Периодичность: ${intervalMonths} мес.`,
+          comment: `Внутренний осмотр. Периодичность: ${intervalMonths} мес.`,
         })
         .returning();
 
@@ -329,8 +375,8 @@ export class InspectionService {
           result: item.isSuccess ? 'Годен' : 'Не годен',
           batchId: newBatch.id,
           comment: item.isSuccess
-            ? 'Плановое ТО'
-            : 'Выявлены дефекты при эксплуатации',
+            ? 'Плановый осмотр'
+            : 'Выявлены дефекты при осмотре',
         });
 
         devicesToBatchesValues.push({
@@ -363,12 +409,16 @@ export class InspectionService {
     });
   }
 
-  async getInspectionBatchesArchive(limit: number, offset: number) {
+  async getInspectionBatchesArchive(
+    limit: number,
+    offset: number,
+    year: number
+  ) {
     let rawBatches: any[] = [];
 
     if (this.planningService) {
       rawBatches = await this.planningService.getVerificationBatches(
-        undefined,
+        year,
         undefined,
         'inspection',
         limit,
@@ -386,17 +436,34 @@ export class InspectionService {
       .from(verificationBatches)
       .where(eq(verificationBatches.type, 'inspection'));
 
+    // const items = rawBatches.map((batch: any) => ({
+    //   id: batch.id,
+    //   number: batch.number,
+    //   date: batch.plannedDate.toISOString(),
+    //   comment: batch.comment,
+    //   devices: batch.devicesToBatches.map((link: any) => ({
+    //     id: link.device.id,
+    //     name: link.device.name,
+    //     model: link.device.model,
+    //     serialNumber: link.device.serialNumber,
+    //     isSuccess: link.deviceStatus === 'returned',
+    //   })),
+    // }));
+
     const items = rawBatches.map((batch: any) => ({
       id: batch.id,
       number: batch.number,
       date: batch.plannedDate.toISOString(),
       comment: batch.comment,
-      devices: batch.devicesToBatches.map((link: any) => ({
-        id: link.device.id,
-        name: link.device.name,
-        model: link.device.model,
-        serialNumber: link.device.serialNumber,
-        isSuccess: link.deviceStatus === 'returned',
+      devicesToBatches: (batch.devicesToBatches ?? []).map((link: any) => ({
+        id: link.id, // ID связи из БД (гарантирует уникальность для кэша Apollo)
+        deviceStatus: link.deviceStatus, // Исторический статус строки
+        device: {
+          id: link.device.id, // Чистый, неиспорченный UUID прибора для карточек и бирок
+          name: link.device.name,
+          model: link.device.model,
+          serialNumber: link.device.serialNumber,
+        },
       })),
     }));
 

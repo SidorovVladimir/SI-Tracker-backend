@@ -30,9 +30,11 @@ export const Query = {
     {
       limit,
       offset,
+      year,
     }: {
       limit: number;
       offset: number;
+      year: number;
     },
     { db, currentUser }: Context
   ) => {
@@ -41,7 +43,11 @@ export const Query = {
     const planningService = new VerificationPlanningService(db);
     const inspectionService = new InspectionService(db, planningService);
 
-    return await inspectionService.getInspectionBatchesArchive(limit, offset);
+    return await inspectionService.getInspectionBatchesArchive(
+      limit,
+      offset,
+      year
+    );
   },
 };
 

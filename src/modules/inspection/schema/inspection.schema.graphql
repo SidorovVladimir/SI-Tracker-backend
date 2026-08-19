@@ -20,20 +20,20 @@ type InspectionPoolResponse {
   yearlySummary: [MonthlySummary!]!
 }
 
-type InspectedDevice {
-  id: ID!
-  name: String!
-  model: String!
-  serialNumber: String!
-  isSuccess: Boolean!
+type InspectedDeviceLink {
+  id: ID! # Это id самой строки связи (link.id из Postgres)
+  deviceStatus: String! # 'returned' (Годен) или 'dismantled' (Брак)
+  device: Device! # Внутри лежит полноценный исходный тип прибора со своим чистым UUID
 }
 
+# 2. Обновляем тип элемента архива
 type InspectionBatchItem {
   id: ID!
   number: String!
   date: String!
   comment: String
-  devices: [InspectedDevice!]!
+  # Переходим со списка приборов на список связей
+  devicesToBatches: [InspectedDeviceLink!]!
 }
 
 type InspectionArchiveResponse {
@@ -51,6 +51,7 @@ extend type Query {
   getInspectionBatchesArchive(
     limit: Int!
     offset: Int!
+    year: Int!
   ): InspectionArchiveResponse!
 }
 

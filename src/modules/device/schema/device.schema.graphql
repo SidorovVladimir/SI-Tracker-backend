@@ -145,6 +145,12 @@ type JobStatusResponse {
   failedReason: String
 }
 
+input PrintBarcodesInput {
+  deviceIds: [ID!] # Используется на главной странице
+  # controlType: String # 'inspection' | 'verification' (для главной)
+  historyLinkIds: [ID!] # Используется в архивах (ID из devices_to_batches)
+}
+
 type Query {
   devices: [Device!]!
   device(id: ID!): DeviceWithRelations
@@ -155,7 +161,8 @@ type Query {
     offset: Int!
     filter: DeviceFilterInput
   ): DevicesWithRelationsResponse!
-  getDevicesBarcodeData(ids: [ID!]!): [DeviceBarcodeData!]!
+  # getDevicesBarcodeData(ids: [ID!]!): [DeviceBarcodeData!]!
+  getDevicesBarcodeData(input: PrintBarcodesInput!): [DeviceBarcodeData!]!
 
   getJobStatus(jobId: ID!): JobStatusResponse
 

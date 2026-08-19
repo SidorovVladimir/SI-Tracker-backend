@@ -143,6 +143,58 @@ export class VerificationPlanningService {
   }
 
   // 3. Удалить приборы из партии (Вернуть их обратно в автоматический пул)
+  // async removeDevicesFromBatch(
+  //   batchId: string,
+  //   deviceIds: string[],
+  //   userId: string
+  // ): Promise<boolean> {
+  //   if (deviceIds.length === 0) return true;
+
+  //   const logsToRecord: any[] = [];
+
+  //   for (const dId of deviceIds) {
+  //     const [device] = await this.db
+  //       .select()
+  //       .from(devices)
+  //       .where(eq(devices.id, dId));
+
+  //     if (device) {
+  //       logsToRecord.push({
+  //         deviceId: dId,
+  //         name: device.name,
+  //         model: device.model,
+  //         serialNumber: device.serialNumber,
+  //       });
+  //     }
+  //   }
+
+  //   await this.db
+  //     .delete(devicesToBatches)
+  //     .where(
+  //       and(
+  //         eq(devicesToBatches.batchId, batchId),
+  //         inArray(devicesToBatches.deviceId, deviceIds)
+  //       )
+  //     );
+
+  //   if (this.auditLogService && logsToRecord.length > 0) {
+  //     for (const logItem of logsToRecord) {
+  //       await this.auditLogService.logAction({
+  //         deviceId: logItem.deviceId,
+  //         action: 'remove_batch',
+  //         oldData: {
+  //           name: logItem.name,
+  //           model: logItem.model,
+  //           serialNumber: logItem.serialNumber,
+  //         },
+  //         userId,
+  //       });
+  //     }
+  //   }
+
+  //   return true;
+  // }
+
   async removeDevicesFromBatch(
     batchId: string,
     deviceIds: string[],
@@ -150,49 +202,68 @@ export class VerificationPlanningService {
   ): Promise<boolean> {
     if (deviceIds.length === 0) return true;
 
-    const logsToRecord: any[] = [];
+    // Орачиваем в транзакцию, чтобы гарантировать целостность данных
+    return await this.db.transaction(async (tx) => {
+      const logsToRecord: any[] = [];
 
-    for (const dId of deviceIds) {
-      const [device] = await this.db
-        .select()
-        .from(devices)
-        .where(eq(devices.id, dId));
+      // Используем 'tx' вместо 'this.db' для всех запросов внутри
+      for (const dId of deviceIds) {
+        const [device] = await tx
+          .select()
+          .from(devices)
+          .where(eq(devices.id, dId));
 
-      if (device) {
-        logsToRecord.push({
-          deviceId: dId,
-          name: device.name,
-          model: device.model,
-          serialNumber: device.serialNumber,
-        });
+        if (device) {
+          logsToRecord.push({
+            deviceId: dId,
+            name: device.name,
+            model: device.model,
+            serialNumber: device.serialNumber,
+          });
+        }
       }
-    }
 
-    await this.db
-      .delete(devicesToBatches)
-      .where(
-        and(
-          eq(devicesToBatches.batchId, batchId),
-          inArray(devicesToBatches.deviceId, deviceIds)
-        )
-      );
+      // 1. Исключаем выбранные приборы из партии
+      await tx
+        .delete(devicesToBatches)
+        .where(
+          and(
+            eq(devicesToBatches.batchId, batchId),
+            inArray(devicesToBatches.deviceId, deviceIds)
+          )
+        );
 
-    if (this.auditLogService && logsToRecord.length > 0) {
-      for (const logItem of logsToRecord) {
-        await this.auditLogService.logAction({
-          deviceId: logItem.deviceId,
-          action: 'remove_batch',
-          oldData: {
-            name: logItem.name,
-            model: logItem.model,
-            serialNumber: logItem.serialNumber,
-          },
-          userId,
-        });
+      // 2. 🎯 ПРОВЕРКА НА ПУСТОТУ: Считаем, сколько приборов ОСТАЛОСЬ в этой партии
+      const [remaining] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(devicesToBatches)
+        .where(eq(devicesToBatches.batchId, batchId));
+
+      // 3. Если в партии осталось 0 приборов — полностью удаляем саму партию
+      if (!remaining || remaining.count === 0) {
+        await tx
+          .delete(verificationBatches)
+          .where(eq(verificationBatches.id, batchId));
       }
-    }
 
-    return true;
+      // Логирование аудита (работает внутри транзакции)
+      if (this.auditLogService && logsToRecord.length > 0) {
+        for (const logItem of logsToRecord) {
+          await this.auditLogService.logAction({
+            deviceId: logItem.deviceId,
+            action: 'remove_batch',
+            oldData: {
+              name: logItem.name,
+              model: logItem.model,
+              serialNumber: logItem.serialNumber,
+            },
+            userId,
+          });
+        }
+      }
+
+      return true;
+    });
   }
 
   // 4. Сменить статус партии (например, 'draft' -> 'sent' когда машина уехала в ЦСМ)
@@ -233,14 +304,42 @@ export class VerificationPlanningService {
   //   return new Date();
   // }
 
-  private calculateNextVerificationDate(device: any): Date {
-    // Ищем последний легальный контроль (НЕ осмотр)
+  // private calculateNextVerificationDate(device: any): Date {
+  //   // Ищем последний легальный контроль (НЕ осмотр)
+  //   const latestVerification = device.verifications?.find(
+  //     (v: any) =>
+  //       v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+  //   );
+
+  //   // Вариант 1: Есть прошлая поверка с датой окончания
+  //   if (latestVerification?.validUntil) {
+  //     return new Date(latestVerification.validUntil);
+  //   }
+
+  //   // Вариант 2: Прибор новый — считаем от даты выпуска/получения + МПИ в месяцах
+  //   const baseDate = device.releaseDate || device.receiptDate;
+  //   if (baseDate && device.verificationInterval) {
+  //     const nextDate = new Date(baseDate);
+  //     nextDate.setMonth(nextDate.getMonth() + device.verificationInterval);
+  //     return nextDate;
+  //   }
+
+  //   // Вариант 3: Данных нет совсем
+  //   return new Date();
+  // }
+
+  private calculateNextVerificationDate(
+    device: any,
+    targetControlName: string
+  ): Date | null {
+    // 🎯 ИСПРАВЛЕНО: Ищем в истории документ СТРОГО вычисленного вида контроля
     const latestVerification = device.verifications?.find(
       (v: any) =>
-        v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+        v.metrologyControleType?.name?.toLowerCase().trim() ===
+        targetControlName
     );
 
-    // Вариант 1: Есть прошлая поверка с датой окончания
+    // Вариант 1: Есть прошлая запись именно этого контроля с датой окончания
     if (latestVerification?.validUntil) {
       return new Date(latestVerification.validUntil);
     }
@@ -254,7 +353,14 @@ export class VerificationPlanningService {
     }
 
     // Вариант 3: Данных нет совсем
-    return new Date();
+    // Возвращаем null или текущую дату.
+    // Лучше возвращать null, чтобы планировщик не пихал "пустые" приборы в текущий месяц без ведома метролога
+    // return new Date();
+    const currentMonthStart = new Date();
+    currentMonthStart.setDate(1);
+    currentMonthStart.setHours(0, 0, 0, 0);
+
+    return currentMonthStart;
   }
 
   // 5. ПОЛУЧИТЬ ПУЛ ПРИБОРОВ НА ВЫБРАННЫЙ МЕСЯЦ
@@ -279,6 +385,7 @@ export class VerificationPlanningService {
         model: true,
         serialNumber: true,
         releaseDate: true,
+        grsiNumber: true,
         receiptDate: true,
         verificationInterval: true,
         leadTimeDays: true,
@@ -326,6 +433,8 @@ export class VerificationPlanningService {
       }
 
       const eqTypeName = device.equipmentType?.name?.toLowerCase().trim() ?? '';
+      const grsiNumber = device.grsiNumber;
+      const hasGrsi = !!grsiNumber && grsiNumber.trim() !== '';
       const deviceScopes =
         device.scopesToDevices?.map((s: any) =>
           s.scope?.name?.toLowerCase().trim()
@@ -337,29 +446,61 @@ export class VerificationPlanningService {
           'вне сферы государственного регулирования (не гр)'
         );
 
-      // ЖЕЛЕЗНОЕ ПРАВИЛО: Индикаторы, ВО и СИ вне сферы госрегулирования ("не ГР") вообще не идут в планировщик партий!
+      // // ЖЕЛЕЗНОЕ ПРАВИЛО: Индикаторы, ВО и СИ вне сферы госрегулирования ("не ГР") вообще не идут в планировщик партий!
+      // if (
+      //   isNotGr || // 1. Если стоит "не ГР" — ПРИНУДИТЕЛЬНО ИСКЛЮЧАЕМ (высший приоритет, тип не важен!)
+      //   eqTypeName === 'индикатор' || // 2. Если это Индикатор — исключаем
+      //   eqTypeName === 'вспомогательное оборудование (во)' || // 3. Если это ВО — исключаем
+      //   eqTypeName === 'средство контроля (ск)'
+      // ) {
+      //   if (
+      //     eqTypeName === 'средство контроля (ск)' &&
+      //     deviceScopes.length > 0 &&
+      //     !isNotGr
+      //   ) {
+      //   } else {
+      //     continue; // Исключаем прибор из графиков поверок ЦСМ
+      //   }
+      // }
+      let targetControlName = 'осмотр';
+
       if (
-        isNotGr || // 1. Если стоит "не ГР" — ПРИНУДИТЕЛЬНО ИСКЛЮЧАЕМ (высший приоритет, тип не важен!)
-        eqTypeName === 'индикатор' || // 2. Если это Индикатор — исключаем
-        eqTypeName === 'вспомогательное оборудование (во)' || // 3. Если это ВО — исключаем
-        eqTypeName === 'средство контроля (ск)'
+        eqTypeName === 'индикатор' ||
+        eqTypeName === 'вспомогательное оборудование (во)'
       ) {
-        if (
-          eqTypeName === 'средство контроля (ск)' &&
-          deviceScopes.length > 0 &&
-          !isNotGr
-        ) {
-        } else {
-          continue; // Исключаем прибор из графиков поверок ЦСМ
-        }
+        targetControlName = 'осмотр';
+      } else if (eqTypeName === 'средство измерений (си)') {
+        targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
+      } else if (eqTypeName === 'средство контроля (ск)') {
+        targetControlName = isNotGr
+          ? 'осмотр'
+          : hasGrsi
+          ? 'поверка'
+          : 'калибровка';
+      } else if (eqTypeName === 'испытательное оборудование (ио)') {
+        targetControlName = isNotGr ? 'осмотр' : 'аттестация';
       }
 
-      const nextVerificationDate = this.calculateNextVerificationDate(device);
+      // 🎯 2. ЖЕЛЕЗНОЕ ПРАВИЛО: Если целевой контроль — ОСМОТР, прибор принудительно
+      // исключается из этого планировщика пула (поверок/калибровок), так как он идет в журнал осмотров
+      if (targetControlName === 'осмотр') {
+        continue;
+      }
+
+      const nextVerificationDate = this.calculateNextVerificationDate(
+        device,
+        targetControlName
+      );
       if (!nextVerificationDate) continue;
 
+      // const latestVerification = device.verifications?.find(
+      //   (v: any) =>
+      //     v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+      // );
       const latestVerification = device.verifications?.find(
         (v: any) =>
-          v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+          v.metrologyControleType?.name?.toLowerCase().trim() ===
+          targetControlName
       );
 
       // const latestVerification = device.verifications?.[0];
@@ -369,10 +510,11 @@ export class VerificationPlanningService {
 
       let currentControlType = latestVerification?.metrologyControleType?.name;
       if (!currentControlType) {
-        currentControlType =
-          eqTypeName === 'испытательное оборудование (ио)'
-            ? 'аттестация'
-            : 'поверка';
+        // currentControlType =
+        //   eqTypeName === 'испытательное оборудование (ио)'
+        //     ? 'аттестация'
+        //     : 'поверка';
+        currentControlType = targetControlName.toUpperCase();
       }
 
       const activeBatchLink = device.devicesToBatches?.find(
@@ -542,6 +684,7 @@ export class VerificationPlanningService {
         id: true,
         releaseDate: true,
         receiptDate: true,
+        grsiNumber: true,
         verificationInterval: true,
         leadTimeDays: true,
       },
@@ -587,6 +730,8 @@ export class VerificationPlanningService {
       }
 
       const eqTypeName = device.equipmentType?.name?.toLowerCase().trim() ?? '';
+      const grsiNumber = device.grsiNumber;
+      const hasGrsi = !!grsiNumber && grsiNumber.trim() !== '';
       const deviceScopes =
         device.scopesToDevices?.map((s: any) =>
           s.scope?.name?.toLowerCase().trim()
@@ -599,22 +744,51 @@ export class VerificationPlanningService {
         );
 
       // ЖЕЛЕЗНОЕ ПРАВИЛО: Индикаторы, ВО и СИ вне сферы госрегулирования ("не ГР") вообще не идут в планировщик партий!
+      // if (
+      //   isNotGr || // 1. Если стоит "не ГР" — ПРИНУДИТЕЛЬНО ИСКЛЮЧАЕМ (высший приоритет, тип не важен!)
+      //   eqTypeName === 'индикатор' || // 2. Если это Индикатор — исключаем
+      //   eqTypeName === 'вспомогательное оборудование (во)' || // 3. Если это ВО — исключаем
+      //   eqTypeName === 'средство контроля (ск)'
+      // ) {
+      //   if (
+      //     eqTypeName === 'средство контроля (ск)' &&
+      //     deviceScopes.length > 0 &&
+      //     !isNotGr
+      //   ) {
+      //   } else {
+      //     continue; // Исключаем прибор из графиков поверок ЦСМ
+      //   }
+      // }
+
+      let targetControlName = 'осмотр';
+
       if (
-        isNotGr || // 1. Если стоит "не ГР" — ПРИНУДИТЕЛЬНО ИСКЛЮЧАЕМ (высший приоритет, тип не важен!)
-        eqTypeName === 'индикатор' || // 2. Если это Индикатор — исключаем
-        eqTypeName === 'вспомогательное оборудование (во)' || // 3. Если это ВО — исключаем
-        eqTypeName === 'средство контроля (ск)'
+        eqTypeName === 'индикатор' ||
+        eqTypeName === 'вспомогательное оборудование (во)'
       ) {
-        if (
-          eqTypeName === 'средство контроля (ск)' &&
-          deviceScopes.length > 0 &&
-          !isNotGr
-        ) {
-        } else {
-          continue; // Исключаем прибор из графиков поверок ЦСМ
-        }
+        targetControlName = 'осмотр';
+      } else if (eqTypeName === 'средство измерений (си)') {
+        targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
+      } else if (eqTypeName === 'средство контроля (ск)') {
+        targetControlName = isNotGr
+          ? 'осмотр'
+          : hasGrsi
+          ? 'поверка'
+          : 'калибровка';
+      } else if (eqTypeName === 'испытательное оборудование (ио)') {
+        targetControlName = isNotGr ? 'осмотр' : 'аттестация';
       }
-      const nextVerificationDate = this.calculateNextVerificationDate(device);
+
+      // 🎯 2. ЖЕЛЕЗНОЕ ПРАВИЛО: Если контроль прибора — ОСМОТР,
+      // исключаем его из графиков и календаря поверки ЦСМ, так как у него свой журнал
+      if (targetControlName === 'осмотр') {
+        continue;
+      }
+
+      const nextVerificationDate = this.calculateNextVerificationDate(
+        device,
+        targetControlName
+      );
       if (!nextVerificationDate) continue;
 
       const activeBatchLink = device.devicesToBatches?.find(

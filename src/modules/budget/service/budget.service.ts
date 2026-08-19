@@ -880,8 +880,174 @@ ORDER BY "rowName" ASC, "monthNum" ASC
     };
   }
 
+  // async getVerificationRisks() {
+  //   // 1. ПОДЗАПРОС А: Находим дату самого свежего контроля для каждого прибора
+  //   const latestDatesSub = this.db
+  //     .select({
+  //       deviceId: verifications.deviceId,
+  //       maxDate: sql`MAX(${verifications.date})`.as('max_date'),
+  //     })
+  //     .from(verifications)
+  //     .leftJoin(
+  //       metrologyControleTypes,
+  //       eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+  //     )
+  //     .where(
+  //       or(
+  //         inArray(sql`lower(${metrologyControleTypes.name})`, [
+  //           'поверка',
+  //           'калибровка',
+  //         ]),
+  //         isNull(verifications.metrologyControleTypeId)
+  //       )
+  //     )
+  //     .groupBy(verifications.deviceId)
+  //     .as('latest_dates_sub');
+
+  //   // 2. ПОДЗАПРОС Б: Вытаскиваем valid_until и result строго для этой максимальной даты
+  //   const latestVerificationsSub = this.db
+  //     .select({
+  //       deviceId: verifications.deviceId,
+  //       validUntil: sql`MAX(${verifications.validUntil})`.as('valid_until'),
+  //       result: sql`MAX(${verifications.result})`.as('result'),
+  //     })
+  //     .from(verifications)
+  //     .innerJoin(
+  //       latestDatesSub,
+  //       and(
+  //         eq(verifications.deviceId, latestDatesSub.deviceId),
+  //         eq(verifications.date, latestDatesSub.maxDate)
+  //       )
+  //     )
+  //     .groupBy(verifications.deviceId)
+  //     .as('latest_verifications_sub');
+
+  //   // 3. ГЛАВНЫЙ ЗАПРОС: Группируем приборы и рассчитываем статусы риска (чистый Drizzle ORM)
+  //   const result = await this.db
+  //     .select({
+  //       cityId: cities.id,
+  //       cityName: cities.name,
+  //       companyId: companies.id,
+  //       companyName: companies.name,
+  //       siteId: productionSites.id,
+  //       siteName: productionSites.name,
+  //       // Считаем общее количество активных СИ
+  //       totalCount: sql<number>`COUNT(${devices.id})::int`,
+  //       // Рассчитываем просроченные приборы (Красные)
+  //       expiredCount: sql<number>`
+  //       COUNT(CASE WHEN
+  //         lower(${statuses.name}) = 'исправен' AND
+  //         (${latestVerificationsSub.result} = 'Не годен' OR ${latestVerificationsSub.validUntil} IS NULL OR ${latestVerificationsSub.validUntil} < CURRENT_DATE)
+  //       THEN 1 END)::int`,
+  //       // Рассчитываем предупреждения (Желтые)
+  //       warningCount: sql<number>`
+  //       COUNT(CASE WHEN
+  //         lower(${statuses.name}) LIKE '%на поверке%' OR
+  //         (lower(${statuses.name}) = 'исправен' AND ${latestVerificationsSub.validUntil} BETWEEN CURRENT_DATE AND CURRENT_DATE + 30)
+  //       THEN 1 END)::int`,
+  //     })
+  //     .from(productionSites)
+  //     .innerJoin(cities, eq(cities.id, productionSites.cityId))
+  //     .innerJoin(companies, eq(companies.id, productionSites.companyId))
+  //     // Цепляем приборы к площадкам
+  //     .leftJoin(
+  //       devices,
+  //       and(
+  //         eq(devices.productionSiteId, productionSites.id),
+  //         eq(devices.archived, false)
+  //       )
+  //     )
+  //     // Цепляем статус прибора
+  //     .leftJoin(statuses, eq(statuses.id, devices.statusId))
+  //     // Цецепляем данные нашей последней поверки из подзапроса
+  //     .leftJoin(
+  //       latestVerificationsSub,
+  //       eq(latestVerificationsSub.deviceId, devices.id)
+  //     )
+  //     .groupBy(
+  //       cities.id,
+  //       cities.name,
+  //       companies.id,
+  //       companies.name,
+  //       productionSites.id,
+  //       productionSites.name
+  //     )
+  //     .orderBy(cities.name, companies.name, productionSites.name);
+
+  //   // 4. СБОРКА ИЕРАРХИЧЕСКОГО ДЕРЕВА MAP -> ARRAY ДЛЯ ФРОНТЕНДА
+  //   const citiesMap = new Map<string, any>();
+
+  //   for (const row of result) {
+  //     if (!citiesMap.has(row.cityId)) {
+  //       citiesMap.set(row.cityId, {
+  //         id: row.cityId,
+  //         name: row.cityName,
+  //         status: 'green',
+  //         totalCount: 0,
+  //         expiredCount: 0,
+  //         warningCount: 0,
+  //         companiesMap: new Map(),
+  //       });
+  //     }
+  //     const cityNode = citiesMap.get(row.cityId);
+
+  //     if (!cityNode.companiesMap.has(row.companyId)) {
+  //       cityNode.companiesMap.set(row.companyId, {
+  //         id: row.companyId,
+  //         name: row.companyName,
+  //         status: 'green',
+  //         totalCount: 0,
+  //         expiredCount: 0,
+  //         warningCount: 0,
+  //         sites: [],
+  //       });
+  //     }
+  //     const companyNode = cityNode.companiesMap.get(row.companyId);
+
+  //     const total = Number(row.totalCount) || 0;
+  //     const expired = Number(row.expiredCount) || 0;
+  //     const warning = Number(row.warningCount) || 0;
+
+  //     let siteStatus = 'green';
+  //     if (expired > 0) siteStatus = 'error';
+  //     else if (warning > 0) siteStatus = 'warning';
+
+  //     companyNode.sites.push({
+  //       id: row.siteId,
+  //       name: row.siteName,
+  //       status: siteStatus,
+  //       totalCount: total,
+  //       expiredCount: expired,
+  //       warningCount: warning,
+  //     });
+
+  //     companyNode.totalCount += total;
+  //     companyNode.expiredCount += expired;
+  //     companyNode.warningCount += warning;
+  //     if (siteStatus === 'error') companyNode.status = 'error';
+  //     else if (siteStatus === 'warning' && companyNode.status !== 'error') {
+  //       companyNode.status = 'warning';
+  //     }
+
+  //     cityNode.totalCount += total;
+  //     cityNode.expiredCount += expired;
+  //     cityNode.warningCount += warning;
+  //     if (siteStatus === 'error') cityNode.status = 'error';
+  //     else if (siteStatus === 'warning' && cityNode.status !== 'error') {
+  //       cityNode.status = 'warning';
+  //     }
+  //   }
+
+  //   return {
+  //     cities: Array.from(citiesMap.values()).map((city) => ({
+  //       ...city,
+  //       companies: Array.from(city.companiesMap.values()),
+  //     })),
+  //   };
+  // }
   async getVerificationRisks() {
-    // 1. ПОДЗАПРОС А: Находим дату самого свежего контроля для каждого прибора
+    // 1. ПОДЗАПРОС А: Вычисляем определяющий контроль для каждого прибора
+    // и берем MAX(date) СТРОГО для этого вида контроля.
     const latestDatesSub = this.db
       .select({
         deviceId: verifications.deviceId,
@@ -892,19 +1058,70 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         metrologyControleTypes,
         eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
       )
+      .leftJoin(devices, eq(verifications.deviceId, devices.id))
+      .leftJoin(equipmentTypes, eq(devices.equipmentTypeId, equipmentTypes.id))
       .where(
-        or(
-          inArray(sql`lower(${metrologyControleTypes.name})`, [
-            'поверка',
-            'калибровка',
-          ]),
-          isNull(verifications.metrologyControleTypeId)
-        )
+        // 🎯 ЖЕСТКИЙ ФИЛЬТР МЕТРОЛОГА: Проверяем, что тип записи в истории
+        // совпадает с ОПРЕДЕЛЯЮЩИМ контролем прибора, и этот контроль — НЕ осмотр!
+        sql`
+          LOWER(TRIM(${metrologyControleTypes.name})) = CASE 
+            WHEN LOWER(TRIM(${equipmentTypes.name})) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
+            WHEN LOWER(TRIM(${equipmentTypes.name})) = 'средство измерений (си)' THEN 
+              CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' 
+                AND ${devices.id} NOT IN (
+                  SELECT device_id FROM scopes_to_devices std 
+                  JOIN scopes sc ON std.scope_id = sc.id 
+                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+                ) THEN 'поверка' ELSE 'осмотр' END
+            WHEN LOWER(TRIM(${equipmentTypes.name})) = 'средство контроля (ск)' THEN 
+              CASE WHEN ${devices.id} IN (
+                SELECT device_id FROM scopes_to_devices std 
+                JOIN scopes sc ON std.scope_id = sc.id 
+                WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+              ) THEN 'осмотр'
+              WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
+              ELSE 'калибровка' END
+            WHEN LOWER(TRIM(${equipmentTypes.name})) = 'испытательное оборудование (ио)' THEN 
+              CASE WHEN ${devices.id} IN (
+                SELECT device_id FROM scopes_to_devices std 
+                JOIN scopes sc ON std.scope_id = sc.id 
+                WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+              ) THEN 'осмотр' ELSE 'аттестация' END
+            ELSE 'осмотр'
+          END
+          -- 🎯 ИСКЛЮЧАЕМ ОСМОТРЫ: Если определяющий контроль равен 'осмотр', 
+          -- запись вообще не берется в расчет рисков просрочки поверок ЦСМ!
+          AND CASE 
+            WHEN LOWER(TRIM(${equipmentTypes.name})) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
+            WHEN LOWER(TRIM(${equipmentTypes.name})) = 'средство измерений (си)' THEN 
+              CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' 
+                AND ${devices.id} NOT IN (
+                  SELECT device_id FROM scopes_to_devices std 
+                  JOIN scopes sc ON std.scope_id = sc.id 
+                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+                ) THEN 'поверка' ELSE 'осмотр' END
+            WHEN LOWER(TRIM(${equipmentTypes.name})) = 'средство контроля (ск)' THEN 
+              CASE WHEN ${devices.id} IN (
+                SELECT device_id FROM scopes_to_devices std 
+                JOIN scopes sc ON std.scope_id = sc.id 
+                WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+              ) THEN 'осмотр'
+              WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
+              ELSE 'калибровка' END
+            WHEN LOWER(TRIM(${equipmentTypes.name})) = 'испытательное оборудование (ио)' THEN 
+              CASE WHEN ${devices.id} IN (
+                SELECT device_id FROM scopes_to_devices std 
+                JOIN scopes sc ON std.scope_id = sc.id 
+                WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+              ) THEN 'осмотр' ELSE 'аттестация' END
+            ELSE 'осмотр'
+          END != 'осмотр'
+        `
       )
       .groupBy(verifications.deviceId)
       .as('latest_dates_sub');
 
-    // 2. ПОДЗАПРОС Б: Вытаскиваем valid_until и result строго для этой максимальной даты
+    // 2. ПОДЗАПРОС Б: Вытаскиваем valid_until и result строго для вычисленной максимальной даты
     const latestVerificationsSub = this.db
       .select({
         deviceId: verifications.deviceId,
@@ -922,7 +1139,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
       .groupBy(verifications.deviceId)
       .as('latest_verifications_sub');
 
-    // 3. ГЛАВНЫЙ ЗАПРОС: Группируем приборы и рассчитываем статусы риска (чистый Drizzle ORM)
+    // 3. ГЛАВНЫЙ ЗАПРОС: Группируем по площадкам и считаем статистику
     const result = await this.db
       .select({
         cityId: cities.id,
@@ -931,25 +1148,47 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         companyName: companies.name,
         siteId: productionSites.id,
         siteName: productionSites.name,
-        // Считаем общее количество активных СИ
+
+        // Честный подсчет вообще всего активного оборудования площадки (тотал)
         totalCount: sql<number>`COUNT(${devices.id})::int`,
-        // Рассчитываем просроченные приборы (Красные)
+
+        // 🔴 КРАСНЫЙ СТАТУС (Просрочен) с жесткой метрологической отсечкой ВО/Индикаторов/"НЕ ГР"
         expiredCount: sql<number>`
         COUNT(CASE WHEN 
-          lower(${statuses.name}) = 'исправен' AND 
-          (${latestVerificationsSub.result} = 'Не годен' OR ${latestVerificationsSub.validUntil} IS NULL OR ${latestVerificationsSub.validUntil} < CURRENT_DATE)
+          lower(${statuses.name}) = 'исправен' 
+          -- 🎯 ИСКЛЮЧАЕМ ИНДИКАТОРЫ И ВО:
+          AND lower(trim(${equipmentTypes.name})) NOT IN ('индикатор', 'вспомогательное оборудование (во)')
+          -- 🎯 ИСКЛЮЧАЕМ СФЕРУ "НЕ ГР":
+          AND ${devices.id} NOT IN (
+            SELECT device_id FROM scopes_to_devices std 
+            JOIN scopes sc ON std.scope_id = sc.id 
+            WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+          )
+          -- Сами условия просрочки
+          AND (${latestVerificationsSub.result} = 'Не годен' OR ${latestVerificationsSub.validUntil} IS NULL OR ${latestVerificationsSub.validUntil} < CURRENT_DATE)
         THEN 1 END)::int`,
-        // Рассчитываем предупреждения (Желтые)
+
+        // 🟡 ЖЕЛТЫЙ СТАТУС (Внимание) с такой же жесткой отсечкой
         warningCount: sql<number>`
         COUNT(CASE WHEN 
-          lower(${statuses.name}) LIKE '%на поверке%' OR
-          (lower(${statuses.name}) = 'исправен' AND ${latestVerificationsSub.validUntil} BETWEEN CURRENT_DATE AND CURRENT_DATE + 30)
+          -- 🎯 ИСКЛЮЧАЕМ ИНДИКАТОРЫ И ВО:
+          lower(trim(${equipmentTypes.name})) NOT IN ('индикатор', 'вспомогательное оборудование (во)')
+          -- 🎯 ИСКЛЮЧАЕМ СФЕРУ "НЕ ГР":
+          AND ${devices.id} NOT IN (
+            SELECT device_id FROM scopes_to_devices std 
+            JOIN scopes sc ON std.scope_id = sc.id 
+            WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+          )
+          -- Сами условия предупреждения
+          AND (
+            lower(${statuses.name}) LIKE '%на поверке%' OR
+            (lower(${statuses.name}) = 'исправен' AND ${latestVerificationsSub.validUntil} BETWEEN CURRENT_DATE AND CURRENT_DATE + 30)
+          )
         THEN 1 END)::int`,
       })
       .from(productionSites)
       .innerJoin(cities, eq(cities.id, productionSites.cityId))
       .innerJoin(companies, eq(companies.id, productionSites.companyId))
-      // Цепляем приборы к площадкам
       .leftJoin(
         devices,
         and(
@@ -957,9 +1196,9 @@ ORDER BY "rowName" ASC, "monthNum" ASC
           eq(devices.archived, false)
         )
       )
-      // Цепляем статус прибора
+      // 🎯 ОБЯЗАТЕЛЬНО: Подключаем типы оборудования во внешнем запросе для фильтрации
+      .leftJoin(equipmentTypes, eq(devices.equipmentTypeId, equipmentTypes.id))
       .leftJoin(statuses, eq(statuses.id, devices.statusId))
-      // Цецепляем данные нашей последней поверки из подзапроса
       .leftJoin(
         latestVerificationsSub,
         eq(latestVerificationsSub.deviceId, devices.id)
@@ -973,8 +1212,7 @@ ORDER BY "rowName" ASC, "monthNum" ASC
         productionSites.name
       )
       .orderBy(cities.name, companies.name, productionSites.name);
-
-    // 4. СБОРКА ИЕРАРХИЧЕСКОГО ДЕРЕВА MAP -> ARRAY ДЛЯ ФРОНТЕНДА
+    // 4. СБОРКА ИЕРАРХИЧЕСКОГО ДЕРЕВА MAP -> ARRAY
     const citiesMap = new Map<string, any>();
 
     for (const row of result) {
