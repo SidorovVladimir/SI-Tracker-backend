@@ -1935,7 +1935,8 @@ export class DeviceService {
           model: devices.model,
           serialNumber: devices.serialNumber,
           statusName: sql<string>`CASE WHEN ${verifications.result} = 'Годен' THEN 'исправен' ELSE 'неисправен' END`,
-          controlType: sql<string>`CASE WHEN ${verificationBatches.type} = 'inspection' THEN 'осмотр' ELSE 'поверка' END`,
+          // controlType: sql<string>`CASE WHEN ${verificationBatches.type} = 'inspection' THEN 'осмотр' ELSE 'поверка' END`,
+          controlType: metrologyControleTypes.name,
           validUntil: verifications.validUntil,
         })
         .from(devicesToBatches)
@@ -1953,6 +1954,11 @@ export class DeviceService {
             eq(verifications.batchId, devicesToBatches.batchId)
           )
         )
+        .leftJoin(
+          metrologyControleTypes,
+          eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+        )
+
         .where(inArray(devicesToBatches.id, cleanLinkIds));
 
       results.push(...archiveRecords);
@@ -1964,6 +1970,7 @@ export class DeviceService {
 
       for (const deviceId of cleanDeviceIds) {
         let typeConditionSql = '';
+        console.log('1', typeConditionSql);
 
         // 🎯 ЛОГИКА АВТОМАТИКИ НА СЕРВЕРЕ:
         // Если фронтенд НЕ передал controlType (печать с главной страницы)
@@ -2019,10 +2026,13 @@ export class DeviceService {
             targetControlName = 'осмотр';
           }
         } else if (eqTypeName === 'средство контроля (ск)') {
+          console.log('2', eqTypeName);
           // СК: Если сфера "не ГР" -> ОСМОТР.
           if (isNotGr) {
+            console.log('3', isNotGr);
             targetControlName = 'осмотр';
           } else {
+            console.log('4', hasGrsi);
             // Если другая сфера или пусто: смотрим на ГРСИ. Есть ГРСИ -> ПОВЕРКА, нет ГРСИ -> КАЛИБРОВКА.
             targetControlName = hasGrsi ? 'поверка' : 'калибровка';
           }
@@ -2039,6 +2049,8 @@ export class DeviceService {
         //     .toLowerCase()
         //     .trim()}'`;
         // }
+
+        console.log('5', typeConditionSql);
 
         // Вытаскиваем данные прибора с учетом вычисленного условия typeCondition
         const [deviceRecord] = await this.db
@@ -2057,13 +2069,24 @@ export class DeviceService {
             verifications,
             and(
               eq(verifications.deviceId, devices.id),
+              // eq(
+              //   verifications.date,
+              //   sql`(
+              //     SELECT MAX(v.date)
+              //     FROM verifications v
+              //     LEFT JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+              //     WHERE v.device_id = ${devices.id} ${sql.raw(typeConditionSql)}
+              //   )`
+              // )
               eq(
-                verifications.date,
+                verifications.id,
                 sql`(
-                  SELECT MAX(v.date) 
+                  SELECT v.id
                   FROM verifications v
                   LEFT JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
                   WHERE v.device_id = ${devices.id} ${sql.raw(typeConditionSql)}
+                  ORDER BY v.date DESC, v.id DESC
+                  LIMIT 1
                 )`
               )
             )
@@ -2073,6 +2096,8 @@ export class DeviceService {
             eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
           )
           .where(eq(devices.id, deviceId));
+
+        console.log('5', deviceRecord);
 
         if (deviceRecord) {
           results.push(deviceRecord);
