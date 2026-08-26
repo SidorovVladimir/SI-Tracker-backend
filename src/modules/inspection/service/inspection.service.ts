@@ -1,4 +1,4 @@
-import { eq, sql, inArray } from 'drizzle-orm';
+import { eq, sql, inArray, and, gte, lte, desc } from 'drizzle-orm';
 import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
 import {
   devices,
@@ -348,16 +348,48 @@ export class InspectionService {
       const validUntilDate = new Date();
       validUntilDate.setMonth(validUntilDate.getMonth() + intervalMonths);
 
+      const year = now.getFullYear();
+      const startOfYear = new Date(`${year}-01-01T00:00:00.000Z`);
+      const endOfYear = new Date(`${year}-12-31T23:59:59.999Z`);
+
+      const [lastBatch] = await tx
+        .select({ number: verificationBatches.number })
+        .from(verificationBatches)
+        .where(
+          and(
+            gte(verificationBatches.plannedDate, startOfYear),
+            lte(verificationBatches.plannedDate, endOfYear),
+            eq(verificationBatches.type, 'inspection')
+          )
+        )
+        .orderBy(desc(verificationBatches.createdAt))
+        .limit(1);
+
+      let nextSequenceNumber = 1;
+
+      if (lastBatch && lastBatch.number) {
+        const lastNumberStr = lastBatch.number;
+
+        const match = lastNumberStr.match(/\d+$/);
+
+        if (match) {
+          const lastSequence = parseInt(match[0], 10);
+          if (!isNaN(lastSequence)) {
+            nextSequenceNumber = lastSequence + 1;
+          }
+        }
+      }
+      const formattedSequence = String(nextSequenceNumber).padStart(3, '0');
+
       const [newBatch] = await tx
         .insert(verificationBatches)
         .values({
-          number: `АКТ-ТО-${now.getFullYear()}${String(
-            now.getMonth() + 1
-          ).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
+          number: `О-${year}/${formattedSequence}`,
           plannedDate: now,
           status: 'completed',
           type: 'inspection',
           comment: `Внутренний осмотр. Периодичность: ${intervalMonths} мес.`,
+          createdById: userId,
         })
         .returning();
 
@@ -455,6 +487,7 @@ export class InspectionService {
       number: batch.number,
       date: batch.plannedDate.toISOString(),
       comment: batch.comment,
+      createdBy: batch.createdBy,
       devicesToBatches: (batch.devicesToBatches ?? []).map((link: any) => ({
         id: link.id, // ID связи из БД (гарантирует уникальность для кэша Apollo)
         deviceStatus: link.deviceStatus, // Исторический статус строки

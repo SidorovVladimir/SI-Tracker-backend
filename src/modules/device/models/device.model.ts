@@ -134,6 +134,10 @@ export const verificationBatches = pgTable('verification_batches', {
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
+
+  createdById: uuid('created_by_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
 });
 
 // 3. Промежуточная таблица связей приборов и партий
@@ -166,6 +170,10 @@ export const verificationBatchesRelations = relations(
       references: [verificationOrganizations.id],
     }),
     devicesToBatches: many(devicesToBatches),
+    createdBy: one(users, {
+      fields: [verificationBatches.createdById],
+      references: [users.id],
+    }),
   })
 );
 

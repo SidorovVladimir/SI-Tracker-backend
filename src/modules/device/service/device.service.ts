@@ -1234,11 +1234,30 @@ export class DeviceService {
       );
     }
 
+    const [batch] = await this.db
+      .select()
+      .from(verificationBatches)
+      .where(eq(verificationBatches.id, batchId))
+      .limit(1);
+
+    if (!batch) {
+      throw new Error('Партия не найдена в системе');
+    }
+
+    const datePart = batch.plannedDate.toISOString().split('T')[0]!;
+
+    const futureDate = new Date(batch.plannedDate.getTime());
+    futureDate.setMonth(futureDate.getMonth() + 2);
+
+    const datePlusTwoMonths = futureDate.toISOString().split('T')[0]!;
+
     const arshinService = new ArshinService();
 
     const arshinData = await arshinService.fetchLatestVerificationFromArshin(
       device.grsiNumber,
-      device.serialNumber
+      device.serialNumber,
+      datePart,
+      datePlusTwoMonths
     );
 
     if (!arshinData) {
@@ -1970,7 +1989,6 @@ export class DeviceService {
 
       for (const deviceId of cleanDeviceIds) {
         let typeConditionSql = '';
-        console.log('1', typeConditionSql);
 
         // 🎯 ЛОГИКА АВТОМАТИКИ НА СЕРВЕРЕ:
         // Если фронтенд НЕ передал controlType (печать с главной страницы)
@@ -2050,8 +2068,6 @@ export class DeviceService {
         //     .trim()}'`;
         // }
 
-        console.log('5', typeConditionSql);
-
         // Вытаскиваем данные прибора с учетом вычисленного условия typeCondition
         const [deviceRecord] = await this.db
           .select({
@@ -2096,8 +2112,6 @@ export class DeviceService {
             eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
           )
           .where(eq(devices.id, deviceId));
-
-        console.log('5', deviceRecord);
 
         if (deviceRecord) {
           results.push(deviceRecord);

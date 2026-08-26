@@ -32,6 +32,7 @@ type InspectionBatchItem {
   number: String!
   date: String!
   comment: String
+  createdBy: User
   # Переходим со списка приборов на список связей
   devicesToBatches: [InspectedDeviceLink!]!
 }

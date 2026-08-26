@@ -6,10 +6,10 @@ import {
   devicesToBatches,
   devices,
 } from '../../device/models/device.model';
-import { eq, and, inArray, sql, gte, lte } from 'drizzle-orm';
+import { eq, and, inArray, sql, gte, lte, desc } from 'drizzle-orm';
 
 export interface CreateBatchInput {
-  number: string;
+  // number: string;
   plannedDate: Date;
   verificationOrganizationId?: string | null | undefined;
   comment?: string | null | undefined;
@@ -35,15 +35,49 @@ export class VerificationPlanningService {
   ) {}
 
   // 1. Создать новую партию на определенный месяц
-  async createBatch(input: CreateBatchInput) {
+  async createBatch(input: CreateBatchInput, currentUser: string) {
+    const year = input.plannedDate.getFullYear();
+    const startOfYear = new Date(`${year}-01-01T00:00:00.000Z`);
+    const endOfYear = new Date(`${year}-12-31T23:59:59.999Z`);
+
+    const [lastBatch] = await this.db
+      .select({ number: verificationBatches.number })
+      .from(verificationBatches)
+      .where(
+        and(
+          gte(verificationBatches.plannedDate, startOfYear),
+          lte(verificationBatches.plannedDate, endOfYear),
+          eq(verificationBatches.type, 'verification')
+        )
+      )
+      .orderBy(desc(verificationBatches.createdAt))
+      .limit(1);
+
+    let nextSequenceNumber = 1;
+
+    if (lastBatch && lastBatch.number) {
+      const lastNumberStr = lastBatch.number;
+
+      const match = lastNumberStr.match(/\d+$/);
+
+      if (match) {
+        const lastSequence = parseInt(match[0], 10);
+        if (!isNaN(lastSequence)) {
+          nextSequenceNumber = lastSequence + 1;
+        }
+      }
+    }
+    const formattedSequence = String(nextSequenceNumber).padStart(3, '0');
+
     const [newBatch] = await this.db
       .insert(verificationBatches)
       .values({
-        number: input.number,
+        number: `П-${year}/${formattedSequence}`,
         plannedDate: input.plannedDate,
         verificationOrganizationId: input.verificationOrganizationId ?? null,
         comment: input.comment ?? null,
         status: 'draft', // По умолчанию партия всегда создается как черновик
+        createdById: currentUser,
       })
       .returning();
 
@@ -930,6 +964,8 @@ export class VerificationPlanningService {
       limit: limit, // 🔥 Передали в Drizzle (пропустит, если undefined)
       offset: offset, // 🔥 Передали в Drizzle (пропустит, если undefined)
       with: {
+        createdBy: true,
+        verificationOrganization: true,
         devicesToBatches: {
           with: {
             device: {

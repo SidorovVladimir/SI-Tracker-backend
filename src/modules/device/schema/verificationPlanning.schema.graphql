@@ -64,12 +64,14 @@ type VerificationBatch {
   comment: String
   createdAt: String!
   updatedAt: String!
+  createdBy: User
+  verificationOrganization: VerificationOrganization
   devicesToBatches: [DeviceToBatchRelation!]!
 }
 
 # Входные данные для создания партии
 input CreateBatchInput {
-  number: String!
+  # number: String!
   plannedDate: String! # ISO дата или строка
   verificationOrganizationId: ID
   comment: String

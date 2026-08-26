@@ -26,6 +26,8 @@ export class ArshinService {
   async fetchLatestVerificationFromArshin(
     grsiNumber: string,
     serialNumber: string,
+    dataStart: string,
+    dataEnd: string,
     retries = 3,
     delayMs = 2000
   ): Promise<ArshinVerificationData | null> {
@@ -34,7 +36,9 @@ export class ArshinService {
 
     const url = `https://fgis.gost.ru/fundmetrology/eapi/vri/?mit_number=${encodeURIComponent(
       cleanGrsi
-    )}&mi_number=${encodeURIComponent(cleanSerial)}&rows=1`;
+    )}&mi_number=${encodeURIComponent(
+      cleanSerial
+    )}&verification_date_start=${dataStart}&verification_date_end=${dataEnd}`;
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       let timeoutId: NodeJS.Timeout | null = null;

@@ -109,7 +109,7 @@ export const Mutation = {
       const validatedInput = CreateVerificationBatchSchema.parse(input);
       const planningService = new VerificationPlanningService(db);
 
-      return await planningService.createBatch(validatedInput);
+      return await planningService.createBatch(validatedInput, currentUser.id);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new Error(JSON.stringify(formatZodErrors(err)));
