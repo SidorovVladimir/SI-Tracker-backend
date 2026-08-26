@@ -9,7 +9,10 @@ import {
   verificationBatches,
 } from '../models/device.model';
 import { scopes, scopesToDevices } from '../../catalog/models/scope.model';
-import { verifications } from '../models/verification.model';
+import {
+  arshinVerificationBuffer,
+  verifications,
+} from '../models/verification.model';
 import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
 import {
   primaryStandarts,
@@ -1215,6 +1218,158 @@ export class DeviceService {
     return newVerification;
   }
 
+  // async syncDeviceWithArshin(input: SyncDeviceWithArshinInput, userId: string) {
+  //   const { deviceId, batchId } = input;
+
+  //   // 1. Извлекаем прибор из базы для проверки номеров
+  //   const [device] = await this.db
+  //     .select()
+  //     .from(devices)
+  //     .where(eq(devices.id, deviceId))
+  //     .limit(1);
+  //   if (!device) {
+  //     throw new Error('Прибор не найден в системе');
+  //   }
+
+  //   if (!device.grsiNumber || !device.serialNumber) {
+  //     throw new Error(
+  //       'Синхронизация невозможна: у прибора в паспорте не заполнен номер ГРСИ или Серийный номер.'
+  //     );
+  //   }
+
+  //   const [batch] = await this.db
+  //     .select()
+  //     .from(verificationBatches)
+  //     .where(eq(verificationBatches.id, batchId))
+  //     .limit(1);
+
+  //   if (!batch) {
+  //     throw new Error('Партия не найдена в системе');
+  //   }
+
+  //   const datePart = batch.plannedDate.toISOString().split('T')[0]!;
+
+  //   const futureDate = new Date(batch.plannedDate.getTime());
+  //   futureDate.setMonth(futureDate.getMonth() + 2);
+
+  //   const datePlusTwoMonths = futureDate.toISOString().split('T')[0]!;
+
+  //   const arshinService = new ArshinService();
+
+  //   const arshinData = await arshinService.fetchLatestVerificationFromArshin(
+  //     device.grsiNumber,
+  //     device.serialNumber,
+  //     datePart,
+  //     datePlusTwoMonths
+  //   );
+
+  //   if (!arshinData) {
+  //     throw new Error(
+  //       `Сведения о поверке во ФГИС Аршин не найдены (Зав. №: ${device.serialNumber}, ГРСИ: ${device.grsiNumber}). Возможно, поверитель еще не опубликовал данные.`
+  //     );
+  //   }
+
+  //   const [controlType] = await this.db
+  //     .select()
+  //     .from(metrologyControleTypes)
+  //     .where(sql`lower(trim(${metrologyControleTypes.name})) = 'поверка'`)
+  //     .limit(1);
+
+  //   if (!controlType) {
+  //     throw new Error(
+  //       'В справочнике типов метрологического контроля не найден тип "Поверка". Проверьте наполнение базы.'
+  //     );
+  //   }
+
+  //   let orgId: string;
+  //   const [existingOrg] = await this.db
+  //     .select()
+  //     .from(verificationOrganizations)
+  //     .where(
+  //       eq(
+  //         verificationOrganizations.name,
+  //         arshinData.organizationName.toLowerCase()
+  //       )
+  //     )
+  //     .limit(1);
+
+  //   if (existingOrg) {
+  //     orgId = existingOrg.id;
+  //   } else {
+  //     const insertedOrgs = await this.db
+  //       .insert(verificationOrganizations)
+  //       .values({ name: arshinData.organizationName.toLowerCase() })
+  //       .returning();
+
+  //     const newOrg = insertedOrgs[0];
+  //     if (!newOrg) {
+  //       throw new Error(
+  //         'Не удалось сохранить поверяющую организацию в базу данных'
+  //       );
+  //     }
+  //     orgId = newOrg.id;
+  //   }
+
+  //   const parseArshinDate = (
+  //     dateStr: string | null | undefined
+  //   ): Date | null => {
+  //     if (!dateStr) return null;
+
+  //     const parts = dateStr.split('.');
+  //     if (parts.length !== 3) {
+  //       const parsedDate = new Date(dateStr);
+  //       return isNaN(parsedDate.getTime()) ? null : parsedDate;
+  //     }
+
+  //     const day = parseInt(parts[0] ?? '', 10);
+  //     const month = parseInt(parts[1] ?? '', 10) - 1;
+  //     const year = parseInt(parts[2] ?? '', 10);
+
+  //     return new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+  //   };
+
+  //   const parsedDate = parseArshinDate(arshinData.date);
+  //   if (!parsedDate) {
+  //     throw new Error(
+  //       'Не удалось распарсить обязательную дату поверки из ФГИС Аршин'
+  //     );
+  //   }
+
+  //   if (!deviceId || !controlType?.id || !orgId) {
+  //     throw new Error(
+  //       'Отсутствуют обязательные идентификаторы для привязки поверки'
+  //     );
+  //   }
+
+  //   const verificationDto = {
+  //     deviceId: deviceId,
+  //     batchId: batchId ?? null,
+  //     protocolNumber: arshinData.protocolNumber,
+  //     result: arshinData.isApplicable ? 'Годен' : 'Не годен',
+  //     documentUrl: arshinData.documentUrl,
+  //     date: parsedDate,
+  //     validUntil: parseArshinDate(arshinData.validUntil) ?? undefined,
+  //     metrologyControleTypeId: controlType.id,
+  //     verificationOrganizationId: orgId,
+  //     comment: `Автоматическая синхронизация ФГИС Аршин. ID записи: ${arshinData.arshinId}`,
+  //     cost: 0,
+  //   };
+
+  //   await this.createVerification(verificationDto, userId);
+
+  //   await this.db
+  //     .update(devicesToBatches)
+  //     .set({ deviceStatus: 'returned' })
+  //     .where(
+  //       and(
+  //         eq(devicesToBatches.deviceId, deviceId),
+  //         eq(devicesToBatches.batchId, batchId)
+  //       )
+  //     );
+
+  //   return device;
+  // }
+
   async syncDeviceWithArshin(input: SyncDeviceWithArshinInput, userId: string) {
     const { deviceId, batchId } = input;
 
@@ -1224,6 +1379,7 @@ export class DeviceService {
       .from(devices)
       .where(eq(devices.id, deviceId))
       .limit(1);
+
     if (!device) {
       throw new Error('Прибор не найден в системе');
     }
@@ -1234,6 +1390,7 @@ export class DeviceService {
       );
     }
 
+    // 2. Находим партию, чтобы знать плановую дату и привязанную организацию
     const [batch] = await this.db
       .select()
       .from(verificationBatches)
@@ -1244,67 +1401,43 @@ export class DeviceService {
       throw new Error('Партия не найдена в системе');
     }
 
+    // Формируем временной коридор для запроса к Аршину (+2 месяца от даты плана)
     const datePart = batch.plannedDate.toISOString().split('T')[0]!;
-
     const futureDate = new Date(batch.plannedDate.getTime());
     futureDate.setMonth(futureDate.getMonth() + 2);
-
     const datePlusTwoMonths = futureDate.toISOString().split('T')[0]!;
 
     const arshinService = new ArshinService();
 
-    const arshinData = await arshinService.fetchLatestVerificationFromArshin(
+    // Вызываем обновленный метод (он теперь возвращает массив ArshinBufferInsertData[])
+    const arshinRecords = await arshinService.fetchLatestVerificationFromArshin(
       device.grsiNumber,
       device.serialNumber,
       datePart,
       datePlusTwoMonths
     );
 
-    if (!arshinData) {
+    if (!arshinRecords || arshinRecords.length === 0) {
       throw new Error(
         `Сведения о поверке во ФГИС Аршин не найдены (Зав. №: ${device.serialNumber}, ГРСИ: ${device.grsiNumber}). Возможно, поверитель еще не опубликовал данные.`
       );
     }
 
-    const [controlType] = await this.db
-      .select()
-      .from(metrologyControleTypes)
-      .where(sql`lower(trim(${metrologyControleTypes.name})) = 'поверка'`)
-      .limit(1);
-
-    if (!controlType) {
-      throw new Error(
-        'В справочнике типов метрологического контроля не найден тип "Поверка". Проверьте наполнение базы.'
-      );
-    }
-
-    let orgId: string;
-    const [existingOrg] = await this.db
-      .select()
-      .from(verificationOrganizations)
-      .where(
-        eq(
-          verificationOrganizations.name,
-          arshinData.organizationName.toLowerCase()
+    // 3. Вытаскиваем организацию, которая была закреплена за партией
+    let batchOrgName = '';
+    if (batch.verificationOrganizationId) {
+      const [batchOrg] = await this.db
+        .select()
+        .from(verificationOrganizations)
+        .where(
+          eq(verificationOrganizations.id, batch.verificationOrganizationId)
         )
-      )
-      .limit(1);
+        .limit(1);
 
-    if (existingOrg) {
-      orgId = existingOrg.id;
-    } else {
-      const insertedOrgs = await this.db
-        .insert(verificationOrganizations)
-        .values({ name: arshinData.organizationName.toLowerCase() })
-        .returning();
-
-      const newOrg = insertedOrgs[0];
-      if (!newOrg) {
-        throw new Error(
-          'Не удалось сохранить поверяющую организацию в базу данных'
-        );
+      if (batchOrg) {
+        // Приводим к нижнему регистру и очищаем пробелы для точного сравнения
+        batchOrgName = batchOrg.name.toLowerCase().trim();
       }
-      orgId = newOrg.id;
     }
 
     const parseArshinDate = (
@@ -1325,44 +1458,65 @@ export class DeviceService {
       return new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
     };
 
-    const parsedDate = parseArshinDate(arshinData.date);
-    if (!parsedDate) {
-      throw new Error(
-        'Не удалось распарсить обязательную дату поверки из ФГИС Аршин'
-      );
-    }
+    // 4. Формируем массив для вставки в буферную таблицу с жесткой логикой рекомендации
+    const bufferEntries = arshinRecords.map((record) => {
+      const recordOrgClean = record.orgTitle.toLowerCase().trim();
 
-    if (!deviceId || !controlType?.id || !orgId) {
-      throw new Error(
-        'Отсутствуют обязательные идентификаторы для привязки поверки'
-      );
-    }
+      // Запись рекомендована, только если в партии задан ЦСМ и строки частично или полностью совпадают
+      const isRecommended =
+        batchOrgName !== '' &&
+        (recordOrgClean.includes(batchOrgName) ||
+          batchOrgName.includes(recordOrgClean));
 
-    const verificationDto = {
-      deviceId: deviceId,
-      batchId: batchId ?? null,
-      protocolNumber: arshinData.protocolNumber,
-      result: arshinData.isApplicable ? 'Годен' : 'Не годен',
-      documentUrl: arshinData.documentUrl,
-      date: parsedDate,
-      validUntil: parseArshinDate(arshinData.validUntil) ?? undefined,
-      metrologyControleTypeId: controlType.id,
-      verificationOrganizationId: orgId,
-      comment: `Автоматическая синхронизация ФГИС Аршин. ID записи: ${arshinData.arshinId}`,
-      cost: 0,
-    };
+      const parsedDate = parseArshinDate(record.verificationDate);
+      if (!parsedDate) {
+        throw new Error(
+          'Не удалось распарсить обязательную дату поверки из ФГИС Аршин'
+        );
+      }
 
-    await this.createVerification(verificationDto, userId);
+      return {
+        deviceId: deviceId,
+        batchId: batchId,
+        vriId: record.vriId,
+        orgTitle: record.orgTitle,
+        mitNumber: record.mitNumber,
+        verificationDate: parsedDate,
+        validDate: parseArshinDate(record.validDate) ?? undefined,
+        docNum: record.docNum,
+        applicability: record.applicability,
+        isRecommended: isRecommended,
+      };
+    });
 
     await this.db
-      .update(devicesToBatches)
-      .set({ deviceStatus: 'returned' })
+      .delete(arshinVerificationBuffer)
       .where(
         and(
-          eq(devicesToBatches.deviceId, deviceId),
-          eq(devicesToBatches.batchId, batchId)
+          eq(arshinVerificationBuffer.deviceId, deviceId),
+          eq(arshinVerificationBuffer.batchId, batchId)
         )
       );
+
+    // 6. Пакетно вставляем все найденные варианты в буфер
+    // Используем onConflictDoNothing на случай, если этот vriId уже занят в буфере другой партии
+    await this.db
+      .insert(arshinVerificationBuffer)
+      .values(bufferEntries)
+      .onConflictDoNothing();
+
+    // 7. Меняем статус прибора на "проверяется/в буфере" или обновляем devicesToBatches
+    // Рекомендую статус 'returned' ставить только после финального выбора записи метрологом,
+    // а сейчас поставить статус, говорящий о том, что данные в буфере (например, 'buffer_review' или оставить текущий)
+    // await this.db
+    //   .update(devicesToBatches)
+    //   .set({ deviceStatus: 'returned' }) // или 'ready_for_review', если завели такой статус
+    //   .where(
+    //     and(
+    //       eq(devicesToBatches.deviceId, deviceId),
+    //       eq(devicesToBatches.batchId, batchId)
+    //     )
+    //   );
 
     return device;
   }

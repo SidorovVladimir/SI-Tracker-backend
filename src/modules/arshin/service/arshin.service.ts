@@ -20,6 +20,16 @@ export interface ArshinFlexibleVerificationData {
   documentUrl: string;
 }
 
+export interface ArshinBufferInsertData {
+  vriId: string;
+  docNum: string;
+  verificationDate: string;
+  validDate: string | null;
+  applicability: boolean;
+  orgTitle: string;
+  mitNumber: string;
+}
+
 export class ArshinService {
   constructor() {}
 
@@ -30,7 +40,7 @@ export class ArshinService {
     dataEnd: string,
     retries = 3,
     delayMs = 2000
-  ): Promise<ArshinVerificationData | null> {
+  ): Promise<ArshinBufferInsertData[] | null> {
     const cleanGrsi = grsiNumber.trim();
     const cleanSerial = serialNumber.trim();
 
@@ -69,7 +79,7 @@ export class ArshinService {
 
         if (!parsed.success) {
           throw new Error(
-            'Ответ ФГИС Аршин не соответствует ожидаемой структуре.'
+            'Ответ ФГИС Аршин не соответствует ожидаемой структуру.'
           );
         }
 
@@ -79,25 +89,32 @@ export class ArshinService {
           return null;
         }
 
-        const latestVri = items[0];
-        if (!latestVri) {
-          return null;
+        // 4. Защита от дублей внутри ответа Аршина и маппинг в типы Базы Данных
+        const uniqueVriIds = new Set<string>();
+        const result: ArshinBufferInsertData[] = [];
+
+        for (const item of items) {
+          // Если такой ID уже обработан в рамках этого ответа — игнорируем, чтобы не сломать .unique() в БД
+          if (uniqueVriIds.has(item.vri_id)) continue;
+          uniqueVriIds.add(item.vri_id);
+
+          const finalDocNum =
+            item.result_docnum && item.result_docnum !== 'Нет данных'
+              ? item.result_docnum
+              : `ФГИС № ${item.vri_id}`;
+
+          result.push({
+            vriId: item.vri_id,
+            docNum: finalDocNum,
+            verificationDate: item.verification_date,
+            validDate: item.valid_date || null,
+            applicability: item.applicability,
+            orgTitle: item.org_title,
+            mitNumber: item.mit_number,
+          });
         }
 
-        const finalDocNum =
-          latestVri.result_docnum && latestVri.result_docnum !== 'Нет данных'
-            ? latestVri.result_docnum
-            : `ФГИС № ${latestVri.vri_id}`;
-
-        return {
-          arshinId: latestVri.vri_id,
-          protocolNumber: finalDocNum,
-          date: latestVri.verification_date,
-          validUntil: latestVri.valid_date || null,
-          isApplicable: latestVri.applicability,
-          organizationName: latestVri.org_title,
-          documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${latestVri.vri_id}`,
-        };
+        return result;
       } catch (error: any) {
         const isTimeout =
           error.name === 'AbortError' ||
@@ -121,6 +138,105 @@ export class ArshinService {
     }
     return null;
   }
+
+  // async fetchLatestVerificationFromArshin(
+  //   grsiNumber: string,
+  //   serialNumber: string,
+  //   dataStart: string,
+  //   dataEnd: string,
+  //   retries = 3,
+  //   delayMs = 2000
+  // ): Promise<ArshinVerificationData | null> {
+  //   const cleanGrsi = grsiNumber.trim();
+  //   const cleanSerial = serialNumber.trim();
+
+  //   const url = `https://fgis.gost.ru/fundmetrology/eapi/vri/?mit_number=${encodeURIComponent(
+  //     cleanGrsi
+  //   )}&mi_number=${encodeURIComponent(
+  //     cleanSerial
+  //   )}&verification_date_start=${dataStart}&verification_date_end=${dataEnd}`;
+
+  //   for (let attempt = 1; attempt <= retries; attempt++) {
+  //     let timeoutId: NodeJS.Timeout | null = null;
+
+  //     try {
+  //       const controller = new AbortController();
+  //       timeoutId = setTimeout(() => controller.abort(), 7000);
+
+  //       const response = await fetch(url, {
+  //         method: 'GET',
+  //         headers: { Accept: 'application/json' },
+  //         signal: controller.signal,
+  //       });
+
+  //       if (!response.ok) {
+  //         if (response.status === 429) {
+  //           throw new Error(
+  //             'Превышен лимит запросов к ФГИС Аршин (более 2 запросов в секунду). Попробуйте позже.'
+  //           );
+  //         }
+  //         throw new Error(
+  //           `Ошибка ФГИС Аршин: сервер вернул статус ${response.status}`
+  //         );
+  //       }
+
+  //       const rawData = await response.json();
+  //       const parsed = ArshinVriResponseSchema.safeParse(rawData);
+
+  //       if (!parsed.success) {
+  //         throw new Error(
+  //           'Ответ ФГИС Аршин не соответствует ожидаемой структуре.'
+  //         );
+  //       }
+
+  //       const { items, count } = parsed.data.result;
+
+  //       if (count === 0 || !items || items.length === 0) {
+  //         return null;
+  //       }
+
+  //       const latestVri = items[0];
+  //       if (!latestVri) {
+  //         return null;
+  //       }
+
+  //       const finalDocNum =
+  //         latestVri.result_docnum && latestVri.result_docnum !== 'Нет данных'
+  //           ? latestVri.result_docnum
+  //           : `ФГИС № ${latestVri.vri_id}`;
+
+  //       return {
+  //         arshinId: latestVri.vri_id,
+  //         protocolNumber: finalDocNum,
+  //         date: latestVri.verification_date,
+  //         validUntil: latestVri.valid_date || null,
+  //         isApplicable: latestVri.applicability,
+  //         organizationName: latestVri.org_title,
+  //         documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${latestVri.vri_id}`,
+  //       };
+  //     } catch (error: any) {
+  //       const isTimeout =
+  //         error.name === 'AbortError' ||
+  //         error.code === 'UND_ERR_CONNECT_TIMEOUT';
+
+  //       if (attempt === retries) {
+  //         if (isTimeout) {
+  //           throw new Error(
+  //             'Сервер ФГИС Аршин временно недоступен или блокирует запросы. Повторите попытку позже или внесите данные вручную.'
+  //           );
+  //         }
+  //         throw error;
+  //       }
+
+  //       await new Promise((resolve) => setTimeout(resolve, delayMs));
+  //     } finally {
+  //       if (timeoutId) {
+  //         clearTimeout(timeoutId);
+  //       }
+  //     }
+  //   }
+  //   return null;
+  // }
 
   async fetchFlexibleVerificationsFromArshin(
     grsiNumber: string,

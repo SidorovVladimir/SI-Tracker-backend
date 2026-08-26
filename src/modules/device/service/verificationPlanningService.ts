@@ -7,6 +7,11 @@ import {
   devices,
 } from '../../device/models/device.model';
 import { eq, and, inArray, sql, gte, lte, desc } from 'drizzle-orm';
+import {
+  arshinVerificationBuffer,
+  verifications,
+} from '../models/verification.model';
+import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
 
 export interface CreateBatchInput {
   // number: string;
@@ -980,6 +985,9 @@ export class VerificationPlanningService {
                   orderBy: (v, { desc }) => [desc(v.date)],
                   limit: 1,
                 },
+                arshinBuffers: {
+                  orderBy: (ab, { desc }) => [desc(ab.verificationDate)],
+                },
               },
             },
           },
@@ -1069,5 +1077,116 @@ export class VerificationPlanningService {
           sql`to_char(${verificationBatches.plannedDate}, 'YYYY-MM') = ${plannedMonth}`
         )
       );
+  }
+
+  async confirmArshinBufferRecord(bufferId: string, userId: string) {
+    return await this.db.transaction(async (tx) => {
+      // 1. Извлекаем выбранную запись из буфера
+      const [bufferRecord] = await tx
+        .select()
+        .from(arshinVerificationBuffer)
+        .where(eq(arshinVerificationBuffer.id, bufferId))
+        .limit(1);
+
+      if (!bufferRecord) {
+        throw new Error(
+          'Выбранная запись в буфере Аршина не найдена или уже была обработана.'
+        );
+      }
+
+      const {
+        deviceId,
+        batchId,
+        orgTitle,
+        vriId,
+        docNum,
+        verificationDate,
+        validDate,
+        applicability,
+      } = bufferRecord;
+
+      // 2. Находим ID типа метрологического контроля "Поверка"
+      const [controlType] = await tx
+        .select()
+        .from(metrologyControleTypes)
+        .where(sql`lower(trim(${metrologyControleTypes.name})) = 'поверка'`)
+        .limit(1);
+
+      if (!controlType) {
+        throw new Error(
+          'В справочнике типов контроля не найден тип "Поверка".'
+        );
+      }
+
+      // 3. Разбираемся с организацией: ищем существующую или создаем новую
+      let orgId: string;
+      const cleanOrgTitle = orgTitle.toLowerCase().trim();
+
+      const [existingOrg] = await tx
+        .select()
+        .from(verificationOrganizations)
+        .where(eq(verificationOrganizations.name, cleanOrgTitle))
+        .limit(1);
+
+      if (existingOrg) {
+        orgId = existingOrg.id;
+      } else {
+        const [newOrg] = await tx
+          .insert(verificationOrganizations)
+          .values({ name: cleanOrgTitle })
+          .returning();
+
+        if (!newOrg) {
+          throw new Error('Не удалось сохранить поверяющую организацию.');
+        }
+        orgId = newOrg.id;
+      }
+
+      // 4. Переносим данные в чистовую таблицу поверок verifications
+      await tx.insert(verifications).values({
+        deviceId: deviceId,
+        batchId: batchId,
+        protocolNumber: docNum,
+        result: applicability ? 'Годен' : 'Не годен',
+        documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${vriId}`,
+        date: verificationDate,
+        validUntil: validDate,
+        metrologyControleTypeId: controlType.id,
+        verificationOrganizationId: orgId,
+        comment: `Подтверждено метрологом из буфера совпадений Аршина. ID записи: ${vriId}`,
+        cost: '0.00',
+      });
+
+      // 5. Если запись привязана к партии — обновляем статус прибора в этой партии на 'returned'
+      if (batchId) {
+        await tx
+          .update(devicesToBatches)
+          .set({ deviceStatus: 'returned' })
+          .where(
+            and(
+              eq(devicesToBatches.deviceId, deviceId),
+              eq(devicesToBatches.batchId, batchId)
+            )
+          );
+
+        // 6. Полностью очищаем весь буфер для ЭТОГО прибора в рамкам ЭТОЙ партии
+        // (удаляем выбранную запись и остальные ошибочные варианты коллизии)
+        await tx
+          .delete(arshinVerificationBuffer)
+          .where(
+            and(
+              eq(arshinVerificationBuffer.deviceId, deviceId),
+              eq(arshinVerificationBuffer.batchId, batchId)
+            )
+          );
+      } else {
+        // Если синхронизация была одиночной вне партии, удаляем только записи этого прибора без привязки к batchId
+        await tx
+          .delete(arshinVerificationBuffer)
+          .where(eq(arshinVerificationBuffer.deviceId, deviceId));
+      }
+
+      return { success: true };
+    });
   }
 }

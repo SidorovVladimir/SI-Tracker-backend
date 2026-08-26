@@ -200,4 +200,22 @@ export const Mutation = {
     const planningService = new VerificationPlanningService(db);
     return await planningService.deleteBatch(id);
   },
+
+  confirmArshinBuffer: async (
+    _: unknown,
+    { bufferId }: { bufferId: string },
+    { db, currentUser }: Context
+  ): Promise<boolean> => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    const planningService = new VerificationPlanningService(db);
+    const result = await planningService.confirmArshinBufferRecord(
+      bufferId,
+      currentUser.id
+    );
+    return result.success;
+  },
 };

@@ -15,7 +15,7 @@ import { productionSites } from '../../location/models/productionSites.model';
 import { equipmentTypes } from '../../catalog/models/equipmentType.model';
 import { measurementTypesToDevices } from '../../catalog/models/measurementType.model';
 import { scopesToDevices } from '../../catalog/models/scope.model';
-import { verifications } from './verification.model';
+import { arshinVerificationBuffer, verifications } from './verification.model';
 import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
 import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
 import { users } from '../../user/user.model';
@@ -205,6 +205,7 @@ export const devicesRelations = relations(devices, ({ one, many }) => ({
     references: [equipmentTypes.id],
   }),
   verifications: many(verifications),
+  arshinBuffers: many(arshinVerificationBuffer),
   scopesToDevices: many(scopesToDevices),
   primaryStandartsToDevices: many(primaryStandartsToDevices),
   measurementTypesToDevices: many(measurementTypesToDevices),

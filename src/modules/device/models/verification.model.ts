@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   numeric,
   pgTable,
@@ -51,6 +52,48 @@ export const verifications = pgTable(
     deviceIdIdx: index('verifications_device_id_idx').on(table.deviceId),
     batchIdIdx: index('verifications_batch_id_idx').on(table.batchId),
     dateIdx: index('verifications_date_idx').on(table.date),
+  })
+);
+
+export const arshinVerificationBuffer = pgTable(
+  'arshin_verification_buffer',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => devices.id, { onDelete: 'cascade' }),
+    batchId: uuid('batch_id').references(() => verificationBatches.id),
+
+    vriId: varchar('vri_id', { length: 100 }).notNull().unique(), // ID записи в Аршине
+    orgTitle: text('org_title').notNull(), // Кто поверил
+    mitNumber: varchar('mit_number', { length: 100 }).notNull(), // Номер Госреестра
+    verificationDate: timestamp('verification_date').notNull(), // Дата поверки
+    validDate: timestamp('valid_date'), // Действительна до
+    docNum: varchar('doc_num').notNull(), // Номер свидетельства
+    applicability: boolean('applicability').notNull(), // Годность
+    // Системные поля подсказок для интерфейса
+    isRecommended: boolean('is_recommended').notNull().default(false), // Автоматически вычисленная подсказка
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    deviceIdIdx: index('avb_device_id_idx').on(table.deviceId),
+    batchIdIdx: index('avb_batch_id_idx').on(table.batchId),
+  })
+);
+
+export const arshinVerificationBufferRelations = relations(
+  arshinVerificationBuffer,
+  ({ one }) => ({
+    device: one(devices, {
+      fields: [arshinVerificationBuffer.deviceId],
+      references: [devices.id],
+    }),
+    batch: one(verificationBatches, {
+      fields: [arshinVerificationBuffer.batchId],
+      references: [verificationBatches.id],
+    }),
   })
 );
 

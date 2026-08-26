@@ -46,6 +46,7 @@ type DeviceInBatch {
   model: String!
   serialNumber: String!
   verifications: [ShortVerification!]
+  arshinBuffers: [ArshinVerificationBufferItem!]
 }
 
 type DeviceToBatchRelation {
@@ -116,4 +117,6 @@ type Mutation {
 
   # Удалить партию
   deleteVerificationBatch(id: ID!): Boolean!
+
+  confirmArshinBuffer(bufferId: String!): Boolean!
 }
