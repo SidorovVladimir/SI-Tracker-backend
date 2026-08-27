@@ -558,7 +558,7 @@ export class VerificationPlanningService {
         //   eqTypeName === 'испытательное оборудование (ио)'
         //     ? 'аттестация'
         //     : 'поверка';
-        currentControlType = targetControlName.toUpperCase();
+        currentControlType = targetControlName.toLowerCase();
       }
 
       const activeBatchLink = device.devicesToBatches?.find(
