@@ -209,103 +209,176 @@ export class DeviceService {
     //   );
     // }
 
-    if (filter?.metrologyControle) {
-      const controlName = String(filter.metrologyControle).toLowerCase().trim();
+    // if (filter?.metrologyControle) {
+    //   const controlName = String(filter.metrologyControle).toLowerCase().trim();
+
+    //   conditions.push(
+    //     sql`${devices.id} IN (
+    //       SELECT v.device_id FROM verifications v
+    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+    //       LEFT JOIN equipment_types eq ON ${devices.equipmentTypeId} = eq.id
+    //       WHERE LOWER(TRIM(mct.name)) = ${controlName}
+    //         -- Проверяем, что эта запись является ОПРЕДЕЛЯЮЩЕЙ по правилам метролога:
+    //         AND LOWER(TRIM(mct.name)) = CASE
+    //           WHEN LOWER(TRIM(eq.name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
+    //           WHEN LOWER(TRIM(eq.name)) = 'средство измерений (си)' THEN
+    //             CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != ''
+    //               AND ${devices.id} NOT IN (
+    //                 SELECT device_id FROM scopes_to_devices std
+    //                 JOIN scopes sc ON std.scope_id = sc.id
+    //                 WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+    //               ) THEN 'поверка' ELSE 'осмотр' END
+    //           WHEN LOWER(TRIM(eq.name)) = 'средство контроля (ск)' THEN
+    //             CASE WHEN ${devices.id} IN (
+    //               SELECT device_id FROM scopes_to_devices std
+    //               JOIN scopes sc ON std.scope_id = sc.id
+    //               WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+    //             ) THEN 'осмотр'
+    //             WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
+    //             ELSE 'калибровка' END
+    //           WHEN LOWER(TRIM(eq.name)) = 'испытательное оборудование (ио)' THEN
+    //             CASE WHEN ${devices.id} IN (
+    //               SELECT device_id FROM scopes_to_devices std
+    //               JOIN scopes sc ON std.scope_id = sc.id
+    //               WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+    //             ) THEN 'осмотр' ELSE 'аттестация' END
+    //           ELSE 'осмотр'
+    //         END
+    //         -- И что это самый свежий документ этого типа
+    //         AND v.date = (
+    //           SELECT MAX(v3.date) FROM verifications v3
+    //           WHERE v3.device_id = v.device_id AND v3.metrology_controle_type_id = v.metrology_controle_type_id
+    //         )
+    //     )`
+    //   );
+    // }
+
+    // // 8. ИСПРАВЛЕННЫЕ ФИЛЬТРЫ ПО ДАТАМ (Ищут только внутри ОПРЕДЕЛЯЮЩЕГО контроля)
+    // if (filter?.dateStart || filter?.dateEnd) {
+    //   const dateStartCond = filter?.dateStart
+    //     ? sql`AND v.valid_until::date >= ${String(filter.dateStart).slice(
+    //         0,
+    //         10
+    //       )}::date`
+    //     : sql`1=1`;
+    //   const dateEndCond = filter?.dateEnd
+    //     ? sql`AND v.valid_until::date <= ${String(filter.dateEnd).slice(
+    //         0,
+    //         10
+    //       )}::date`
+    //     : sql`1=1`;
+
+    //   conditions.push(
+    //     sql`${devices.id} IN (
+    //       SELECT v.device_id FROM verifications v
+    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+    //       LEFT JOIN equipment_types eq ON ${devices.equipmentTypeId} = eq.id
+    //       WHERE 1=1
+    //         ${dateStartCond}
+    //         ${dateEndCond}
+    //         -- Жесткая привязка к типу контроля метролога
+    //         AND LOWER(TRIM(mct.name)) = CASE
+    //           WHEN LOWER(TRIM(eq.name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
+    //           WHEN LOWER(TRIM(eq.name)) = 'средство измерений (си)' THEN
+    //             CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != ''
+    //               AND ${devices.id} NOT IN (
+    //                 SELECT device_id FROM scopes_to_devices std
+    //                 JOIN scopes sc ON std.scope_id = sc.id
+    //                 WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+    //               ) THEN 'поверка' ELSE 'осмотр' END
+    //           WHEN LOWER(TRIM(eq.name)) = 'средство контроля (ск)' THEN
+    //             CASE WHEN ${devices.id} IN (
+    //               SELECT device_id FROM scopes_to_devices std
+    //               JOIN scopes sc ON std.scope_id = sc.id
+    //               WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+    //             ) THEN 'осмотр'
+    //             WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
+    //             ELSE 'калибровка' END
+    //           WHEN LOWER(TRIM(eq.name)) = 'испытательное оборудование (ио)' THEN
+    //             CASE WHEN ${devices.id} IN (
+    //               SELECT device_id FROM scopes_to_devices std
+    //               JOIN scopes sc ON std.scope_id = sc.id
+    //               WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+    //             ) THEN 'осмотр' ELSE 'аттестация' END
+    //           ELSE 'осмотр'
+    //         END
+    //         AND v.date = (
+    //           SELECT MAX(v3.date) FROM verifications v3
+    //           WHERE v3.device_id = v.device_id AND v3.metrology_controle_type_id = v.metrology_controle_type_id
+    //         )
+    //     )`
+    //   );
+    // }
+    if (filter?.metrologyControle || filter?.dateStart || filter?.dateEnd) {
+      const controlName = filter.metrologyControle
+        ? String(filter.metrologyControle).toLowerCase().trim()
+        : null;
+
+      const safeDateStart = filter.dateStart
+        ? String(filter.dateStart).slice(0, 10)
+        : null;
+      const safeDateEnd = filter.dateEnd
+        ? String(filter.dateEnd).slice(0, 10)
+        : null;
 
       conditions.push(
         sql`${devices.id} IN (
-          SELECT v.device_id FROM verifications v
-          JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-          LEFT JOIN equipment_types eq ON ${devices.equipmentTypeId} = eq.id
-          WHERE LOWER(TRIM(mct.name)) = ${controlName}
-            -- Проверяем, что эта запись является ОПРЕДЕЛЯЮЩЕЙ по правилам метролога:
-            AND LOWER(TRIM(mct.name)) = CASE 
-              WHEN LOWER(TRIM(eq.name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
-              WHEN LOWER(TRIM(eq.name)) = 'средство измерений (си)' THEN 
-                CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' 
-                  AND ${devices.id} NOT IN (
-                    SELECT device_id FROM scopes_to_devices std 
-                    JOIN scopes sc ON std.scope_id = sc.id 
-                    WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-                  ) THEN 'поверка' ELSE 'осмотр' END
-              WHEN LOWER(TRIM(eq.name)) = 'средство контроля (ск)' THEN 
-                CASE WHEN ${devices.id} IN (
-                  SELECT device_id FROM scopes_to_devices std 
-                  JOIN scopes sc ON std.scope_id = sc.id 
-                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-                ) THEN 'осмотр'
-                WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
-                ELSE 'калибровка' END
-              WHEN LOWER(TRIM(eq.name)) = 'испытательное оборудование (ио)' THEN 
-                CASE WHEN ${devices.id} IN (
-                  SELECT device_id FROM scopes_to_devices std 
-                  JOIN scopes sc ON std.scope_id = sc.id 
-                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-                ) THEN 'осмотр' ELSE 'аттестация' END
-              ELSE 'осмотр'
-            END
-            -- И что это самый свежий документ этого типа
-            AND v.date = (
-              SELECT MAX(v3.date) FROM verifications v3 
-              WHERE v3.device_id = v.device_id AND v3.metrology_controle_type_id = v.metrology_controle_type_id
-            )
-        )`
-      );
-    }
-
-    // 8. ИСПРАВЛЕННЫЕ ФИЛЬТРЫ ПО ДАТАМ (Ищут только внутри ОПРЕДЕЛЯЮЩЕГО контроля)
-    if (filter?.dateStart || filter?.dateEnd) {
-      const dateStartCond = filter?.dateStart
-        ? sql`AND v.valid_until::date >= ${String(filter.dateStart).slice(
-            0,
-            10
-          )}::date`
-        : sql`1=1`;
-      const dateEndCond = filter?.dateEnd
-        ? sql`AND v.valid_until::date <= ${String(filter.dateEnd).slice(
-            0,
-            10
-          )}::date`
-        : sql`1=1`;
-
-      conditions.push(
-        sql`${devices.id} IN (
-          SELECT v.device_id FROM verifications v
-          JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-          LEFT JOIN equipment_types eq ON ${devices.equipmentTypeId} = eq.id
-          WHERE 1=1
-            ${dateStartCond}
-            ${dateEndCond}
-            -- Жесткая привязка к типу контроля метролога
-            AND LOWER(TRIM(mct.name)) = CASE 
-              WHEN LOWER(TRIM(eq.name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
-              WHEN LOWER(TRIM(eq.name)) = 'средство измерений (си)' THEN 
-                CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' 
-                  AND ${devices.id} NOT IN (
-                    SELECT device_id FROM scopes_to_devices std 
-                    JOIN scopes sc ON std.scope_id = sc.id 
-                    WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-                  ) THEN 'поверка' ELSE 'осмотр' END
-              WHEN LOWER(TRIM(eq.name)) = 'средство контроля (ск)' THEN 
-                CASE WHEN ${devices.id} IN (
-                  SELECT device_id FROM scopes_to_devices std 
-                  JOIN scopes sc ON std.scope_id = sc.id 
-                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-                ) THEN 'осмотр'
-                WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
-                ELSE 'калибровка' END
-              WHEN LOWER(TRIM(eq.name)) = 'испытательное оборудование (ио)' THEN 
-                CASE WHEN ${devices.id} IN (
-                  SELECT device_id FROM scopes_to_devices std 
-                  JOIN scopes sc ON std.scope_id = sc.id 
-                  WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-                ) THEN 'осмотр' ELSE 'аттестация' END
-              ELSE 'осмотр'
-            END
-            AND v.date = (
-              SELECT MAX(v3.date) FROM verifications v3 
-              WHERE v3.device_id = v.device_id AND v3.metrology_controle_type_id = v.metrology_controle_type_id
-            )
+          WITH ranked_verifications AS (
+            SELECT 
+              v.device_id,
+              v.valid_until,
+              mct.name as c_name,
+              eq.name as eq_name,
+              d.grsi_number,
+              -- Заменяем тяжелый подзапрос MAX(date) на быструю оконную функцию Postgres
+              ROW_NUMBER() OVER(PARTITION BY v.device_id, v.metrology_controle_type_id ORDER BY v.date DESC) as rn,
+              -- Проверяем сферу ГР один раз для всех через EXISTS (работает мгновенно)
+              EXISTS (
+                SELECT 1 FROM scopes_to_devices std 
+                JOIN scopes sc ON std.scope_id = sc.id 
+                WHERE std.device_id = v.device_id 
+                AND LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
+              ) as is_out_of_scope
+            FROM verifications v
+            JOIN devices d ON v.device_id = d.id
+            JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+            LEFT JOIN equipment_types eq ON d.equipment_type_id = eq.id
+          ),
+          determined_controls AS (
+            SELECT 
+              device_id,
+              valid_until,
+              LOWER(TRIM(c_name)) as current_control,
+              -- Вычисляем определяющий контроль на чистых переменных без подзапросов
+              LOWER(TRIM(CASE 
+                WHEN LOWER(TRIM(eq_name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
+                WHEN LOWER(TRIM(eq_name)) = 'средство измерений (си)' THEN 
+                  CASE WHEN grsi_number IS NOT NULL AND grsi_number != '' AND NOT is_out_of_scope THEN 'поверка' ELSE 'осмотр' END
+                WHEN LOWER(TRIM(eq_name)) = 'средство контроля (ск)' THEN 
+                  CASE WHEN is_out_of_scope THEN 'осмотр'
+                       WHEN grsi_number IS NOT NULL AND grsi_number != '' THEN 'поверка'
+                       ELSE 'калибровка' END
+                WHEN LOWER(TRIM(eq_name)) = 'испытательное оборудование (ио)' THEN 
+                  CASE WHEN is_out_of_scope THEN 'осмотр' ELSE 'аттестация' END
+                ELSE 'осмотр'
+              END)) as target_control
+            FROM ranked_verifications
+            WHERE rn = 1 -- Забираем только самые свежие документы
+          )
+          SELECT device_id 
+          FROM determined_controls
+          WHERE current_control = target_control -- Берем только определяющий контроль
+            ${controlName ? sql`AND target_control = ${controlName}` : sql``}
+            ${
+              safeDateStart
+                ? sql`AND valid_until::date >= ${safeDateStart}::date`
+                : sql``
+            }
+            ${
+              safeDateEnd
+                ? sql`AND valid_until::date <= ${safeDateEnd}::date`
+                : sql``
+            }
         )`
       );
     }
