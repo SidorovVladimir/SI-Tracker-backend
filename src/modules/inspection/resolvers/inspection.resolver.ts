@@ -1,5 +1,5 @@
 import { Context } from '../../../context';
-import { VerificationPlanningService } from '../../device/service/verificationPlanningService';
+import { VerificationPlanningService } from '../../verification/service/verification.service';
 import { InspectionService } from '../service/inspection.service';
 
 export const Query = {

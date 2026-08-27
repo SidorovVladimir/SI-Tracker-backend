@@ -1,17 +1,18 @@
 import { DrizzleDB } from '../../../db/client'; // Замените на ваш путь к инстансу базы данных
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
 import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
-import {
-  verificationBatches,
-  devicesToBatches,
-  devices,
-} from '../../device/models/device.model';
+import { devices } from '../../device/models/device.model';
 import { eq, and, inArray, sql, gte, lte, desc } from 'drizzle-orm';
+import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
+import { DeviceService } from '../../device/service/device.service';
+import { CreateVerificationDto } from '../dto/CreateVerificationDto';
 import {
   arshinVerificationBuffer,
+  devicesToBatches,
+  verificationBatches,
   verifications,
 } from '../models/verification.model';
-import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
+import { statuses } from '../../catalog/models/status.model';
 
 export interface CreateBatchInput {
   // number: string;
@@ -36,7 +37,8 @@ export interface PlanningPoolItem {
 export class VerificationPlanningService {
   constructor(
     private db: DrizzleDB,
-    private auditLogService?: DeviceAuditLogService
+    private auditLogService?: DeviceAuditLogService,
+    private deviceService?: DeviceService
   ) {}
 
   // 1. Создать новую партию на определенный месяц
@@ -372,6 +374,7 @@ export class VerificationPlanningService {
     targetControlName: string
   ): Date | null {
     // 🎯 ИСПРАВЛЕНО: Ищем в истории документ СТРОГО вычисленного вида контроля
+
     const latestVerification = device.verifications?.find(
       (v: any) =>
         v.metrologyControleType?.name?.toLowerCase().trim() ===
@@ -386,6 +389,7 @@ export class VerificationPlanningService {
     // Вариант 2: Прибор новый — считаем от даты выпуска/получения + МПИ в месяцах
     const baseDate = device.releaseDate || device.receiptDate;
     if (baseDate && device.verificationInterval) {
+      console.log('hello newDevice');
       const nextDate = new Date(baseDate);
       nextDate.setMonth(nextDate.getMonth() + device.verificationInterval);
       return nextDate;
@@ -530,6 +534,7 @@ export class VerificationPlanningService {
         device,
         targetControlName
       );
+
       if (!nextVerificationDate) continue;
 
       // const latestVerification = device.verifications?.find(
@@ -741,6 +746,7 @@ export class VerificationPlanningService {
           // orderBy: (v, { desc }) => [desc(v.date)],
           orderBy: (v, { desc }) => [desc(v.date), desc(v.createdAt)],
           limit: 5,
+          with: { metrologyControleType: { columns: { name: true } } },
         },
       },
     });
@@ -828,6 +834,7 @@ export class VerificationPlanningService {
         device,
         targetControlName
       );
+
       if (!nextVerificationDate) continue;
 
       const activeBatchLink = device.devicesToBatches?.find(
@@ -1079,114 +1086,504 @@ export class VerificationPlanningService {
       );
   }
 
+  // async confirmArshinBufferRecord(bufferId: string, userId: string) {
+  //   return await this.db.transaction(async (tx) => {
+  //     // 1. Извлекаем выбранную запись из буфера
+  //     const [bufferRecord] = await tx
+  //       .select()
+  //       .from(arshinVerificationBuffer)
+  //       .where(eq(arshinVerificationBuffer.id, bufferId))
+  //       .limit(1);
+
+  //     if (!bufferRecord) {
+  //       throw new Error(
+  //         'Выбранная запись в буфере Аршина не найдена или уже была обработана.'
+  //       );
+  //     }
+
+  //     const {
+  //       deviceId,
+  //       batchId,
+  //       orgTitle,
+  //       vriId,
+  //       docNum,
+  //       verificationDate,
+  //       validDate,
+  //       applicability,
+  //     } = bufferRecord;
+
+  //     // 2. Находим ID типа метрологического контроля "Поверка"
+  //     const [controlType] = await tx
+  //       .select()
+  //       .from(metrologyControleTypes)
+  //       .where(sql`lower(trim(${metrologyControleTypes.name})) = 'поверка'`)
+  //       .limit(1);
+
+  //     if (!controlType) {
+  //       throw new Error(
+  //         'В справочнике типов контроля не найден тип "Поверка".'
+  //       );
+  //     }
+
+  //     // 3. Разбираемся с организацией: ищем существующую или создаем новую
+  //     let orgId: string;
+  //     const cleanOrgTitle = orgTitle.toLowerCase().trim();
+
+  //     const [existingOrg] = await tx
+  //       .select()
+  //       .from(verificationOrganizations)
+  //       .where(eq(verificationOrganizations.name, cleanOrgTitle))
+  //       .limit(1);
+
+  //     if (existingOrg) {
+  //       orgId = existingOrg.id;
+  //     } else {
+  //       const [newOrg] = await tx
+  //         .insert(verificationOrganizations)
+  //         .values({ name: cleanOrgTitle })
+  //         .returning();
+
+  //       if (!newOrg) {
+  //         throw new Error('Не удалось сохранить поверяющую организацию.');
+  //       }
+  //       orgId = newOrg.id;
+  //     }
+
+  //     const verificationDto = {
+  //       deviceId: deviceId,
+  //       batchId: batchId ?? null,
+  //       protocolNumber: docNum,
+  //       result: applicability ? 'Годен' : 'Не годен',
+  //       documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${vriId}`,
+  //       date: verificationDate,
+  //       validUntil: validDate,
+  //       metrologyControleTypeId: controlType.id,
+  //       verificationOrganizationId: orgId,
+  //       comment: `Подтверждено метрологом из буфера совпадений Аршина. ID записи: ${vriId}`,
+  //       cost: 0,
+  //     };
+
+  //     await this.createVerification(verificationDto, userId);
+
+  //     // // 4. Переносим данные в чистовую таблицу поверок verifications
+  //     // await tx.insert(verifications).values({
+  //     //   deviceId: deviceId,
+  //     //   batchId: batchId,
+  //     //   protocolNumber: docNum,
+  //     //   result: applicability ? 'Годен' : 'Не годен',
+  //     //   documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${vriId}`,
+  //     //   date: verificationDate,
+  //     //   validUntil: validDate,
+  //     //   metrologyControleTypeId: controlType.id,
+  //     //   verificationOrganizationId: orgId,
+  //     //   comment: `Подтверждено метрологом из буфера совпадений Аршина. ID записи: ${vriId}`,
+  //     //   cost: '0.00',
+  //     // });
+
+  //     // 5. Если запись привязана к партии — обновляем статус прибора в этой партии на 'returned'
+  //     if (batchId) {
+  //       await tx
+  //         .update(devicesToBatches)
+  //         .set({ deviceStatus: 'returned' })
+  //         .where(
+  //           and(
+  //             eq(devicesToBatches.deviceId, deviceId),
+  //             eq(devicesToBatches.batchId, batchId)
+  //           )
+  //         );
+
+  //       // 6. Полностью очищаем весь буфер для ЭТОГО прибора в рамкам ЭТОЙ партии
+  //       // (удаляем выбранную запись и остальные ошибочные варианты коллизии)
+  //       await tx
+  //         .delete(arshinVerificationBuffer)
+  //         .where(
+  //           and(
+  //             eq(arshinVerificationBuffer.deviceId, deviceId),
+  //             eq(arshinVerificationBuffer.batchId, batchId)
+  //           )
+  //         );
+  //     } else {
+  //       // Если синхронизация была одиночной вне партии, удаляем только записи этого прибора без привязки к batchId
+  //       await tx
+  //         .delete(arshinVerificationBuffer)
+  //         .where(eq(arshinVerificationBuffer.deviceId, deviceId));
+  //     }
+
+  //     return { success: true };
+  //   });
+  // }
+
   async confirmArshinBufferRecord(bufferId: string, userId: string) {
-    return await this.db.transaction(async (tx) => {
-      // 1. Извлекаем выбранную запись из буфера
-      const [bufferRecord] = await tx
-        .select()
-        .from(arshinVerificationBuffer)
-        .where(eq(arshinVerificationBuffer.id, bufferId))
-        .limit(1);
+    const now = new Date();
+    let oldDataSnapshot: any = null;
 
-      if (!bufferRecord) {
-        throw new Error(
-          'Выбранная запись в буфере Аршина не найдена или уже была обработана.'
-        );
-      }
+    // 1. Извлекаем запись из буфера АРШИН до транзакции, чтобы знать deviceId для аудита
+    const [bufferRecordCheck] = await this.db
+      .select({ deviceId: arshinVerificationBuffer.deviceId })
+      .from(arshinVerificationBuffer)
+      .where(eq(arshinVerificationBuffer.id, bufferId))
+      .limit(1);
 
-      const {
-        deviceId,
-        batchId,
-        orgTitle,
-        vriId,
-        docNum,
-        verificationDate,
-        validDate,
-        applicability,
-      } = bufferRecord;
+    if (bufferRecordCheck && this.deviceService) {
+      oldDataSnapshot = await this.deviceService.getFlatAuditSnapshot(
+        bufferRecordCheck.deviceId
+      );
+    }
 
-      // 2. Находим ID типа метрологического контроля "Поверка"
-      const [controlType] = await tx
-        .select()
-        .from(metrologyControleTypes)
-        .where(sql`lower(trim(${metrologyControleTypes.name})) = 'поверка'`)
-        .limit(1);
+    // 2. Запускаем единую атомарную транзакцию
+    const { verificationDto, deviceExists, verificationRecord } =
+      await this.db.transaction(async (tx) => {
+        const [bufferRecord] = await tx
+          .select()
+          .from(arshinVerificationBuffer)
+          .where(eq(arshinVerificationBuffer.id, bufferId))
+          .limit(1);
 
-      if (!controlType) {
-        throw new Error(
-          'В справочнике типов контроля не найден тип "Поверка".'
-        );
-      }
-
-      // 3. Разбираемся с организацией: ищем существующую или создаем новую
-      let orgId: string;
-      const cleanOrgTitle = orgTitle.toLowerCase().trim();
-
-      const [existingOrg] = await tx
-        .select()
-        .from(verificationOrganizations)
-        .where(eq(verificationOrganizations.name, cleanOrgTitle))
-        .limit(1);
-
-      if (existingOrg) {
-        orgId = existingOrg.id;
-      } else {
-        const [newOrg] = await tx
-          .insert(verificationOrganizations)
-          .values({ name: cleanOrgTitle })
-          .returning();
-
-        if (!newOrg) {
-          throw new Error('Не удалось сохранить поверяющую организацию.');
+        if (!bufferRecord) {
+          throw new Error(
+            'Выбранная запись в буфере Аршина не найдена или уже была обработана.'
+          );
         }
-        orgId = newOrg.id;
-      }
 
-      // 4. Переносим данные в чистовую таблицу поверок verifications
-      await tx.insert(verifications).values({
-        deviceId: deviceId,
-        batchId: batchId,
-        protocolNumber: docNum,
-        result: applicability ? 'Годен' : 'Не годен',
-        documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${vriId}`,
-        date: verificationDate,
-        validUntil: validDate,
-        metrologyControleTypeId: controlType.id,
-        verificationOrganizationId: orgId,
-        comment: `Подтверждено метрологом из буфера совпадений Аршина. ID записи: ${vriId}`,
-        cost: '0.00',
+        const {
+          deviceId,
+          batchId,
+          orgTitle,
+          vriId,
+          docNum,
+          verificationDate,
+          validDate,
+          applicability,
+        } = bufferRecord;
+
+        const [controlType] = await tx
+          .select()
+          .from(metrologyControleTypes)
+          .where(sql`lower(trim(${metrologyControleTypes.name})) = 'поверка'`)
+          .limit(1);
+
+        if (!controlType) {
+          throw new Error(
+            'В справочнике типов контроля не найден тип "Поверка".'
+          );
+        }
+
+        let orgId: string;
+        const cleanOrgTitle = orgTitle.toLowerCase().trim();
+
+        const [existingOrg] = await tx
+          .select()
+          .from(verificationOrganizations)
+          .where(eq(verificationOrganizations.name, cleanOrgTitle))
+          .limit(1);
+
+        if (existingOrg) {
+          orgId = existingOrg.id;
+        } else {
+          const [newOrg] = await tx
+            .insert(verificationOrganizations)
+            .values({ name: cleanOrgTitle })
+            .returning();
+
+          if (!newOrg) {
+            throw new Error('Не удалось сохранить поверяющую организацию.');
+          }
+          orgId = newOrg.id;
+        }
+
+        const verificationDto = {
+          deviceId: deviceId,
+          batchId: batchId ?? null,
+          protocolNumber: docNum,
+          result: applicability ? 'Годен' : 'Не годен',
+          documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${vriId}`,
+          date: verificationDate,
+          validUntil: validDate,
+          metrologyControleTypeId: controlType.id,
+          verificationOrganizationId: orgId,
+          comment: `Подтверждено метрологом из буфера совпадений Аршина. ID записи: ${vriId}`,
+          cost: 0,
+        };
+
+        // 🎯 ВЫЗОВ ПРИВАТНОГО ЯДРА: передаем контекст 'tx' напрямую в метод создания поверки
+        const { verificationRecord, deviceExists } =
+          await this.executeCreateVerification(
+            verificationDto,
+            userId,
+            tx,
+            now
+          );
+
+        if (batchId) {
+          await tx
+            .update(devicesToBatches)
+            .set({ deviceStatus: 'returned' })
+            .where(
+              and(
+                eq(devicesToBatches.deviceId, deviceId),
+                eq(devicesToBatches.batchId, batchId)
+              )
+            );
+
+          await tx
+            .delete(arshinVerificationBuffer)
+            .where(
+              and(
+                eq(arshinVerificationBuffer.deviceId, deviceId),
+                eq(arshinVerificationBuffer.batchId, batchId)
+              )
+            );
+        } else {
+          await tx
+            .delete(arshinVerificationBuffer)
+            .where(eq(arshinVerificationBuffer.deviceId, deviceId));
+        }
+
+        return { verificationDto, deviceExists, verificationRecord };
       });
 
-      // 5. Если запись привязана к партии — обновляем статус прибора в этой партии на 'returned'
-      if (batchId) {
-        await tx
-          .update(devicesToBatches)
-          .set({ deviceStatus: 'returned' })
-          .where(
-            and(
-              eq(devicesToBatches.deviceId, deviceId),
-              eq(devicesToBatches.batchId, batchId)
-            )
-          );
+    // 3. Вызываем аудит только после успешного коммита транзакции
+    await this.handleVerificationAudit(
+      verificationDto,
+      userId,
+      deviceExists,
+      verificationRecord,
+      oldDataSnapshot
+    );
 
-        // 6. Полностью очищаем весь буфер для ЭТОГО прибора в рамкам ЭТОЙ партии
-        // (удаляем выбранную запись и остальные ошибочные варианты коллизии)
-        await tx
-          .delete(arshinVerificationBuffer)
-          .where(
-            and(
-              eq(arshinVerificationBuffer.deviceId, deviceId),
-              eq(arshinVerificationBuffer.batchId, batchId)
-            )
-          );
-      } else {
-        // Если синхронизация была одиночной вне партии, удаляем только записи этого прибора без привязки к batchId
-        await tx
-          .delete(arshinVerificationBuffer)
-          .where(eq(arshinVerificationBuffer.deviceId, deviceId));
+    return { success: true };
+  }
+
+  async createVerification(input: CreateVerificationDto, userId: string) {
+    // let logDeviceData: any = null;
+    const now = new Date();
+
+    let oldDataSnapshot: any = null;
+    if (this.deviceService) {
+      oldDataSnapshot = await this.deviceService.getFlatAuditSnapshot(
+        input.deviceId
+      );
+    }
+    // const newVerification = await this.db.transaction(async (tx) => {
+    //   const [deviceExists] = await tx
+    //     .select()
+    //     .from(devices)
+    //     .where(eq(devices.id, input.deviceId));
+
+    //   if (!deviceExists) {
+    //     throw new Error('Указанное оборудование не найдено в системе');
+    //   }
+
+    //   const [verificationRecord] = await tx
+    //     .insert(verifications)
+    //     .values({
+    //       deviceId: input.deviceId,
+    //       batchId: input.batchId ?? null,
+    //       protocolNumber: input.protocolNumber,
+    //       result: input.result,
+    //       date: input.date,
+    //       validUntil: input.validUntil ?? null,
+    //       documentUrl: input.documentUrl ?? null,
+    //       metrologyControleTypeId: input.metrologyControleTypeId,
+    //       verificationOrganizationId: input.verificationOrganizationId,
+    //       comment: input.comment ?? null,
+    //       cost:
+    //         input.cost !== undefined && input.cost !== null
+    //           ? String(input.cost)
+    //           : '0.00',
+    //     })
+    //     .returning();
+
+    //   if (!verificationRecord) {
+    //     throw new Error('Не удалось сохранить данные поверки');
+    //   }
+
+    //   let targetStatusId = deviceExists.statusId; // По умолчанию статус оставляем прежним
+
+    //   if (input.result === 'Не годен') {
+    //     const [rejectedStatus] = await tx
+    //       .select({ id: statuses.id })
+    //       .from(statuses)
+    //       .where(sql`lower(trim(${statuses.name})) IN ('забракован')`);
+
+    //     if (rejectedStatus) {
+    //       targetStatusId = rejectedStatus.id;
+    //     }
+    //   } else if (input.result === 'Годен') {
+    //     const [activeStatus] = await tx
+    //       .select({ id: statuses.id })
+    //       .from(statuses)
+    //       .where(eq(sql`lower(trim(${statuses.name}))`, 'исправен'));
+
+    //     if (activeStatus) {
+    //       targetStatusId = activeStatus.id;
+    //     }
+    //   }
+
+    //   await tx
+    //     .update(devices)
+    //     .set({ statusId: targetStatusId, updatedAt: now, updatedById: userId })
+    //     .where(eq(devices.id, input.deviceId));
+
+    //   logDeviceData = {
+    //     name: deviceExists.name,
+    //     model: deviceExists.model,
+    //     serialNumber: deviceExists.serialNumber,
+    //     cost: verificationRecord.cost ? parseFloat(verificationRecord.cost) : 0,
+    //   };
+    //   return verificationRecord;
+    // });
+
+    // let newDataSnapshot: any;
+    // if (this.deviceService) {
+    //   newDataSnapshot = await this.deviceService.getFlatAuditSnapshot(
+    //     input.deviceId
+    //   );
+    // }
+
+    // if (this.auditLogService && logDeviceData) {
+    //   await this.auditLogService.logAction({
+    //     deviceId: input.deviceId,
+    //     action: 'verify',
+    //     newData: {
+    //       protocolNumber: input.protocolNumber,
+    //       result: input.result,
+    //       name: logDeviceData.name,
+    //       model: logDeviceData.model,
+    //       serialNumber: logDeviceData.serialNumber,
+    //       cost: logDeviceData.cost,
+    //     },
+    //     userId,
+    //   });
+    //   if (oldDataSnapshot && newDataSnapshot) {
+    //     await this.auditLogService.logAction({
+    //       deviceId: input.deviceId,
+    //       action: 'update',
+    //       oldData: oldDataSnapshot,
+    //       newData: newDataSnapshot,
+    //       userId,
+    //     });
+    //   }
+    // }
+
+    const { verificationRecord, deviceExists } = await this.db.transaction(
+      async (tx) => {
+        return await this.executeCreateVerification(input, userId, tx, now);
       }
+    );
 
-      return { success: true };
+    await this.handleVerificationAudit(
+      input,
+      userId,
+      deviceExists,
+      verificationRecord,
+      oldDataSnapshot
+    );
+
+    return verificationRecord;
+  }
+
+  private async executeCreateVerification(
+    input: CreateVerificationDto,
+    userId: string,
+    tx: any,
+    now: Date
+  ) {
+    const [deviceExists] = await tx
+      .select()
+      .from(devices)
+      .where(eq(devices.id, input.deviceId));
+
+    if (!deviceExists) {
+      throw new Error('Указанное оборудование не найдено в системе');
+    }
+
+    const [verificationRecord] = await tx
+      .insert(verifications)
+      .values({
+        deviceId: input.deviceId,
+        batchId: input.batchId ?? null,
+        protocolNumber: input.protocolNumber,
+        result: input.result,
+        date: input.date,
+        validUntil: input.validUntil ?? null,
+        documentUrl: input.documentUrl ?? null,
+        metrologyControleTypeId: input.metrologyControleTypeId,
+        verificationOrganizationId: input.verificationOrganizationId,
+        comment: input.comment ?? null,
+        cost:
+          input.cost !== undefined && input.cost !== null
+            ? String(input.cost)
+            : '0.00',
+      })
+      .returning();
+
+    if (!verificationRecord) {
+      throw new Error('Не удалось сохранить данные поверки');
+    }
+
+    let targetStatusId = deviceExists.statusId;
+
+    if (input.result === 'Не годен') {
+      const [rejectedStatus] = await tx
+        .select({ id: statuses.id })
+        .from(statuses)
+        .where(sql`lower(trim(${statuses.name})) IN ('забракован')`);
+      if (rejectedStatus) targetStatusId = rejectedStatus.id;
+    } else if (input.result === 'Годен') {
+      const [activeStatus] = await tx
+        .select({ id: statuses.id })
+        .from(statuses)
+        .where(eq(sql`lower(trim(${statuses.name}))`, 'исправен'));
+      if (activeStatus) targetStatusId = activeStatus.id;
+    }
+
+    await tx
+      .update(devices)
+      .set({ statusId: targetStatusId, updatedAt: now, updatedById: userId })
+      .where(eq(devices.id, input.deviceId));
+
+    return { verificationRecord, deviceExists };
+  }
+
+  private async handleVerificationAudit(
+    input: CreateVerificationDto,
+    userId: string,
+    deviceExists: any,
+    verificationRecord: any,
+    oldDataSnapshot: any
+  ) {
+    if (!this.auditLogService) return;
+
+    let newDataSnapshot: any = null;
+    if (this.deviceService) {
+      newDataSnapshot = await this.deviceService.getFlatAuditSnapshot(
+        input.deviceId
+      );
+    }
+
+    await this.auditLogService.logAction({
+      deviceId: input.deviceId,
+      action: 'verify',
+      newData: {
+        protocolNumber: input.protocolNumber,
+        result: input.result,
+        name: deviceExists.name,
+        model: deviceExists.model,
+        serialNumber: deviceExists.serialNumber,
+        cost: verificationRecord.cost ? parseFloat(verificationRecord.cost) : 0,
+      },
+      userId,
     });
+
+    if (oldDataSnapshot && newDataSnapshot) {
+      await this.auditLogService.logAction({
+        deviceId: input.deviceId,
+        action: 'update',
+        oldData: oldDataSnapshot,
+        newData: newDataSnapshot,
+        userId,
+      });
+    }
   }
 }

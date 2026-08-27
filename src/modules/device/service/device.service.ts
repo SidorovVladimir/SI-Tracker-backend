@@ -2,17 +2,9 @@ import { and, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity } from '../types/device.types';
-import {
-  deviceDocuments,
-  devices,
-  devicesToBatches,
-  verificationBatches,
-} from '../models/device.model';
+import { deviceDocuments, devices } from '../models/device.model';
 import { scopes, scopesToDevices } from '../../catalog/models/scope.model';
-import {
-  arshinVerificationBuffer,
-  verifications,
-} from '../models/verification.model';
+
 import { UpdateDeviceInput } from '../dto/UpdateDeviceDto';
 import {
   primaryStandarts,
@@ -23,7 +15,7 @@ import {
   measurementTypesToDevices,
 } from '../../catalog/models/measurementType.model';
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
-import { CreateVerificationDto } from '../dto/CreateVerificationDto';
+
 import { statuses } from '../../catalog/models/status.model';
 import { SyncDeviceWithArshinInput } from '../../arshin/dto/SyncDeviceWithArshinDto';
 import { ArshinService } from '../../arshin/service/arshin.service';
@@ -38,6 +30,12 @@ import { arshinQueue } from '../queues/arshin.queue';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
 import { DOCUMENTS_DIR } from '../../../config/path.config';
+import {
+  verifications,
+  arshinVerificationBuffer,
+  devicesToBatches,
+  verificationBatches,
+} from '../../verification/models/verification.model';
 
 export interface PrintBarcodesInput {
   deviceIds?: string[];
@@ -666,7 +664,7 @@ export class DeviceService {
   //   };
   // }
 
-  private async getFlatAuditSnapshot(deviceId: string) {
+  async getFlatAuditSnapshot(deviceId: string) {
     const data = await this.db.query.devices.findFirst({
       where: eq(devices.id, deviceId),
       columns: {
@@ -1113,109 +1111,6 @@ export class DeviceService {
         'Не удалось удалить устройство. Попробуйте обновить страницу.'
       );
     }
-  }
-
-  async createVerification(input: CreateVerificationDto, userId: string) {
-    let logDeviceData: any = null;
-    const now = new Date();
-    const oldDataSnapshot = await this.getFlatAuditSnapshot(input.deviceId);
-    const newVerification = await this.db.transaction(async (tx) => {
-      const [deviceExists] = await tx
-        .select()
-        .from(devices)
-        .where(eq(devices.id, input.deviceId));
-
-      if (!deviceExists) {
-        throw new Error('Указанное оборудование не найдено в системе');
-      }
-
-      const [verificationRecord] = await tx
-        .insert(verifications)
-        .values({
-          deviceId: input.deviceId,
-          batchId: input.batchId ?? null,
-          protocolNumber: input.protocolNumber,
-          result: input.result,
-          date: input.date,
-          validUntil: input.validUntil ?? null,
-          documentUrl: input.documentUrl ?? null,
-          metrologyControleTypeId: input.metrologyControleTypeId,
-          verificationOrganizationId: input.verificationOrganizationId,
-          comment: input.comment ?? null,
-          cost:
-            input.cost !== undefined && input.cost !== null
-              ? String(input.cost)
-              : '0.00',
-        })
-        .returning();
-
-      if (!verificationRecord) {
-        throw new Error('Не удалось сохранить данные поверки');
-      }
-
-      let targetStatusId = deviceExists.statusId; // По умолчанию статус оставляем прежним
-
-      if (input.result === 'Не годен') {
-        const [rejectedStatus] = await tx
-          .select({ id: statuses.id })
-          .from(statuses)
-          .where(sql`lower(trim(${statuses.name})) IN ('забракован')`);
-
-        if (rejectedStatus) {
-          targetStatusId = rejectedStatus.id;
-        }
-      } else if (input.result === 'Годен') {
-        const [activeStatus] = await tx
-          .select({ id: statuses.id })
-          .from(statuses)
-          .where(eq(sql`lower(trim(${statuses.name}))`, 'исправен'));
-
-        if (activeStatus) {
-          targetStatusId = activeStatus.id;
-        }
-      }
-
-      await tx
-        .update(devices)
-        .set({ statusId: targetStatusId, updatedAt: now, updatedById: userId })
-        .where(eq(devices.id, input.deviceId));
-
-      logDeviceData = {
-        name: deviceExists.name,
-        model: deviceExists.model,
-        serialNumber: deviceExists.serialNumber,
-        cost: verificationRecord.cost ? parseFloat(verificationRecord.cost) : 0,
-      };
-      return verificationRecord;
-    });
-    const newDataSnapshot = await this.getFlatAuditSnapshot(input.deviceId);
-
-    if (this.auditLogService && logDeviceData) {
-      await this.auditLogService.logAction({
-        deviceId: input.deviceId,
-        action: 'verify',
-        newData: {
-          protocolNumber: input.protocolNumber,
-          result: input.result,
-          name: logDeviceData.name,
-          model: logDeviceData.model,
-          serialNumber: logDeviceData.serialNumber,
-          cost: logDeviceData.cost,
-        },
-        userId,
-      });
-      if (oldDataSnapshot && newDataSnapshot) {
-        await this.auditLogService.logAction({
-          deviceId: input.deviceId,
-          action: 'update',
-          oldData: oldDataSnapshot,
-          newData: newDataSnapshot,
-          userId,
-        });
-      }
-    }
-
-    return newVerification;
   }
 
   // async syncDeviceWithArshin(input: SyncDeviceWithArshinInput, userId: string) {

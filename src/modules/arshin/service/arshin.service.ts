@@ -113,7 +113,6 @@ export class ArshinService {
             mitNumber: item.mit_number,
           });
         }
-
         return result;
       } catch (error: any) {
         const isTimeout =

@@ -1,22 +1,11 @@
-import {
-  sql,
-  and,
-  eq,
-  inArray,
-  desc,
-  ilike,
-  count,
-  or,
-  isNull,
-} from 'drizzle-orm';
+import { sql, and, eq, inArray, desc, ilike, count, or } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 
 import { productionSites } from '../../location/models/productionSites.model';
 import { companies } from '../../location/models/company.model';
 import { cities } from '../../location/models/city.model';
 import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
-import { verifications } from '../../device/models/verification.model';
-import { devices } from '../../device/models/device.model';
+
 import {
   budgetPlanItems,
   budgetPlans,
@@ -25,6 +14,8 @@ import {
 } from '../models/budget.model';
 import { statuses } from '../../catalog/models/status.model';
 import { equipmentTypes } from '../../catalog/models/equipmentType.model';
+import { devices } from '../../device/models/device.model';
+import { verifications } from '../../verification/models/verification.model';
 
 export class BudgetService {
   constructor(private db: DrizzleDB) {}

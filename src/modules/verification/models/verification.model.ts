@@ -9,9 +9,10 @@ import {
   varchar,
 } from 'drizzle-orm/pg-core';
 import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
-import { devices, verificationBatches } from './device.model';
 import { relations } from 'drizzle-orm';
 import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
+import { devices } from '../../device/models/device.model';
+import { users } from '../../user/user.model';
 
 // Данные о поверках
 export const verifications = pgTable(
@@ -80,6 +81,81 @@ export const arshinVerificationBuffer = pgTable(
   (table) => ({
     deviceIdIdx: index('avb_device_id_idx').on(table.deviceId),
     batchIdIdx: index('avb_batch_id_idx').on(table.batchId),
+  })
+);
+
+export const verificationBatches = pgTable('verification_batches', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  number: varchar('number', { length: 100 }).notNull(), // Номер заявки
+  // plannedDate: timestamp('planned_date').notNull(), // Планируемый месяц/дата отправки
+  plannedDate: timestamp('planned_date', { withTimezone: true }).notNull(), // Планируемый месяц/дата отправки
+  verificationOrganizationId: uuid('verification_organization_id').references(
+    () => verificationOrganizations.id
+  ), // Куда везем (ссылка на вашу таблицу)
+  status: text('status').notNull().default('draft'), // 'draft' | 'sent' | 'completed'
+  comment: text('comment'),
+  type: text('type').notNull().default('verification'), // 'verification' | 'inspection'
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+
+  createdById: uuid('created_by_id').references(() => users.id, {
+    onDelete: 'set null',
+  }),
+});
+
+// 3. Промежуточная таблица связей приборов и партий
+export const devicesToBatches = pgTable(
+  'devices_to_batches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => devices.id, { onDelete: 'cascade' }),
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => verificationBatches.id, { onDelete: 'cascade' }),
+    deviceStatus: text('device_status').notNull().default('selected'), // 'selected' | 'dismantled' | 'returned'
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    deviceIdIdx: index('dtb_device_id_idx').on(table.deviceId),
+    batchIdIdx: index('dtb_batch_id_idx').on(table.batchId),
+  })
+);
+
+export const verificationBatchesRelations = relations(
+  verificationBatches,
+  ({ one, many }) => ({
+    verificationOrganization: one(verificationOrganizations, {
+      fields: [verificationBatches.verificationOrganizationId],
+      references: [verificationOrganizations.id],
+    }),
+    devicesToBatches: many(devicesToBatches),
+    createdBy: one(users, {
+      fields: [verificationBatches.createdById],
+      references: [users.id],
+    }),
+  })
+);
+
+export const devicesToBatchesRelations = relations(
+  devicesToBatches,
+  ({ one }) => ({
+    device: one(devices, {
+      fields: [devicesToBatches.deviceId],
+      references: [devices.id],
+    }),
+    batch: one(verificationBatches, {
+      fields: [devicesToBatches.batchId],
+      references: [verificationBatches.id],
+    }),
   })
 );
 

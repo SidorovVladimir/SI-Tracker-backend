@@ -5,7 +5,7 @@ export * from '../modules/catalog/models/scope.model';
 export * from '../modules/catalog/models/primaryStandarts.model';
 export * from '../modules/catalog/models/status.model';
 export * from '../modules/device/models/device.model';
-export * from '../modules/device/models/verification.model';
+export * from '../modules/verification/models/verification.model';
 export * from '../modules/location/models/city.model';
 export * from '../modules/location/models/company.model';
 export * from '../modules/location/models/productionSites.model';

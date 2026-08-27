@@ -1,9 +1,13 @@
 import { ZodError } from 'zod';
 import { Context } from '../../../context';
 import { formatZodErrors } from '../../../utils/errors';
-import { VerificationPlanningService } from '../service/verificationPlanningService'; // Укажите ваш путь к сервису
-import { CreateVerificationBatchSchema } from '../dto/CreateVerificationBatchDto';
+import { VerificationPlanningService } from '../service/verification.service'; // Укажите ваш путь к сервису
+
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
+
+import { CreateVerificationModalInputSchema } from '../dto/CreateVerificationDto';
+import { CreateVerificationBatchSchema } from '../dto/CreateVerificationBatchDto';
+import { DeviceService } from '../../device/service/device.service';
 
 export const Query = {
   // 1. Получить пул приборов для конкретного месяца (доступно всем авторизованным)
@@ -211,11 +215,56 @@ export const Mutation = {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
 
-    const planningService = new VerificationPlanningService(db);
+    const auditLogService = new DeviceAuditLogService(db);
+    const deviceService = new DeviceService(db);
+    const planningService = new VerificationPlanningService(
+      db,
+      auditLogService,
+      deviceService
+    );
     const result = await planningService.confirmArshinBufferRecord(
       bufferId,
       currentUser.id
     );
     return result.success;
+  },
+
+  createVerification: async (
+    _: unknown,
+    { input }: { input: unknown },
+    { db, currentUser }: Context
+  ) => {
+    // 1. Проверка авторизации
+    if (!currentUser) throw new Error('Не авторизован');
+
+    // 2. Ограничение прав (только админы и метрологи могут вносить поверки)
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: требуются права администратора/метролога'
+      );
+    }
+
+    try {
+      // 3. Валидация входных данных через Zod
+      const validatedInput = CreateVerificationModalInputSchema.parse(input);
+
+      // 4. Вызов сервиса
+      const auditLogService = new DeviceAuditLogService(db);
+      const deviceService = new DeviceService(db);
+      const planningService = new VerificationPlanningService(
+        db,
+        auditLogService,
+        deviceService
+      );
+      return await planningService.createVerification(
+        validatedInput,
+        currentUser.id
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new Error(JSON.stringify(formatZodErrors(err)));
+      }
+      throw err;
+    }
   },
 };

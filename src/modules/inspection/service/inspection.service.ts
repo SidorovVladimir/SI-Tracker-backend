@@ -1,14 +1,15 @@
 import { eq, sql, inArray, and, gte, lte, desc } from 'drizzle-orm';
 import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
-import {
-  devices,
-  devicesToBatches,
-  verificationBatches,
-} from '../../device/models/device.model';
-import { verifications } from '../../device/models/verification.model';
+import { devices } from '../../device/models/device.model';
+
 import { statuses } from '../../catalog/models/status.model';
 import { DrizzleDB } from '../../../db/client';
-import { VerificationPlanningService } from '../../device/service/verificationPlanningService';
+import { VerificationPlanningService } from '../../verification/service/verification.service';
+import {
+  verifications,
+  verificationBatches,
+  devicesToBatches,
+} from '../../verification/models/verification.model';
 
 interface InspectionItemInput {
   deviceId: string;

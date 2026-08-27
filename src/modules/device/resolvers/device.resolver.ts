@@ -7,10 +7,7 @@ import { CreateDeviceInputSchema } from '../dto/CreateDeviceDto';
 import { DeviceService, PrintBarcodesInput } from '../service/device.service';
 import { UpdateDeviceInputSchema } from '../dto/UpdateDeviceDto';
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
-import {
-  CreateVerificationModalInputSchema,
-  FetchArshinVerificationsInputSchema,
-} from '../dto/CreateVerificationDto';
+import { FetchArshinVerificationsInputSchema } from '../../verification/dto/CreateVerificationDto';
 import { SyncDeviceWithArshinInputSchema } from '../../arshin/dto/SyncDeviceWithArshinDto';
 import { ImportDevicesExcelInputSchema } from '../dto/ImportDeviceItemDto';
 import { GraphQLScalarType, Kind } from 'graphql';
@@ -283,40 +280,6 @@ export const Mutation = {
       id,
       currentUser.id
     );
-  },
-
-  createVerification: async (
-    _: unknown,
-    { input }: { input: unknown },
-    { db, currentUser }: Context
-  ) => {
-    // 1. Проверка авторизации
-    if (!currentUser) throw new Error('Не авторизован');
-
-    // 2. Ограничение прав (только админы и метрологи могут вносить поверки)
-    if (currentUser.role === 'user') {
-      throw new Error(
-        'Доступ запрещен: требуются права администратора/метролога'
-      );
-    }
-
-    try {
-      // 3. Валидация входных данных через Zod
-      const validatedInput = CreateVerificationModalInputSchema.parse(input);
-
-      // 4. Вызов сервиса
-      const auditLogService = new DeviceAuditLogService(db);
-      const verificationService = new DeviceService(db, auditLogService);
-      return await verificationService.createVerification(
-        validatedInput,
-        currentUser.id
-      );
-    } catch (err) {
-      if (err instanceof ZodError) {
-        throw new Error(JSON.stringify(formatZodErrors(err)));
-      }
-      throw err;
-    }
   },
 
   syncDeviceWithArshin: async (

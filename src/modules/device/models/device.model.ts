@@ -15,10 +15,14 @@ import { productionSites } from '../../location/models/productionSites.model';
 import { equipmentTypes } from '../../catalog/models/equipmentType.model';
 import { measurementTypesToDevices } from '../../catalog/models/measurementType.model';
 import { scopesToDevices } from '../../catalog/models/scope.model';
-import { arshinVerificationBuffer, verifications } from './verification.model';
+
 import { primaryStandartsToDevices } from '../../catalog/models/primaryStandarts.model';
-import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
 import { users } from '../../user/user.model';
+import {
+  verifications,
+  arshinVerificationBuffer,
+  devicesToBatches,
+} from '../../verification/models/verification.model';
 
 // Прибор (Инструмент)
 export const devices = pgTable('devices', {
@@ -112,81 +116,6 @@ export const deviceDocumentsRelations = relations(
     device: one(devices, {
       fields: [deviceDocuments.deviceId],
       references: [devices.id],
-    }),
-  })
-);
-
-export const verificationBatches = pgTable('verification_batches', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  number: varchar('number', { length: 100 }).notNull(), // Номер заявки
-  // plannedDate: timestamp('planned_date').notNull(), // Планируемый месяц/дата отправки
-  plannedDate: timestamp('planned_date', { withTimezone: true }).notNull(), // Планируемый месяц/дата отправки
-  verificationOrganizationId: uuid('verification_organization_id').references(
-    () => verificationOrganizations.id
-  ), // Куда везем (ссылка на вашу таблицу)
-  status: text('status').notNull().default('draft'), // 'draft' | 'sent' | 'completed'
-  comment: text('comment'),
-  type: text('type').notNull().default('verification'), // 'verification' | 'inspection'
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-
-  createdById: uuid('created_by_id').references(() => users.id, {
-    onDelete: 'set null',
-  }),
-});
-
-// 3. Промежуточная таблица связей приборов и партий
-export const devicesToBatches = pgTable(
-  'devices_to_batches',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    deviceId: uuid('device_id')
-      .notNull()
-      .references(() => devices.id, { onDelete: 'cascade' }),
-    batchId: uuid('batch_id')
-      .notNull()
-      .references(() => verificationBatches.id, { onDelete: 'cascade' }),
-    deviceStatus: text('device_status').notNull().default('selected'), // 'selected' | 'dismantled' | 'returned'
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (table) => ({
-    deviceIdIdx: index('dtb_device_id_idx').on(table.deviceId),
-    batchIdIdx: index('dtb_batch_id_idx').on(table.batchId),
-  })
-);
-
-export const verificationBatchesRelations = relations(
-  verificationBatches,
-  ({ one, many }) => ({
-    verificationOrganization: one(verificationOrganizations, {
-      fields: [verificationBatches.verificationOrganizationId],
-      references: [verificationOrganizations.id],
-    }),
-    devicesToBatches: many(devicesToBatches),
-    createdBy: one(users, {
-      fields: [verificationBatches.createdById],
-      references: [users.id],
-    }),
-  })
-);
-
-export const devicesToBatchesRelations = relations(
-  devicesToBatches,
-  ({ one }) => ({
-    device: one(devices, {
-      fields: [devicesToBatches.deviceId],
-      references: [devices.id],
-    }),
-    batch: one(verificationBatches, {
-      fields: [devicesToBatches.batchId],
-      references: [verificationBatches.id],
     }),
   })
 );

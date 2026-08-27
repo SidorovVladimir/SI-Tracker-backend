@@ -1,6 +1,6 @@
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
-import { verifications } from '../../device/models/verification.model';
+
 import { devices } from '../../device/models/device.model';
 import { productionSites } from '../../location/models/productionSites.model';
 import { companies } from '../../location/models/company.model';
@@ -10,6 +10,7 @@ import { pricelistItems } from '../../budget/models/budget.model';
 import { primaryStandarts } from '../../catalog/models/primaryStandarts.model';
 import { statuses } from '../../catalog/models/status.model';
 import { users } from '../../user/user.model';
+import { verifications } from '../../verification/models/verification.model';
 
 export class AnalyticsService {
   constructor(private db: DrizzleDB) {}

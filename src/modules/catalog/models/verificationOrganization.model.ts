@@ -1,6 +1,6 @@
 import { relations } from 'drizzle-orm';
 import { pgTable, timestamp, uuid, varchar } from 'drizzle-orm/pg-core';
-import { verifications } from '../../device/models/verification.model';
+import { verifications } from '../../verification/models/verification.model';
 
 // Организации поверители
 
