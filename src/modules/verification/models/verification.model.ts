@@ -53,6 +53,11 @@ export const verifications = pgTable(
     deviceIdIdx: index('verifications_device_id_idx').on(table.deviceId),
     batchIdIdx: index('verifications_batch_id_idx').on(table.batchId),
     dateIdx: index('verifications_date_idx').on(table.date),
+    perfMetrologyIdx: index('verifications_perf_metrology_idx').on(
+      table.deviceId,
+      table.metrologyControleTypeId,
+      table.date
+    ),
   })
 );
 
@@ -84,29 +89,36 @@ export const arshinVerificationBuffer = pgTable(
   })
 );
 
-export const verificationBatches = pgTable('verification_batches', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  number: varchar('number', { length: 100 }).notNull(), // Номер заявки
-  // plannedDate: timestamp('planned_date').notNull(), // Планируемый месяц/дата отправки
-  plannedDate: timestamp('planned_date', { withTimezone: true }).notNull(), // Планируемый месяц/дата отправки
-  verificationOrganizationId: uuid('verification_organization_id').references(
-    () => verificationOrganizations.id
-  ), // Куда везем (ссылка на вашу таблицу)
-  status: text('status').notNull().default('draft'), // 'draft' | 'sent' | 'completed'
-  comment: text('comment'),
-  type: text('type').notNull().default('verification'), // 'verification' | 'inspection'
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+export const verificationBatches = pgTable(
+  'verification_batches',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    number: varchar('number', { length: 100 }).notNull(), // Номер заявки
+    // plannedDate: timestamp('planned_date').notNull(), // Планируемый месяц/дата отправки
+    plannedDate: timestamp('planned_date', { withTimezone: true }).notNull(), // Планируемый месяц/дата отправки
+    verificationOrganizationId: uuid('verification_organization_id').references(
+      () => verificationOrganizations.id
+    ), // Куда везем (ссылка на вашу таблицу)
+    status: text('status').notNull().default('draft'), // 'draft' | 'sent' | 'completed'
+    comment: text('comment'),
+    type: text('type').notNull().default('verification'), // 'verification' | 'inspection'
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
 
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
 
-  createdById: uuid('created_by_id').references(() => users.id, {
-    onDelete: 'set null',
-  }),
-});
+    createdById: uuid('created_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (t) => [
+    index('idx_batches_planned_date').on(t.plannedDate),
+    index('idx_batches_status_type').on(t.status, t.type),
+  ]
+);
 
 // 3. Промежуточная таблица связей приборов и партий
 export const devicesToBatches = pgTable(

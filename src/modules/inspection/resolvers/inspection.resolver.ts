@@ -1,4 +1,5 @@
 import { Context } from '../../../context';
+import { DeviceService } from '../../device/service/device.service';
 import { VerificationPlanningService } from '../../verification/service/verification.service';
 import { InspectionService } from '../service/inspection.service';
 
@@ -23,6 +24,19 @@ export const Query = {
       limit,
       offset
     );
+  },
+
+  getInspectionCalendarSummary: async (
+    _: unknown,
+    __: unknown,
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    return await new InspectionService(db).getInspectionCalendarSummary();
   },
 
   getInspectionBatchesArchive: async (
@@ -64,7 +78,14 @@ export const Mutation = {
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
-    return await new InspectionService(db).createBulkInspection(
+
+    const deviceService = new DeviceService(db);
+    const inspectionService = new InspectionService(
+      db,
+      undefined,
+      deviceService
+    );
+    return await inspectionService.createBulkInspection(
       items,
       intervalMonths,
       currentUser.id

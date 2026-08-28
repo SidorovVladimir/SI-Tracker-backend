@@ -1,4 +1,5 @@
 import {
+  index,
   pgTable,
   timestamp,
   uniqueIndex,
@@ -27,6 +28,9 @@ export const productionSites = pgTable(
   },
   (t) => [
     uniqueIndex('idx_site_unique_constraint').on(t.name, t.companyId, t.cityId),
+    index('idx_production_sites_name').on(t.name),
+    index('idx_production_sites_company_id').on(t.companyId),
+    index('idx_production_sites_city_id').on(t.cityId),
   ]
 );
 

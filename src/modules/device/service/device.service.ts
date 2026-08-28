@@ -1,4 +1,4 @@
-import { and, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, eq, ilike, inArray, isNull, ne, or, sql, asc } from 'drizzle-orm';
 import { DrizzleDB } from '../../../db/client';
 import { CreateDeviceInput } from '../dto/CreateDeviceDto';
 import { DeviceEntity } from '../types/device.types';
@@ -59,338 +59,93 @@ export class DeviceService {
     filter?: any;
   }) {
     const { limit = 25, offset = 0, filter } = args;
-
-    // const conditions = [eq(devices.archived, false)];
-
     const conditions = [];
 
-    if (filter?.includeArchived === true) {
-      // Режим 1: Выбрано "Все приборы".
-      // Мы просто НИЧЕГО не добавляем в массив условий, Postgres выведет и true, и false вместе.
-    } else if (filter?.archived === true) {
-      // Режим 2: Выбрано "Только архив".
-      conditions.push(eq(devices.archived, true));
-    } else {
-      // Режим 3: Выбрано "Активные" ИЛИ первая загрузка страницы (по умолчанию)
-      conditions.push(eq(devices.archived, false));
+    // 1. Фильтр архива (Мгновенный по B-Tree индексу)
+    if (filter?.includeArchived !== true) {
+      conditions.push(eq(devices.archived, filter?.archived === true));
     }
 
-    // const conditions = [eq(devices.archived, filter.archived)];
-    // 1. Фильтр по наименованию (Регистронезависимый поиск ILIKE)
+    // 2. Текстовые фильтры (Обычный ILIKE по подстроке)
     if (filter?.deviceName) {
       conditions.push(ilike(devices.name, `%${filter.deviceName}%`));
     }
-
-    // 2. Фильтр по заводскому номеру
     if (filter?.serialNumber) {
       conditions.push(ilike(devices.serialNumber, `%${filter.serialNumber}%`));
     }
 
+    // Утилита очистки строк на бэкенде (база больше не тратит ресурсы на LOWER и TRIM)
+    const cleanStr = (val: any) =>
+      typeof val === 'string' ? val.trim().toLowerCase() : null;
+
+    // 3. Фильтры по справочникам (Прямое и быстрое сравнение по индексам, в БД всё в LOWER)
     if (filter?.status) {
       conditions.push(
-        sql`${devices.statusId} IN (
-          SELECT id FROM statuses WHERE LOWER(TRIM(name)) = LOWER(TRIM(${filter.status}))
-        )`
+        sql`${
+          devices.statusId
+        } IN (SELECT id FROM statuses WHERE name = ${cleanStr(filter.status)})`
       );
     }
-
-    // 4. Фильтр по названию подразделения (Production Site)
     if (filter?.productionSite) {
       conditions.push(
-        sql`${devices.productionSiteId} IN (
-      SELECT id FROM production_sites 
-      WHERE LOWER(TRIM(name)) = LOWER(TRIM(${filter.productionSite}))
-    )`
+        sql`${
+          devices.productionSiteId
+        } IN (SELECT id FROM production_sites WHERE name = ${cleanStr(
+          filter.productionSite
+        )})`
       );
     }
-
-    // 5. Фильтр по названию города (через таблицу подразделений production_sites)
     if (filter?.city) {
       conditions.push(
         sql`${devices.productionSiteId} IN (
-          SELECT ps.id FROM production_sites ps
-          JOIN cities c ON ps.city_id = c.id
-          WHERE LOWER(TRIM(c.name)) = LOWER(TRIM(${filter.city}))
-        )`
+        SELECT ps.id FROM production_sites ps
+        JOIN cities c ON ps.city_id = c.id
+        WHERE c.name = ${cleanStr(filter.city)}
+      )`
       );
     }
-
-    // 6. Фильтр по названию организации/компании (через таблицу подразделений)
     if (filter?.company) {
       conditions.push(
         sql`${devices.productionSiteId} IN (
-      SELECT ps.id FROM production_sites ps
-      JOIN companies comp ON ps.company_id = comp.id
-      WHERE LOWER(TRIM(comp.name)) = LOWER(TRIM(${filter.company}))
-    )`
+        SELECT ps.id FROM production_sites ps
+        JOIN companies comp ON ps.company_id = comp.id
+        WHERE comp.name = ${cleanStr(filter.company)}
+      )`
       );
     }
 
-    // 7. Фильтр по виду контроля актуальной поверки (подзапрос к verifications)
-    // if (filter?.metrologyControle) {
-    //   conditions.push(
-    //     sql`${devices.id} IN (
-    //       SELECT v.device_id FROM verifications v
-    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-    //       WHERE LOWER(TRIM(mct.name)) = LOWER(TRIM(${filter.metrologyControle}))
-    //       AND v.valid_until = (
-    //         SELECT MAX(valid_until) FROM verifications WHERE device_id = v.device_id
-    //       )
-    //     )`
-    //   );
-    // }
-
-    // if (filter?.metrologyControle) {
-    //   const controlName = String(filter.metrologyControle).toLowerCase().trim();
-
-    //   if (controlName === 'осмотр') {
-    //     // Если ищут приборы по Осмотру — смотрим на самый свежий осмотр
-    //     conditions.push(
-    //       sql`${devices.id} IN (
-    //         SELECT v.device_id FROM verifications v
-    //         JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-    //         WHERE LOWER(TRIM(mct.name)) = 'осмотр'
-    //         AND v.date = (
-    //           SELECT MAX(date) FROM verifications
-    //           WHERE device_id = v.device_id
-    //           AND metrology_controle_type_id = (SELECT id FROM metrology_controle_types WHERE LOWER(TRIM(name)) = 'осмотр')
-    //         )
-    //       )`
-    //     );
-    //   } else {
-    //     // Если ищут Поверку/Калибровку/Аттестацию — смотрим на MAX(valid_until) только среди них!
-    //     conditions.push(
-    //       sql`${devices.id} IN (
-    //         SELECT v.device_id FROM verifications v
-    //         JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-    //         WHERE LOWER(TRIM(mct.name)) = ${controlName}
-    //         AND v.valid_until = (
-    //           SELECT MAX(valid_until) FROM verifications v2
-    //           JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
-    //           WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
-    //         )
-    //       )`
-    //     );
-    //   }
-    // }
-
-    // // 5. ИСПРАВЛЕННЫЕ ДАТЫ: Фильтры по датам теперь смотрят ИСКЛЮЧИТЕЛЬНО на государеву поверку (игнорируя осмотры)
-    // if (filter?.dateStart) {
-    //   const safeDateStart = String(filter.dateStart).slice(0, 10);
-    //   conditions.push(
-    //     sql`${devices.id} IN (
-    //       SELECT v.device_id FROM verifications v
-    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-    //       WHERE LOWER(TRIM(mct.name)) != 'осмотр'
-    //       AND v.valid_until::date >= ${safeDateStart}::date
-    //       AND v.valid_until = (
-    //         SELECT MAX(valid_until) FROM verifications v2
-    //         JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
-    //         WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
-    //       )
-    //     )`
-    //   );
-    // }
-
-    // if (filter?.dateEnd) {
-    //   const safeDateEnd = String(filter.dateEnd).slice(0, 10);
-    //   conditions.push(
-    //     sql`${devices.id} IN (
-    //       SELECT v.device_id FROM verifications v
-    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-    //       WHERE LOWER(TRIM(mct.name)) != 'осмотр'
-    //       AND v.valid_until::date <= ${safeDateEnd}::date
-    //       AND v.valid_until = (
-    //         SELECT MAX(valid_until) FROM verifications v2
-    //         JOIN metrology_controle_types mct2 ON v2.metrology_controle_type_id = mct2.id
-    //         WHERE v2.device_id = v.device_id AND LOWER(TRIM(mct2.name)) != 'осмотр'
-    //       )
-    //     )`
-    //   );
-    // }
-
-    // if (filter?.metrologyControle) {
-    //   const controlName = String(filter.metrologyControle).toLowerCase().trim();
-
-    //   conditions.push(
-    //     sql`${devices.id} IN (
-    //       SELECT v.device_id FROM verifications v
-    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-    //       LEFT JOIN equipment_types eq ON ${devices.equipmentTypeId} = eq.id
-    //       WHERE LOWER(TRIM(mct.name)) = ${controlName}
-    //         -- Проверяем, что эта запись является ОПРЕДЕЛЯЮЩЕЙ по правилам метролога:
-    //         AND LOWER(TRIM(mct.name)) = CASE
-    //           WHEN LOWER(TRIM(eq.name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
-    //           WHEN LOWER(TRIM(eq.name)) = 'средство измерений (си)' THEN
-    //             CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != ''
-    //               AND ${devices.id} NOT IN (
-    //                 SELECT device_id FROM scopes_to_devices std
-    //                 JOIN scopes sc ON std.scope_id = sc.id
-    //                 WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-    //               ) THEN 'поверка' ELSE 'осмотр' END
-    //           WHEN LOWER(TRIM(eq.name)) = 'средство контроля (ск)' THEN
-    //             CASE WHEN ${devices.id} IN (
-    //               SELECT device_id FROM scopes_to_devices std
-    //               JOIN scopes sc ON std.scope_id = sc.id
-    //               WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-    //             ) THEN 'осмотр'
-    //             WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
-    //             ELSE 'калибровка' END
-    //           WHEN LOWER(TRIM(eq.name)) = 'испытательное оборудование (ио)' THEN
-    //             CASE WHEN ${devices.id} IN (
-    //               SELECT device_id FROM scopes_to_devices std
-    //               JOIN scopes sc ON std.scope_id = sc.id
-    //               WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-    //             ) THEN 'осмотр' ELSE 'аттестация' END
-    //           ELSE 'осмотр'
-    //         END
-    //         -- И что это самый свежий документ этого типа
-    //         AND v.date = (
-    //           SELECT MAX(v3.date) FROM verifications v3
-    //           WHERE v3.device_id = v.device_id AND v3.metrology_controle_type_id = v.metrology_controle_type_id
-    //         )
-    //     )`
-    //   );
-    // }
-
-    // // 8. ИСПРАВЛЕННЫЕ ФИЛЬТРЫ ПО ДАТАМ (Ищут только внутри ОПРЕДЕЛЯЮЩЕГО контроля)
-    // if (filter?.dateStart || filter?.dateEnd) {
-    //   const dateStartCond = filter?.dateStart
-    //     ? sql`AND v.valid_until::date >= ${String(filter.dateStart).slice(
-    //         0,
-    //         10
-    //       )}::date`
-    //     : sql`1=1`;
-    //   const dateEndCond = filter?.dateEnd
-    //     ? sql`AND v.valid_until::date <= ${String(filter.dateEnd).slice(
-    //         0,
-    //         10
-    //       )}::date`
-    //     : sql`1=1`;
-
-    //   conditions.push(
-    //     sql`${devices.id} IN (
-    //       SELECT v.device_id FROM verifications v
-    //       JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-    //       LEFT JOIN equipment_types eq ON ${devices.equipmentTypeId} = eq.id
-    //       WHERE 1=1
-    //         ${dateStartCond}
-    //         ${dateEndCond}
-    //         -- Жесткая привязка к типу контроля метролога
-    //         AND LOWER(TRIM(mct.name)) = CASE
-    //           WHEN LOWER(TRIM(eq.name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
-    //           WHEN LOWER(TRIM(eq.name)) = 'средство измерений (си)' THEN
-    //             CASE WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != ''
-    //               AND ${devices.id} NOT IN (
-    //                 SELECT device_id FROM scopes_to_devices std
-    //                 JOIN scopes sc ON std.scope_id = sc.id
-    //                 WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-    //               ) THEN 'поверка' ELSE 'осмотр' END
-    //           WHEN LOWER(TRIM(eq.name)) = 'средство контроля (ск)' THEN
-    //             CASE WHEN ${devices.id} IN (
-    //               SELECT device_id FROM scopes_to_devices std
-    //               JOIN scopes sc ON std.scope_id = sc.id
-    //               WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-    //             ) THEN 'осмотр'
-    //             WHEN ${devices.grsiNumber} IS NOT NULL AND ${devices.grsiNumber} != '' THEN 'поверка'
-    //             ELSE 'калибровка' END
-    //           WHEN LOWER(TRIM(eq.name)) = 'испытательное оборудование (ио)' THEN
-    //             CASE WHEN ${devices.id} IN (
-    //               SELECT device_id FROM scopes_to_devices std
-    //               JOIN scopes sc ON std.scope_id = sc.id
-    //               WHERE LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-    //             ) THEN 'осмотр' ELSE 'аттестация' END
-    //           ELSE 'осмотр'
-    //         END
-    //         AND v.date = (
-    //           SELECT MAX(v3.date) FROM verifications v3
-    //           WHERE v3.device_id = v.device_id AND v3.metrology_controle_type_id = v.metrology_controle_type_id
-    //         )
-    //     )`
-    //   );
-    // }
-    if (filter?.metrologyControle || filter?.dateStart || filter?.dateEnd) {
-      const controlName = filter.metrologyControle
-        ? String(filter.metrologyControle).toLowerCase().trim()
-        : null;
-
-      const safeDateStart = filter.dateStart
-        ? String(filter.dateStart).slice(0, 10)
-        : null;
-      const safeDateEnd = filter.dateEnd
-        ? String(filter.dateEnd).slice(0, 10)
-        : null;
-
+    // 4. МГНОВЕННЫЙ ФИЛЬТР МЕТРОЛОГИИ (По нашим новым кэш-колонкам)
+    if (filter?.metrologyControle) {
       conditions.push(
-        sql`${devices.id} IN (
-          WITH ranked_verifications AS (
-            SELECT 
-              v.device_id,
-              v.valid_until,
-              mct.name as c_name,
-              eq.name as eq_name,
-              d.grsi_number,
-              -- Заменяем тяжелый подзапрос MAX(date) на быструю оконную функцию Postgres
-              ROW_NUMBER() OVER(PARTITION BY v.device_id, v.metrology_controle_type_id ORDER BY v.date DESC) as rn,
-              -- Проверяем сферу ГР один раз для всех через EXISTS (работает мгновенно)
-              EXISTS (
-                SELECT 1 FROM scopes_to_devices std 
-                JOIN scopes sc ON std.scope_id = sc.id 
-                WHERE std.device_id = v.device_id 
-                AND LOWER(TRIM(sc.name)) IN ('не гр', 'вне сферы государственного регулирования (не гр)')
-              ) as is_out_of_scope
-            FROM verifications v
-            JOIN devices d ON v.device_id = d.id
-            JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-            LEFT JOIN equipment_types eq ON d.equipment_type_id = eq.id
-          ),
-          determined_controls AS (
-            SELECT 
-              device_id,
-              valid_until,
-              LOWER(TRIM(c_name)) as current_control,
-              -- Вычисляем определяющий контроль на чистых переменных без подзапросов
-              LOWER(TRIM(CASE 
-                WHEN LOWER(TRIM(eq_name)) IN ('индикатор', 'вспомогательное оборудование (во)') THEN 'осмотр'
-                WHEN LOWER(TRIM(eq_name)) = 'средство измерений (си)' THEN 
-                  CASE WHEN grsi_number IS NOT NULL AND grsi_number != '' AND NOT is_out_of_scope THEN 'поверка' ELSE 'осмотр' END
-                WHEN LOWER(TRIM(eq_name)) = 'средство контроля (ск)' THEN 
-                  CASE WHEN is_out_of_scope THEN 'осмотр'
-                       WHEN grsi_number IS NOT NULL AND grsi_number != '' THEN 'поверка'
-                       ELSE 'калибровка' END
-                WHEN LOWER(TRIM(eq_name)) = 'испытательное оборудование (ио)' THEN 
-                  CASE WHEN is_out_of_scope THEN 'осмотр' ELSE 'аттестация' END
-                ELSE 'осмотр'
-              END)) as target_control
-            FROM ranked_verifications
-            WHERE rn = 1 -- Забираем только самые свежие документы
-          )
-          SELECT device_id 
-          FROM determined_controls
-          WHERE current_control = target_control -- Берем только определяющий контроль
-            ${controlName ? sql`AND target_control = ${controlName}` : sql``}
-            ${
-              safeDateStart
-                ? sql`AND valid_until::date >= ${safeDateStart}::date`
-                : sql``
-            }
-            ${
-              safeDateEnd
-                ? sql`AND valid_until::date <= ${safeDateEnd}::date`
-                : sql``
-            }
-        )`
+        eq(devices.cachedControl, cleanStr(filter.metrologyControle)!)
+      );
+    }
+    if (filter?.dateStart) {
+      conditions.push(
+        sql`${devices.nextVerificationDate} >= ${String(filter.dateStart).slice(
+          0,
+          10
+        )}`
+      );
+    }
+    if (filter?.dateEnd) {
+      conditions.push(
+        sql`${devices.nextVerificationDate} <= ${String(filter.dateEnd).slice(
+          0,
+          10
+        )}`
       );
     }
 
-    const whereClause = and(...conditions);
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    // Считаем точное число строк С УЧЕТОМ фильтров, чтобы пагинатор DataGrid знал число страниц
+    // 5. Оптимизированный подсчет количества (Без тяжелых подзапросов)
     const [countResult] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(devices)
       .where(whereClause);
 
+    // 6. Получение данных (Выгребаем максимум 2 записи верификаций на прибор: целевую и осмотр)
     const items = await this.db.query.devices.findMany({
       where: whereClause,
       limit,
@@ -405,14 +160,9 @@ export class DeviceService {
         inventoryNumber: true,
         releaseDate: true,
         manufacturer: true,
+        cachedControl: true, // Забираем значение кэша для маппинга
       },
       with: {
-        equipmentType: { columns: { name: true } },
-        scopesToDevices: {
-          with: {
-            scope: true,
-          },
-        },
         status: { columns: { name: true } },
         productionSite: {
           columns: { name: true },
@@ -421,11 +171,9 @@ export class DeviceService {
             company: { columns: { name: true } },
           },
         },
-        // База выгребает СТРОГО 1 последнюю поверку прибора!
         verifications: {
-          // orderBy: (v, { desc }) => [desc(v.validUntil), desc(v.date)],
           orderBy: (v) => [sql`${v.date} DESC NULLS LAST`],
-          // limit: 1, // Пока убрали для получения всех поверок
+          limit: 2, // Ограничиваем выборку истории в памяти Node.js
           columns: {
             id: true,
             date: true,
@@ -437,90 +185,19 @@ export class DeviceService {
       },
     });
 
-    // 6. МАППИНГ (Разделение записей по логическим колонкам для DataGrid)
+    // 7. Легкий маппинг без тяжелых JS-вычислений массивов
     return {
       items: items.map((d) => {
-        // Ищем самую свежую официальную поверку / калибровку
-        //     const latestVerification =
-        //       d.verifications.find(
-        //         (v) =>
-        //           v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
-        //       ) || null;
-
-        //     // Ищем самый свежий внутренний осмотр
-        //     const latestInspection =
-        //       d.verifications.find(
-        //         (v) =>
-        //           v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
-        //       ) || null;
-
-        //     return {
-        //       id: d.id,
-        //       name: d.name,
-        //       model: d.model,
-        //       grsiNumber: d.grsiNumber,
-        //       serialNumber: d.serialNumber,
-        //       inventoryNumber: d.inventoryNumber,
-        //       releaseDate: d.releaseDate,
-        //       manufacturer: d.manufacturer,
-        //       status: d.status,
-        //       productionSite: d.productionSite,
-
-        //       // Отдаем на фронтенд два РАЗДЕЛЬНЫХ объекта
-        //       latestVerification,
-        //       latestInspection,
-        //     };
-        //   }),
-        //   totalCount: countResult?.count ?? 0,
-        // };
-        const eqTypeName = d.equipmentType?.name?.toLowerCase().trim() ?? '';
-        const grsiNumber = d.grsiNumber;
-        const hasGrsi = !!grsiNumber && grsiNumber.trim() !== '';
-
-        const deviceScopes = (d.scopesToDevices ?? [])
-          .filter((s: any) => s?.scope?.name)
-          .map((s: any) => s.scope.name.toLowerCase().trim());
-
-        const isNotGr =
-          deviceScopes.includes('не гр') ||
-          deviceScopes.includes(
-            'вне сферы государственного регулирования (не гр)'
-          );
-
-        // 1. Сначала ВСЕГДА находим самый свежий внутренний осмотр для отдельной колонки
-        const absoluteLatestInspection =
-          d.verifications.find(
-            (v) =>
-              v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
-          ) || null;
-
-        // 2. 🎯 ВЫЧИСЛЯЕМ СТРОГОЕ НАЗВАНИЕ ЦЕЛЕВОГО КОНТРОЛЯ:
-        let targetControlName = 'осмотр';
-
-        if (
-          eqTypeName === 'индикатор' ||
-          eqTypeName === 'вспомогательное оборудование (во)'
-        ) {
-          targetControlName = 'осмотр';
-        } else if (eqTypeName === 'средство измерений (си)') {
-          targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
-        } else if (eqTypeName === 'средство контроля (ск)') {
-          targetControlName = isNotGr
-            ? 'осмотр'
-            : hasGrsi
-            ? 'поверка'
-            : 'калибровка';
-        } else if (eqTypeName === 'испытательное оборудование (ио)') {
-          targetControlName = isNotGr ? 'осмотр' : 'аттестация';
-        }
-
-        // 3. 🎯 ИЩЕМ В ИСТОРИИ ЗАПИСЬ СТРОГО С ВЫЧИСЛЕННЫМ НАЗВАНИЕМ КОНТРОЛЯ
-        // Благодаря [v.date DESC] в findMany, это будет самый свежий документ именно ЭТОГО вида
+        // Находим среди выгруженных записей ту, что совпадает с вычисленным типом контроля
         const targetControl =
           d.verifications.find(
-            (v) =>
-              v.metrologyControleType?.name?.toLowerCase().trim() ===
-              targetControlName
+            (v) => v.metrologyControleType?.name === d.cachedControl
+          ) || null;
+
+        // Находим осмотр для выделенной колонки
+        const absoluteLatestInspection =
+          d.verifications.find(
+            (v) => v.metrologyControleType?.name === 'осмотр'
           ) || null;
 
         return {
@@ -534,11 +211,7 @@ export class DeviceService {
           manufacturer: d.manufacturer,
           status: d.status,
           productionSite: d.productionSite,
-
-          // Целевой контроль теперь выведет СТРОГО нужный документ (например, только калибровку для СК без ГРСИ)
           latestVerification: targetControl,
-
-          // Колонка осмотра остается независимой
           latestInspection: absoluteLatestInspection,
         };
       }),
@@ -547,247 +220,50 @@ export class DeviceService {
   }
 
   async getDevice(id: string) {
+    // ПОТОК 1: Забираем только плоские данные прибора и его прямые связи 1-к-1
+    // Это отработает мгновенно по первичному ключу
     const data = await this.db.query.devices.findFirst({
       where: eq(devices.id, id),
-      with: {
-        status: true,
-        equipmentType: true,
-        documents: true,
-        createdBy: true,
-        updatedBy: true,
-        productionSite: {
-          with: {
-            city: true,
-            company: true,
-          },
-        },
-        scopesToDevices: {
-          with: {
-            scope: true,
-          },
-        },
-        primaryStandartsToDevices: {
-          with: {
-            primaryStandart: true,
-          },
-        },
-        measurementTypesToDevices: {
-          with: {
-            measurementType: true,
-          },
-        },
-        verifications: {
-          orderBy: (verifications, { asc }) => [asc(verifications.validUntil)],
-          with: {
-            metrologyControleType: true,
-            verificationOrganization: true,
-          },
-        },
-      },
-    });
-
-    if (!data) return null;
-
-    const manualDocs = await this.db.query.deviceDocuments.findMany({
-      where: (doc) => {
-        return or(
-          // Если это СИ с ГРСИ: ищем РЭ, где совпадает И ГРСИ, И Модель (а deviceId пустой)
-          data.grsiNumber && data.model
-            ? and(
-                eq(doc.grsiNumber, data.grsiNumber),
-                eq(doc.modelName, data.model),
-                isNull(doc.deviceId)
-              )
-            : undefined,
-
-          // Если это ИО/ВО (ГРСИ нет): ищем РЭ, где совпадает только Модель (а ГРСИ и deviceId пустые)
-          !data.grsiNumber && data.model
-            ? and(
-                eq(doc.modelName, data.model),
-                isNull(doc.grsiNumber),
-                isNull(doc.deviceId)
-              )
-            : undefined
-        );
-      },
-    });
-
-    const scopes = data?.scopesToDevices.map((sd) => sd.scope);
-    const primaryStandarts = data?.primaryStandartsToDevices.map(
-      (psd) => psd.primaryStandart
-    );
-    const measurementTypes = data?.measurementTypesToDevices.map(
-      (mt) => mt.measurementType
-    );
-
-    const allDocuments = [...(data.documents || []), ...manualDocs];
-    return {
-      ...data,
-      scopes,
-      primaryStandarts,
-      measurementTypes,
-      documents: allDocuments,
-    };
-  }
-
-  // async getDevice(id: string) {
-  //   // 1. Извлекаем плоскую базовую строку прибора и его прякие связи 1-to-1
-  //   const [baseDevice] = await this.db
-  //     .select({
-  //       device: devices,
-  //       status: statuses,
-  //       equipmentType: equipmentTypes,
-  //       productionSite: productionSites,
-  //       city: cities,
-  //       company: companies,
-  //     })
-  //     .from(devices)
-  //     .leftJoin(statuses, eq(statuses.id, devices.statusId))
-  //     .leftJoin(equipmentTypes, eq(equipmentTypes.id, devices.equipmentTypeId))
-  //     .leftJoin(
-  //       productionSites,
-  //       eq(productionSites.id, devices.productionSiteId)
-  //     )
-  //     .leftJoin(cities, eq(cities.id, productionSites.cityId))
-  //     .leftJoin(companies, eq(companies.id, productionSites.companyId))
-  //     .where(eq(devices.id, id))
-  //     .execute();
-
-  //   if (!baseDevice) return null;
-
-  //   // 2. Изолированно вытаскиваем историю поверок (без каши в подзапросах)
-  //   const rawVerifications = await this.db
-  //     .select({
-  //       verification: verifications,
-  //       metrologyControleType: metrologyControleTypes,
-  //       verificationOrganization: verificationOrganizations,
-  //     })
-  //     .from(verifications)
-  //     .leftJoin(
-  //       metrologyControleTypes,
-  //       eq(metrologyControleTypes.id, verifications.metrologyControleTypeId)
-  //     )
-  //     .leftJoin(
-  //       verificationOrganizations,
-  //       eq(
-  //         verificationOrganizations.id,
-  //         verifications.verificationOrganizationId
-  //       )
-  //     )
-  //     .where(eq(verifications.deviceId, id))
-  //     .execute();
-
-  //   // Сортируем поверки на уровне JS (asc по validUntil)
-  //   const sortedVerifications = rawVerifications
-  //     .map((v) => ({
-  //       ...v.verification,
-  //       metrologyControleType: v.metrologyControleType,
-  //       verificationOrganization: v.verificationOrganization,
-  //     }))
-  //     .sort((a, b) => {
-  //       const dateA = a.validUntil ? new Date(a.validUntil).getTime() : 0;
-  //       const dateB = b.validUntil ? new Date(b.validUntil).getTime() : 0;
-  //       return dateA - dateB;
-  //     });
-
-  //   // 3. Извлекаем связанные Many-to-Many массивы справочников (Сферы, Эталоны, Виды измерений)
-  //   const rawScopes = await this.db
-  //     .select({ scope: scopes })
-  //     .from(scopesToDevices)
-  //     .innerJoin(scopes, eq(scopes.id, scopesToDevices.scopeId))
-  //     .where(eq(scopesToDevices.deviceId, id))
-  //     .execute();
-
-  //   const rawStandards = await this.db
-  //     .select({ standard: primaryStandarts })
-  //     .from(primaryStandartsToDevices)
-  //     .innerJoin(
-  //       primaryStandarts,
-  //       eq(primaryStandarts.id, primaryStandartsToDevices.primaryStandartId)
-  //     )
-  //     .where(eq(primaryStandartsToDevices.deviceId, id))
-  //     .execute();
-
-  //   const rawMeasurements = await this.db
-  //     .select({ measurement: measurementTypes })
-  //     .from(measurementTypesToDevices)
-  //     .innerJoin(
-  //       measurementTypes,
-  //       eq(measurementTypes.id, measurementTypesToDevices.measurementTypeId)
-  //     )
-  //     .where(eq(measurementTypesToDevices.deviceId, id))
-  //     .execute();
-
-  //   // 4. Собираем идеальный GraphQL-ответ, полностью повторяющий вашу прошлую структуру объекта
-  //   return {
-  //     ...baseDevice.device,
-  //     status: baseDevice.status,
-  //     equipmentType: baseDevice.equipmentType,
-  //     productionSite: baseDevice.productionSite
-  //       ? {
-  //           ...baseDevice.productionSite,
-  //           city: baseDevice.city,
-  //           company: baseDevice.company,
-  //         }
-  //       : null,
-  //     verifications: sortedVerifications,
-  //     scopes: rawScopes.map((r) => r.scope),
-  //     primaryStandarts: rawStandards.map((r) => r.standard),
-  //     measurementTypes: rawMeasurements.map((r) => r.measurement),
-  //   };
-  // }
-
-  async getFlatAuditSnapshot(deviceId: string) {
-    const data = await this.db.query.devices.findFirst({
-      where: eq(devices.id, deviceId),
       columns: {
         id: true,
         name: true,
         model: true,
-        csmCode: true,
         serialNumber: true,
+        releaseDate: true,
         grsiNumber: true,
+        csmCode: true,
         measurementRange: true,
         accuracy: true,
         inventoryNumber: true,
+        receiptDate: true,
         manufacturer: true,
         verificationInterval: true,
         archived: true,
         nomenclature: true,
         comment: true,
+        leadTimeDays: true,
+        statusId: true,
+        productionSiteId: true,
+        equipmentTypeId: true,
+        createdAt: true,
+        updatedAt: true,
+        createdById: true,
+        updatedById: true,
       },
       with: {
-        status: { columns: { name: true } },
-        equipmentType: { columns: { name: true } },
+        status: { columns: { id: true, name: true } },
+        equipmentType: { columns: { id: true, name: true } },
+        createdBy: {
+          columns: { id: true, firstName: true, lastName: true, role: true },
+        }, // или какие поля вам нужны
+        updatedBy: {
+          columns: { id: true, firstName: true, lastName: true, role: true },
+        },
         productionSite: {
-          columns: { name: true },
+          columns: { id: true, name: true },
           with: {
-            city: { columns: { name: true } },
-            company: { columns: { name: true } },
-          },
-        },
-        scopesToDevices: { with: { scope: { columns: { name: true } } } },
-        primaryStandartsToDevices: {
-          with: { primaryStandart: { columns: { name: true } } },
-        },
-        measurementTypesToDevices: {
-          with: { measurementType: { columns: { name: true } } },
-        },
-        verifications: {
-          orderBy: (verifications, { asc }) => [asc(verifications.validUntil)],
-          columns: {
-            id: true,
-            date: true,
-            validUntil: true,
-            result: true,
-            protocolNumber: true,
-            comment: true,
-            documentUrl: true,
-            cost: true,
-          },
-          with: {
-            metrologyControleType: { columns: { name: true } },
-            verificationOrganization: { columns: { name: true } },
+            city: { columns: { id: true, name: true } },
+            company: { columns: { id: true, name: true } },
           },
         },
       },
@@ -795,26 +271,210 @@ export class DeviceService {
 
     if (!data) return null;
 
+    // ПОТОК 2: Параллельно забираем все массивы связей МНОГИЕ-КО-МНОГИМ и документы
+    // Запросы выполняются одновременно (Promise.all), используя индексы deviceId
+    const [
+      dbScopes,
+      dbStandarts,
+      dbMeasurements,
+      dbVerifications,
+      dbDocuments,
+    ] = await Promise.all([
+      // Сферы
+      this.db.query.scopesToDevices.findMany({
+        where: eq(scopesToDevices.deviceId, id),
+        with: { scope: true },
+      }),
+      // Эталоны
+      this.db.query.primaryStandartsToDevices.findMany({
+        where: eq(primaryStandartsToDevices.deviceId, id),
+        with: { primaryStandart: true },
+      }),
+      // Виды измерений
+      this.db.query.measurementTypesToDevices.findMany({
+        where: eq(measurementTypesToDevices.deviceId, id),
+        with: { measurementType: true },
+      }),
+      // Верификации (сортируем в БД)
+      this.db.query.verifications.findMany({
+        where: eq(verifications.deviceId, id),
+        orderBy: (v, { asc }) => [asc(v.validUntil)],
+        with: {
+          metrologyControleType: { columns: { id: true, name: true } },
+          verificationOrganization: { columns: { id: true, name: true } },
+        },
+      }),
+      // Документы конкретного прибора (Паспорта)
+      this.db.query.deviceDocuments.findMany({
+        where: eq(deviceDocuments.deviceId, id),
+      }),
+    ]);
+
+    // ПОТОК 3: Чистый, оптимизированный поиск руководств (РЭ) по модели/ГРСИ
+    // Убираем сложные динамические `or(undefined)`, пишем жесткое и понятное для Postgres условие
+    const manualDocsConditions = [];
+
+    if (data.grsiNumber && data.model) {
+      // Сценарий для СИ: совпадает ГРСИ + Модель, прибор пустой
+      manualDocsConditions.push(
+        and(
+          eq(deviceDocuments.grsiNumber, data.grsiNumber),
+          eq(deviceDocuments.modelName, data.model),
+          isNull(deviceDocuments.deviceId)
+        )
+      );
+    } else if (data.model) {
+      // Сценарий для ИО/ВО: совпадает только Модель, ГРСИ и прибор пустые
+      manualDocsConditions.push(
+        and(
+          eq(deviceDocuments.modelName, data.model),
+          isNull(deviceDocuments.grsiNumber),
+          isNull(deviceDocuments.deviceId)
+        )
+      );
+    }
+
+    // Делаем запрос за РЭ только если сформировались условия
+    const manualDocs =
+      manualDocsConditions.length > 0
+        ? await this.db.query.deviceDocuments.findMany({
+            where: or(...manualDocsConditions),
+          })
+        : [];
+
+    // Разворачиваем плоские массивы, сохраняя исходный контракт фронтенда
+    const scopes = dbScopes.map((sd) => sd.scope).filter(Boolean);
+    const primaryStandarts = dbStandarts
+      .map((psd) => psd.primaryStandart)
+      .filter(Boolean);
+    const measurementTypes = dbMeasurements
+      .map((mt) => mt.measurementType)
+      .filter(Boolean);
+    const allDocuments = [...dbDocuments, ...manualDocs];
+
+    // Возвращаем объект в том же формате, что ожидает фронтенд и аудит-лог
     return {
-      id: data.id,
-      name: data.name,
-      model: data.model,
-      serialNumber: data.serialNumber,
-      grsiNumber: data.grsiNumber,
-      csmCode: data.csmCode,
-      accuracy: data.accuracy,
-      inventoryNumber: data.inventoryNumber,
-      verificationInterval: data.verificationInterval,
-      archived: data.archived,
-      manufacturer: data.manufacturer,
-      status: data.status?.name || 'не указан',
-      equipmentType: data.equipmentType?.name || 'не указан',
-      productionSite: data.productionSite?.name || 'не указан',
-      scopes: data.scopesToDevices.map((s) => s.scope?.name).filter(Boolean),
-      measurementTypes: data.measurementTypesToDevices
-        .map((m) => m.measurementType?.name)
-        .filter(Boolean),
-      verifications: data.verifications.map((v) => ({
+      ...data,
+      scopes,
+      primaryStandarts,
+      measurementTypes,
+      verifications: dbVerifications,
+      documents: allDocuments,
+    };
+  }
+
+  async getFlatAuditSnapshot(deviceId: string) {
+    // Запускаем два независимых индексных запроса параллельно
+    const [deviceRows, verificationRows] = await Promise.all([
+      // Запрос 1: Основные характеристики прибора и связи многие-ко-многим
+      this.db
+        .select({
+          id: devices.id,
+          name: devices.name,
+          model: devices.model,
+          serialNumber: devices.serialNumber,
+          grsiNumber: devices.grsiNumber,
+          csmCode: devices.csmCode,
+          accuracy: devices.accuracy,
+          inventoryNumber: devices.inventoryNumber,
+          verificationInterval: devices.verificationInterval,
+          archived: devices.archived,
+          manufacturer: devices.manufacturer,
+          statusName: statuses.name,
+          equipmentTypeName: equipmentTypes.name,
+          siteName: productionSites.name,
+          cityName: cities.name,
+          companyName: companies.name,
+          scopeName: scopes.name,
+          measurementName: measurementTypes.name,
+        })
+        .from(devices)
+        .leftJoin(statuses, eq(devices.statusId, statuses.id))
+        .leftJoin(
+          equipmentTypes,
+          eq(devices.equipmentTypeId, equipmentTypes.id)
+        )
+        .leftJoin(
+          productionSites,
+          eq(devices.productionSiteId, productionSites.id)
+        )
+        .leftJoin(cities, eq(productionSites.cityId, cities.id))
+        .leftJoin(companies, eq(productionSites.companyId, companies.id))
+        .leftJoin(scopesToDevices, eq(scopesToDevices.deviceId, devices.id))
+        .leftJoin(scopes, eq(scopesToDevices.scopeId, scopes.id))
+        .leftJoin(
+          measurementTypesToDevices,
+          eq(measurementTypesToDevices.deviceId, devices.id)
+        )
+        .leftJoin(
+          measurementTypes,
+          eq(measurementTypesToDevices.measurementTypeId, measurementTypes.id)
+        )
+        .where(eq(devices.id, deviceId)),
+
+      this.db
+        .select({
+          id: verifications.id,
+          date: verifications.date,
+          validUntil: verifications.validUntil,
+          result: verifications.result,
+          protocolNumber: verifications.protocolNumber,
+          comment: verifications.comment,
+          documentUrl: verifications.documentUrl,
+          controlTypeName: metrologyControleTypes.name,
+          orgName: verificationOrganizations.name,
+        })
+        .from(verifications)
+        .leftJoin(
+          metrologyControleTypes,
+          eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+        )
+        .leftJoin(
+          verificationOrganizations,
+          eq(
+            verifications.verificationOrganizationId,
+            verificationOrganizations.id
+          )
+        )
+        .where(eq(verifications.deviceId, deviceId))
+        .orderBy(asc(verifications.validUntil)),
+    ]);
+
+    // Если прибор не найден в базе данных
+    if (!deviceRows || deviceRows.length === 0) return null;
+
+    // Так как при leftJoin строки дублируются из-за связей многие-ко-многим,
+    // берем параметры самого прибора из первой строки
+    const firstRow = deviceRows[0]!;
+
+    // Схлопываем дубликаты строк в чистые уникальные массивы на стороне Node.js (работает мгновенно)
+    const uniqueScopes = new Set<string>();
+    const uniqueMeasurements = new Set<string>();
+
+    for (const row of deviceRows) {
+      if (row.scopeName) uniqueScopes.add(row.scopeName);
+      if (row.measurementName) uniqueMeasurements.add(row.measurementName);
+    }
+
+    // Возвращаем плоский снимок в точно таком же контракте, какой ожидает ваш AuditLogService
+    return {
+      id: firstRow.id,
+      name: firstRow.name,
+      model: firstRow.model,
+      serialNumber: firstRow.serialNumber,
+      grsiNumber: firstRow.grsiNumber,
+      csmCode: firstRow.csmCode,
+      accuracy: firstRow.accuracy,
+      inventoryNumber: firstRow.inventoryNumber,
+      verificationInterval: firstRow.verificationInterval,
+      archived: firstRow.archived,
+      manufacturer: firstRow.manufacturer,
+      status: firstRow.statusName || 'не указан',
+      equipmentType: firstRow.equipmentTypeName || 'не указан',
+      productionSite: firstRow.siteName || 'не указан',
+      scopes: Array.from(uniqueScopes),
+      measurementTypes: Array.from(uniqueMeasurements),
+      verifications: verificationRows.map((v) => ({
         id: v.id,
         date: v.date,
         validUntil: v.validUntil,
@@ -822,8 +482,8 @@ export class DeviceService {
         protocolNumber: v.protocolNumber,
         comment: v.comment,
         documentUrl: v.documentUrl,
-        metrologyControleType: v.metrologyControleType?.name || '—',
-        verificationOrganization: v.verificationOrganization?.name || '—',
+        metrologyControleType: v.controlTypeName || '—',
+        verificationOrganization: v.orgName || '—',
       })),
     };
   }
@@ -862,33 +522,34 @@ export class DeviceService {
         throw new Error('Failed to create device');
       }
 
+      // 1. Привязка сфер
       if (input.scopes && input.scopes.length > 0) {
         const scopesData = input.scopes.map((sId) => ({
           deviceId: newDevice.id,
           scopeId: sId,
         }));
-
         await tx.insert(scopesToDevices).values(scopesData);
       }
 
+      // 2. Привязка эталонов
       if (input.primaryStandarts && input.primaryStandarts.length > 0) {
         const primaryStandartsData = input.primaryStandarts.map((psId) => ({
           deviceId: newDevice.id,
           primaryStandartId: psId,
         }));
-
         await tx.insert(primaryStandartsToDevices).values(primaryStandartsData);
       }
 
+      // 3. Привязка видов измерений
       if (input.measurementTypes && input.measurementTypes.length > 0) {
         const measurementTypesData = input.measurementTypes.map((mtId) => ({
           deviceId: newDevice.id,
           measurementTypeId: mtId,
         }));
-
         await tx.insert(measurementTypesToDevices).values(measurementTypesData);
       }
 
+      // 4. Добавление переданных верификаций
       if (input.verifications && input.verifications.length > 0) {
         const verificationsData = input.verifications.map((verification) => ({
           ...verification,
@@ -901,16 +562,17 @@ export class DeviceService {
               ? String(verification.cost)
               : '0.00',
         }));
-
         await tx.insert(verifications).values(verificationsData);
       }
+
+      await this.updateMetrologyCache(tx, newDevice.id);
 
       return newDevice;
     });
 
+    // Аудит-логи выполняются уже после успешного коммита транзакции
     if (this.auditLogService) {
       const fullDeviceSnapshot = await this.getFlatAuditSnapshot(result.id);
-
       await this.auditLogService.logAction({
         deviceId: result.id,
         action: 'create',
@@ -927,7 +589,6 @@ export class DeviceService {
     input: UpdateDeviceInput,
     userId: string
   ): Promise<DeviceEntity> {
-    // const oldDataSnapshot = await this.getDevice(id);
     const oldDataSnapshot = await this.getFlatAuditSnapshot(id);
     if (!oldDataSnapshot) throw new Error('Device not found');
 
@@ -965,43 +626,41 @@ export class DeviceService {
         throw new Error('Failed to update device');
       }
 
+      // 1. Синхронизация сфер
       await tx.delete(scopesToDevices).where(eq(scopesToDevices.deviceId, id));
-
       if (input.scopes && input.scopes.length > 0) {
         const valuesToInsert = input.scopes.map((sId) => ({
           deviceId: id,
           scopeId: sId,
         }));
-
         await tx.insert(scopesToDevices).values(valuesToInsert);
       }
 
+      // 2. Синхронизация эталонов
       await tx
         .delete(primaryStandartsToDevices)
         .where(eq(primaryStandartsToDevices.deviceId, id));
-
       if (input.primaryStandarts && input.primaryStandarts.length > 0) {
         const valuesToInsert = input.primaryStandarts.map((psId) => ({
           deviceId: id,
           primaryStandartId: psId,
         }));
-
         await tx.insert(primaryStandartsToDevices).values(valuesToInsert);
       }
 
+      // 3. Синхронизация видов измерений
       await tx
         .delete(measurementTypesToDevices)
         .where(eq(measurementTypesToDevices.deviceId, id));
-
       if (input.measurementTypes && input.measurementTypes.length > 0) {
         const valuesToInsert = input.measurementTypes.map((mtId) => ({
           deviceId: id,
           measurementTypeId: mtId,
         }));
-
         await tx.insert(measurementTypesToDevices).values(valuesToInsert);
       }
 
+      // 4. Синхронизация верификаций (удаление лишних)
       const dbVerifications = await tx
         .select({ id: verifications.id })
         .from(verifications)
@@ -1020,11 +679,12 @@ export class DeviceService {
           .where(inArray(verifications.id, idsToDelete));
       }
 
+      // 5. Синхронизация верификаций (добавление / обновление)
       if (input.verifications && input.verifications.length > 0) {
         for (const v of input.verifications as any[]) {
           const payload = {
-            date: v.date ? new Date(v.date) : new Date(), // Обязательное поле date
-            validUntil: v.validUntil ? new Date(v.validUntil) : null, // Необязательное validUntil
+            date: v.date ? new Date(v.date) : new Date(),
+            validUntil: v.validUntil ? new Date(v.validUntil) : null,
             result: v.result,
             protocolNumber: v.protocolNumber,
             organization: v.organization,
@@ -1038,37 +698,30 @@ export class DeviceService {
           };
 
           if (v.id) {
-            // Сценарий А: Поверка уже существовала. Мягко обновляем её поля.
-            // База данных сохранит batchId и файлы, так как мы НЕ трогаем эти колонки!
             await tx
               .update(verifications)
               .set(payload)
               .where(eq(verifications.id, v.id));
           } else {
-            // Сценарий Б: Абсолютно новая строка, добавленная кнопкой "Добавить"
             await tx.insert(verifications).values(payload);
           }
         }
       }
 
+      await this.updateMetrologyCache(tx, id);
+
       return updateDevice;
     });
 
-    // ЗДЕСЬ ТРАНЗАКЦИЯ УСПЕШНО ЗАКРЫЛАСЬ, ВСЕ БЛОКИРОВКИ С БД СНЯТЫ!
-
-    // 2. ПОСЛЕ транзакции снимаем свежий плоский снимок изменений
     const newDataSnapshot = await this.getFlatAuditSnapshot(id);
 
-    // =========================================================================
-    // 3. БЕЗОПАСНАЯ ЗАПИСЬ В ЖУРНАЛ АУДИТА ВНЕ ТРАНЗАКЦИИ (БЕЗ ДЕДЛОКОВ!)
-    // =========================================================================
     if (this.auditLogService && oldDataSnapshot && newDataSnapshot) {
       await this.auditLogService.logAction({
         deviceId: id,
         action: 'update',
-        oldData: oldDataSnapshot, // Отправляем плоский снимок "Было" с массивом поверок
-        newData: newDataSnapshot, // Отправляем плоский снимок "Стало" с массивом поверок
-        userId, // Лог запишется мгновенно
+        oldData: oldDataSnapshot,
+        newData: newDataSnapshot,
+        userId,
       });
     }
 
@@ -1185,158 +838,6 @@ export class DeviceService {
       );
     }
   }
-
-  // async syncDeviceWithArshin(input: SyncDeviceWithArshinInput, userId: string) {
-  //   const { deviceId, batchId } = input;
-
-  //   // 1. Извлекаем прибор из базы для проверки номеров
-  //   const [device] = await this.db
-  //     .select()
-  //     .from(devices)
-  //     .where(eq(devices.id, deviceId))
-  //     .limit(1);
-  //   if (!device) {
-  //     throw new Error('Прибор не найден в системе');
-  //   }
-
-  //   if (!device.grsiNumber || !device.serialNumber) {
-  //     throw new Error(
-  //       'Синхронизация невозможна: у прибора в паспорте не заполнен номер ГРСИ или Серийный номер.'
-  //     );
-  //   }
-
-  //   const [batch] = await this.db
-  //     .select()
-  //     .from(verificationBatches)
-  //     .where(eq(verificationBatches.id, batchId))
-  //     .limit(1);
-
-  //   if (!batch) {
-  //     throw new Error('Партия не найдена в системе');
-  //   }
-
-  //   const datePart = batch.plannedDate.toISOString().split('T')[0]!;
-
-  //   const futureDate = new Date(batch.plannedDate.getTime());
-  //   futureDate.setMonth(futureDate.getMonth() + 2);
-
-  //   const datePlusTwoMonths = futureDate.toISOString().split('T')[0]!;
-
-  //   const arshinService = new ArshinService();
-
-  //   const arshinData = await arshinService.fetchLatestVerificationFromArshin(
-  //     device.grsiNumber,
-  //     device.serialNumber,
-  //     datePart,
-  //     datePlusTwoMonths
-  //   );
-
-  //   if (!arshinData) {
-  //     throw new Error(
-  //       `Сведения о поверке во ФГИС Аршин не найдены (Зав. №: ${device.serialNumber}, ГРСИ: ${device.grsiNumber}). Возможно, поверитель еще не опубликовал данные.`
-  //     );
-  //   }
-
-  //   const [controlType] = await this.db
-  //     .select()
-  //     .from(metrologyControleTypes)
-  //     .where(sql`lower(trim(${metrologyControleTypes.name})) = 'поверка'`)
-  //     .limit(1);
-
-  //   if (!controlType) {
-  //     throw new Error(
-  //       'В справочнике типов метрологического контроля не найден тип "Поверка". Проверьте наполнение базы.'
-  //     );
-  //   }
-
-  //   let orgId: string;
-  //   const [existingOrg] = await this.db
-  //     .select()
-  //     .from(verificationOrganizations)
-  //     .where(
-  //       eq(
-  //         verificationOrganizations.name,
-  //         arshinData.organizationName.toLowerCase()
-  //       )
-  //     )
-  //     .limit(1);
-
-  //   if (existingOrg) {
-  //     orgId = existingOrg.id;
-  //   } else {
-  //     const insertedOrgs = await this.db
-  //       .insert(verificationOrganizations)
-  //       .values({ name: arshinData.organizationName.toLowerCase() })
-  //       .returning();
-
-  //     const newOrg = insertedOrgs[0];
-  //     if (!newOrg) {
-  //       throw new Error(
-  //         'Не удалось сохранить поверяющую организацию в базу данных'
-  //       );
-  //     }
-  //     orgId = newOrg.id;
-  //   }
-
-  //   const parseArshinDate = (
-  //     dateStr: string | null | undefined
-  //   ): Date | null => {
-  //     if (!dateStr) return null;
-
-  //     const parts = dateStr.split('.');
-  //     if (parts.length !== 3) {
-  //       const parsedDate = new Date(dateStr);
-  //       return isNaN(parsedDate.getTime()) ? null : parsedDate;
-  //     }
-
-  //     const day = parseInt(parts[0] ?? '', 10);
-  //     const month = parseInt(parts[1] ?? '', 10) - 1;
-  //     const year = parseInt(parts[2] ?? '', 10);
-
-  //     return new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
-  //   };
-
-  //   const parsedDate = parseArshinDate(arshinData.date);
-  //   if (!parsedDate) {
-  //     throw new Error(
-  //       'Не удалось распарсить обязательную дату поверки из ФГИС Аршин'
-  //     );
-  //   }
-
-  //   if (!deviceId || !controlType?.id || !orgId) {
-  //     throw new Error(
-  //       'Отсутствуют обязательные идентификаторы для привязки поверки'
-  //     );
-  //   }
-
-  //   const verificationDto = {
-  //     deviceId: deviceId,
-  //     batchId: batchId ?? null,
-  //     protocolNumber: arshinData.protocolNumber,
-  //     result: arshinData.isApplicable ? 'Годен' : 'Не годен',
-  //     documentUrl: arshinData.documentUrl,
-  //     date: parsedDate,
-  //     validUntil: parseArshinDate(arshinData.validUntil) ?? undefined,
-  //     metrologyControleTypeId: controlType.id,
-  //     verificationOrganizationId: orgId,
-  //     comment: `Автоматическая синхронизация ФГИС Аршин. ID записи: ${arshinData.arshinId}`,
-  //     cost: 0,
-  //   };
-
-  //   await this.createVerification(verificationDto, userId);
-
-  //   await this.db
-  //     .update(devicesToBatches)
-  //     .set({ deviceStatus: 'returned' })
-  //     .where(
-  //       and(
-  //         eq(devicesToBatches.deviceId, deviceId),
-  //         eq(devicesToBatches.batchId, batchId)
-  //       )
-  //     );
-
-  //   return device;
-  // }
 
   async syncDeviceWithArshin(input: SyncDeviceWithArshinInput, userId: string) {
     const { deviceId, batchId } = input;
@@ -1499,70 +1000,6 @@ export class DeviceService {
     };
   }
 
-  // async syncBatchWithArshin(batchId: string, userId: string) {
-  //   const delay = (ms: number) =>
-  //     new Promise((resolve) => setTimeout(resolve, ms));
-  //   const pendingLinks = await this.db
-  //     .select({
-  //       deviceId: devicesToBatches.deviceId,
-  //     })
-  //     .from(devicesToBatches)
-  //     .where(
-  //       and(
-  //         eq(devicesToBatches.batchId, batchId),
-  //         ne(devicesToBatches.deviceStatus, 'returned')
-  //       )
-  //     );
-
-  //   const totalCount = pendingLinks.length;
-
-  //   let syncedCount = 0;
-  //   const details = [];
-
-  //   if (totalCount === 0) {
-  //     return {
-  //       batchId,
-  //       syncedCount: 0,
-  //       totalCount: 0,
-  //       details: [],
-  //     };
-  //   }
-
-  //   // for (const link of pendingLinks) {
-  //   for (let i = 0; i < pendingLinks.length; i++) {
-  //     const link = pendingLinks[i]!;
-  //     try {
-  //       if (i > 0) {
-  //         await delay(600);
-  //       }
-  //       await this.syncDeviceWithArshin(
-  //         { deviceId: link.deviceId, batchId },
-  //         userId
-  //       );
-
-  //       syncedCount++;
-  //       details.push({
-  //         deviceId: link.deviceId,
-  //         success: true,
-  //         message: 'Успешно синхронизирован с ФГИС Аршин',
-  //       });
-  //     } catch (error: any) {
-  //       details.push({
-  //         deviceId: link.deviceId,
-  //         success: false,
-  //         message: error.message || 'Неизвестная ошибка при запросе к Аршин',
-  //       });
-  //     }
-  //   }
-
-  //   return {
-  //     batchId,
-  //     syncedCount,
-  //     totalCount,
-  //     details,
-  //   };
-  // }
-  // Внутри вашего класса DeviceService
   async executeBatchArshinSync(
     batchId: string,
     userId: string,
@@ -1627,362 +1064,362 @@ export class DeviceService {
     return { batchId, syncedCount, totalCount, details };
   }
 
-  async importDevicesFromExcel(
-    items: ImportDeviceItem[],
-    userId: string
-  ): Promise<number> {
-    let importedCount = 0;
+  // async importDevicesFromExcel(
+  //   items: ImportDeviceItem[],
+  //   userId: string
+  // ): Promise<number> {
+  //   let importedCount = 0;
 
-    const parseMultipleNames = (
-      rawString: string | null | undefined
-    ): string[] => {
-      if (!rawString) return [];
+  //   const parseMultipleNames = (
+  //     rawString: string | null | undefined
+  //   ): string[] => {
+  //     if (!rawString) return [];
 
-      return (
-        rawString
-          // 🎯 РЕГУЛЯРКА-ВСЕЯДНАЯ:
-          // [,;/|\n\r]+ означает деление по запятой, точке с запятой, косой черте, вертикальной черте или ЛЮБОМУ переносу строки
-          .split(/[,;/|\n\r]+/)
-          .map((name) => name.trim())
-          // Дополнительно отсекаем пустые элементы и пробельные строки
-          .filter((name) => name.length > 0)
-      );
-    };
+  //     return (
+  //       rawString
+  //         // 🎯 РЕГУЛЯРКА-ВСЕЯДНАЯ:
+  //         // [,;/|\n\r]+ означает деление по запятой, точке с запятой, косой черте, вертикальной черте или ЛЮБОМУ переносу строки
+  //         .split(/[,;/|\n\r]+/)
+  //         .map((name) => name.trim())
+  //         // Дополнительно отсекаем пустые элементы и пробельные строки
+  //         .filter((name) => name.length > 0)
+  //     );
+  //   };
 
-    await this.db.transaction(async (tx) => {
-      const cityCache = new Map<string, string>(); // name -> id
-      const companyCache = new Map<string, string>(); // name -> id
-      const siteCache = new Map<string, string>(); // "companyId_cityId_name" -> id
-      const statusCache = new Map<string, string>(); // name -> id
-      const typeCache = new Map<string, string>(); // name -> id
-      const scopeCache = new Map<string, string>(); // name -> id
-      const measTypeCache = new Map<string, string>(); // name -> id
-      const standardCache = new Map<string, string>(); // name -> id
+  //   await this.db.transaction(async (tx) => {
+  //     const cityCache = new Map<string, string>(); // name -> id
+  //     const companyCache = new Map<string, string>(); // name -> id
+  //     const siteCache = new Map<string, string>(); // "companyId_cityId_name" -> id
+  //     const statusCache = new Map<string, string>(); // name -> id
+  //     const typeCache = new Map<string, string>(); // name -> id
+  //     const scopeCache = new Map<string, string>(); // name -> id
+  //     const measTypeCache = new Map<string, string>(); // name -> id
+  //     const standardCache = new Map<string, string>(); // name -> id
 
-      for (const item of items) {
-        const normCity = item.cityName.trim();
-        const normCompany = item.companyName.trim();
-        const normSite = item.productionSiteName.trim();
-        const normStatus = item.statusName.trim();
-        const normType = item.equipmentTypeName?.trim();
+  //     for (const item of items) {
+  //       const normCity = item.cityName.trim();
+  //       const normCompany = item.companyName.trim();
+  //       const normSite = item.productionSiteName.trim();
+  //       const normStatus = item.statusName.trim();
+  //       const normType = item.equipmentTypeName?.trim();
 
-        // 1. Разруливаем Город (City)
-        let cityId = cityCache.get(normCity.toLowerCase());
-        if (!cityId) {
-          const [existing] = await tx
-            .select()
-            .from(cities)
-            .where(eq(sql`lower(${cities.name})`, normCity.toLowerCase()))
-            .limit(1);
-          if (existing) {
-            cityId = existing.id;
-          } else {
-            const insertedCities = await tx
-              .insert(cities)
-              .values({ name: normCity.toLowerCase() })
-              .returning();
-            // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
-            const inserted = insertedCities[0];
-            if (!inserted)
-              throw new Error(`Не удалось создать город: ${normCity}`);
-            cityId = inserted.id;
-          }
-          cityCache.set(normCity.toLowerCase(), cityId);
-        }
+  //       // 1. Разруливаем Город (City)
+  //       let cityId = cityCache.get(normCity.toLowerCase());
+  //       if (!cityId) {
+  //         const [existing] = await tx
+  //           .select()
+  //           .from(cities)
+  //           .where(eq(sql`lower(${cities.name})`, normCity.toLowerCase()))
+  //           .limit(1);
+  //         if (existing) {
+  //           cityId = existing.id;
+  //         } else {
+  //           const insertedCities = await tx
+  //             .insert(cities)
+  //             .values({ name: normCity.toLowerCase() })
+  //             .returning();
+  //           // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+  //           const inserted = insertedCities[0];
+  //           if (!inserted)
+  //             throw new Error(`Не удалось создать город: ${normCity}`);
+  //           cityId = inserted.id;
+  //         }
+  //         cityCache.set(normCity.toLowerCase(), cityId);
+  //       }
 
-        // 2. Разруливаем Компания (Company)
-        let companyId = companyCache.get(normCompany.toLowerCase());
-        if (!companyId) {
-          const [existing] = await tx
-            .select()
-            .from(companies)
-            .where(eq(sql`lower(${companies.name})`, normCompany.toLowerCase()))
-            .limit(1);
-          if (existing) {
-            companyId = existing.id;
-          } else {
-            const insertedCompanies = await tx
-              .insert(companies)
-              .values({ name: normCompany.toLowerCase() })
-              .returning();
-            // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
-            const inserted = insertedCompanies[0];
-            if (!inserted)
-              throw new Error(`Не удалось создать компанию: ${normCompany}`);
-            companyId = inserted.id;
-          }
-          companyCache.set(normCompany.toLowerCase(), companyId);
-        }
+  //       // 2. Разруливаем Компания (Company)
+  //       let companyId = companyCache.get(normCompany.toLowerCase());
+  //       if (!companyId) {
+  //         const [existing] = await tx
+  //           .select()
+  //           .from(companies)
+  //           .where(eq(sql`lower(${companies.name})`, normCompany.toLowerCase()))
+  //           .limit(1);
+  //         if (existing) {
+  //           companyId = existing.id;
+  //         } else {
+  //           const insertedCompanies = await tx
+  //             .insert(companies)
+  //             .values({ name: normCompany.toLowerCase() })
+  //             .returning();
+  //           // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+  //           const inserted = insertedCompanies[0];
+  //           if (!inserted)
+  //             throw new Error(`Не удалось создать компанию: ${normCompany}`);
+  //           companyId = inserted.id;
+  //         }
+  //         companyCache.set(normCompany.toLowerCase(), companyId);
+  //       }
 
-        // 3. Разруливаем Площадку (Production Site)
-        const siteKey = `${companyId}_${cityId}_${normSite.toLowerCase()}`;
-        let siteId = siteCache.get(siteKey);
-        if (!siteId) {
-          const [existing] = await tx
-            .select()
-            .from(productionSites)
-            .where(
-              and(
-                eq(productionSites.companyId, companyId),
-                eq(productionSites.cityId, cityId),
-                eq(sql`lower(${productionSites.name})`, normSite.toLowerCase())
-              )
-            )
-            .limit(1);
+  //       // 3. Разруливаем Площадку (Production Site)
+  //       const siteKey = `${companyId}_${cityId}_${normSite.toLowerCase()}`;
+  //       let siteId = siteCache.get(siteKey);
+  //       if (!siteId) {
+  //         const [existing] = await tx
+  //           .select()
+  //           .from(productionSites)
+  //           .where(
+  //             and(
+  //               eq(productionSites.companyId, companyId),
+  //               eq(productionSites.cityId, cityId),
+  //               eq(sql`lower(${productionSites.name})`, normSite.toLowerCase())
+  //             )
+  //           )
+  //           .limit(1);
 
-          if (existing) {
-            siteId = existing.id;
-          } else {
-            const insertedSites = await tx
-              .insert(productionSites)
-              .values({
-                name: normSite.toLowerCase(),
-                companyId,
-                cityId,
-              })
-              .returning();
-            // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
-            const inserted = insertedSites[0];
-            if (!inserted)
-              throw new Error(`Не удалось создать площадку: ${normSite}`);
-            siteId = inserted.id;
-          }
-          siteCache.set(siteKey, siteId);
-        }
+  //         if (existing) {
+  //           siteId = existing.id;
+  //         } else {
+  //           const insertedSites = await tx
+  //             .insert(productionSites)
+  //             .values({
+  //               name: normSite.toLowerCase(),
+  //               companyId,
+  //               cityId,
+  //             })
+  //             .returning();
+  //           // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+  //           const inserted = insertedSites[0];
+  //           if (!inserted)
+  //             throw new Error(`Не удалось создать площадку: ${normSite}`);
+  //           siteId = inserted.id;
+  //         }
+  //         siteCache.set(siteKey, siteId);
+  //       }
 
-        // 4. Разруливаем Статус (Status)
-        let statusId = statusCache.get(normStatus.toLowerCase());
-        if (!statusId) {
-          const [existing] = await tx
-            .select()
-            .from(statuses)
-            .where(eq(sql`lower(${statuses.name})`, normStatus.toLowerCase()))
-            .limit(1);
-          if (existing) {
-            statusId = existing.id;
-          } else {
-            const insertedStatuses = await tx
-              .insert(statuses)
-              .values({ name: normStatus.toLowerCase() })
-              .returning();
-            // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
-            const inserted = insertedStatuses[0];
-            if (!inserted)
-              throw new Error(`Не удалось создать статус: ${normStatus}`);
-            statusId = inserted.id;
-          }
-          statusCache.set(normStatus.toLowerCase(), statusId);
-        }
+  //       // 4. Разруливаем Статус (Status)
+  //       let statusId = statusCache.get(normStatus.toLowerCase());
+  //       if (!statusId) {
+  //         const [existing] = await tx
+  //           .select()
+  //           .from(statuses)
+  //           .where(eq(sql`lower(${statuses.name})`, normStatus.toLowerCase()))
+  //           .limit(1);
+  //         if (existing) {
+  //           statusId = existing.id;
+  //         } else {
+  //           const insertedStatuses = await tx
+  //             .insert(statuses)
+  //             .values({ name: normStatus.toLowerCase() })
+  //             .returning();
+  //           // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+  //           const inserted = insertedStatuses[0];
+  //           if (!inserted)
+  //             throw new Error(`Не удалось создать статус: ${normStatus}`);
+  //           statusId = inserted.id;
+  //         }
+  //         statusCache.set(normStatus.toLowerCase(), statusId);
+  //       }
 
-        // 5. Разруливаем Тип оборудования (Equipment Type) - опционально
-        let equipmentTypeId: string | null = null;
-        if (normType) {
-          equipmentTypeId = typeCache.get(normType.toLowerCase()) || null;
-          if (!equipmentTypeId) {
-            const [existing] = await tx
-              .select()
-              .from(equipmentTypes)
-              .where(
-                eq(sql`lower(${equipmentTypes.name})`, normType.toLowerCase())
-              )
-              .limit(1);
-            if (existing) {
-              equipmentTypeId = existing.id;
-            } else {
-              const insertedTypes = await tx
-                .insert(equipmentTypes)
-                .values({ name: normType.toLowerCase() })
-                .returning();
-              // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
-              const inserted = insertedTypes[0];
-              if (!inserted)
-                throw new Error(
-                  `Не удалось создать тип оборудования: ${normType}`
-                );
-              equipmentTypeId = inserted.id;
-            }
-            if (equipmentTypeId)
-              typeCache.set(normType.toLowerCase(), equipmentTypeId);
-          }
-        }
+  //       // 5. Разруливаем Тип оборудования (Equipment Type) - опционально
+  //       let equipmentTypeId: string | null = null;
+  //       if (normType) {
+  //         equipmentTypeId = typeCache.get(normType.toLowerCase()) || null;
+  //         if (!equipmentTypeId) {
+  //           const [existing] = await tx
+  //             .select()
+  //             .from(equipmentTypes)
+  //             .where(
+  //               eq(sql`lower(${equipmentTypes.name})`, normType.toLowerCase())
+  //             )
+  //             .limit(1);
+  //           if (existing) {
+  //             equipmentTypeId = existing.id;
+  //           } else {
+  //             const insertedTypes = await tx
+  //               .insert(equipmentTypes)
+  //               .values({ name: normType.toLowerCase() })
+  //               .returning();
+  //             // 🎯 ИСПРАВЛЕНИЕ: Забираем ПЕРВЫЙ элемент из массива возврата
+  //             const inserted = insertedTypes[0];
+  //             if (!inserted)
+  //               throw new Error(
+  //                 `Не удалось создать тип оборудования: ${normType}`
+  //               );
+  //             equipmentTypeId = inserted.id;
+  //           }
+  //           if (equipmentTypeId)
+  //             typeCache.set(normType.toLowerCase(), equipmentTypeId);
+  //         }
+  //       }
 
-        // 6. Проверяем дубликат прибора по серийному номеру и модели, чтобы не плодить копии
-        const [duplicate] = await tx
-          .select()
-          .from(devices)
-          .where(
-            and(
-              eq(
-                sql`lower(${devices.serialNumber})`,
-                item.serialNumber.trim().toLowerCase()
-              ),
-              eq(sql`lower(${devices.model})`, item.model.trim().toLowerCase())
-            )
-          )
-          .limit(1);
+  //       // 6. Проверяем дубликат прибора по серийному номеру и модели, чтобы не плодить копии
+  //       const [duplicate] = await tx
+  //         .select()
+  //         .from(devices)
+  //         .where(
+  //           and(
+  //             eq(
+  //               sql`lower(${devices.serialNumber})`,
+  //               item.serialNumber.trim().toLowerCase()
+  //             ),
+  //             eq(sql`lower(${devices.model})`, item.model.trim().toLowerCase())
+  //           )
+  //         )
+  //         .limit(1);
 
-        if (duplicate) {
-          // Если такой прибор уже есть — просто пропускаем его, либо обновляем (мы пропустим)
-          continue;
-        }
+  //       if (duplicate) {
+  //         // Если такой прибор уже есть — просто пропускаем его, либо обновляем (мы пропустим)
+  //         continue;
+  //       }
 
-        // 7. Безопасный парсинг интервала поверки (МПИ)
-        const parsedInterval = item.verificationInterval
-          ? parseInt(item.verificationInterval, 10)
-          : null;
+  //       // 7. Безопасный парсинг интервала поверки (МПИ)
+  //       const parsedInterval = item.verificationInterval
+  //         ? parseInt(item.verificationInterval, 10)
+  //         : null;
 
-        // 8. Вставляем прибор в базу
-        const [newDevice] = await tx
-          .insert(devices)
-          .values({
-            name: item.name.trim(),
-            model: item.model.trim(),
-            serialNumber: item.serialNumber.trim(),
-            grsiNumber: item.grsiNumber?.trim() || null,
-            inventoryNumber: item.inventoryNumber?.trim() || null,
-            manufacturer: item.manufacturer?.trim() || null,
-            verificationInterval: isNaN(parsedInterval as number)
-              ? null
-              : parsedInterval,
-            nomenclature: item.nomenclature?.trim() || null,
-            comment: item.comment?.trim() || null,
-            statusId: statusId!,
-            productionSiteId: siteId!,
-            equipmentTypeId: equipmentTypeId,
-            archived: false,
-            measurementRange: item.measurementRange?.trim() || null,
-            accuracy: item.accuracy?.trim() || null,
-          })
-          .returning();
+  //       // 8. Вставляем прибор в базу
+  //       const [newDevice] = await tx
+  //         .insert(devices)
+  //         .values({
+  //           name: item.name.trim(),
+  //           model: item.model.trim(),
+  //           serialNumber: item.serialNumber.trim(),
+  //           grsiNumber: item.grsiNumber?.trim() || null,
+  //           inventoryNumber: item.inventoryNumber?.trim() || null,
+  //           manufacturer: item.manufacturer?.trim() || null,
+  //           verificationInterval: isNaN(parsedInterval as number)
+  //             ? null
+  //             : parsedInterval,
+  //           nomenclature: item.nomenclature?.trim() || null,
+  //           comment: item.comment?.trim() || null,
+  //           statusId: statusId!,
+  //           productionSiteId: siteId!,
+  //           equipmentTypeId: equipmentTypeId,
+  //           archived: false,
+  //           measurementRange: item.measurementRange?.trim() || null,
+  //           accuracy: item.accuracy?.trim() || null,
+  //         })
+  //         .returning();
 
-        if (!newDevice)
-          throw new Error(`Не удалось создать прибор: ${item.name}`);
-        const deviceId = newDevice.id;
+  //       if (!newDevice)
+  //         throw new Error(`Не удалось создать прибор: ${item.name}`);
+  //       const deviceId = newDevice.id;
 
-        // 🎯 2. РАЗРУЛИВАЕМ СФЕРЫ ГОСРЕГУЛИРОВАНИЯ (Many-to-Many)
-        const targetScopes = parseMultipleNames(item.scopesNames);
-        for (const scopeName of targetScopes) {
-          let scopeId = scopeCache.get(scopeName.toLowerCase());
-          if (!scopeId) {
-            const [existing] = await tx
-              .select()
-              .from(scopes)
-              .where(eq(sql`lower(${scopes.name})`, scopeName.toLowerCase()))
-              .limit(1);
-            if (existing) {
-              scopeId = existing.id;
-            } else {
-              const insertedScopes = await tx
-                .insert(scopes)
-                .values({ name: scopeName.toLowerCase() })
-                .returning();
-              // 🎯 ИСПРАВЛЕНИЕ: Безопасное извлечение объекта из массива
-              const inserted = insertedScopes[0];
-              if (!inserted)
-                throw new Error(
-                  `Не удалось создать сферу регулирования: ${scopeName}`
-                );
-              scopeId = inserted.id;
-            }
-            scopeCache.set(scopeName.toLowerCase(), scopeId);
-          }
-          // Записываем связь в промежуточную таблицу
-          await tx
-            .insert(scopesToDevices)
-            .values({ deviceId, scopeId })
-            .onConflictDoNothing();
-        }
+  //       // 🎯 2. РАЗРУЛИВАЕМ СФЕРЫ ГОСРЕГУЛИРОВАНИЯ (Many-to-Many)
+  //       const targetScopes = parseMultipleNames(item.scopesNames);
+  //       for (const scopeName of targetScopes) {
+  //         let scopeId = scopeCache.get(scopeName.toLowerCase());
+  //         if (!scopeId) {
+  //           const [existing] = await tx
+  //             .select()
+  //             .from(scopes)
+  //             .where(eq(sql`lower(${scopes.name})`, scopeName.toLowerCase()))
+  //             .limit(1);
+  //           if (existing) {
+  //             scopeId = existing.id;
+  //           } else {
+  //             const insertedScopes = await tx
+  //               .insert(scopes)
+  //               .values({ name: scopeName.toLowerCase() })
+  //               .returning();
+  //             // 🎯 ИСПРАВЛЕНИЕ: Безопасное извлечение объекта из массива
+  //             const inserted = insertedScopes[0];
+  //             if (!inserted)
+  //               throw new Error(
+  //                 `Не удалось создать сферу регулирования: ${scopeName}`
+  //               );
+  //             scopeId = inserted.id;
+  //           }
+  //           scopeCache.set(scopeName.toLowerCase(), scopeId);
+  //         }
+  //         // Записываем связь в промежуточную таблицу
+  //         await tx
+  //           .insert(scopesToDevices)
+  //           .values({ deviceId, scopeId })
+  //           .onConflictDoNothing();
+  //       }
 
-        // 🎯 3. РАЗРУЛИВАЕМ ВИДЫ ИЗМЕРЕНИЙ (Many-to-Many)
-        const targetMeasTypes = parseMultipleNames(item.measurementTypesNames);
-        for (const mTypeName of targetMeasTypes) {
-          let mTypeId = measTypeCache.get(mTypeName.toLowerCase());
-          if (!mTypeId) {
-            const [existing] = await tx
-              .select()
-              .from(measurementTypes)
-              .where(
-                eq(
-                  sql`lower(${measurementTypes.name})`,
-                  mTypeName.toLowerCase()
-                )
-              )
-              .limit(1);
-            if (existing) {
-              mTypeId = existing.id;
-            } else {
-              const insertedTypes = await tx
-                .insert(measurementTypes)
-                .values({ name: mTypeName.toLowerCase() })
-                .returning();
-              // 🎯 ИСПРАВЛЕНИЕ: Безопасное извлечение объекта из массива
-              const inserted = insertedTypes[0];
-              if (!inserted)
-                throw new Error(
-                  `Не удалось создать вид измерений: ${mTypeName}`
-                );
-              mTypeId = inserted.id;
-            }
-            measTypeCache.set(mTypeName.toLowerCase(), mTypeId);
-          }
-          // Записываем связь в промежуточную таблицу
-          await tx
-            .insert(measurementTypesToDevices)
-            .values({ deviceId, measurementTypeId: mTypeId })
-            .onConflictDoNothing();
-        }
+  //       // 🎯 3. РАЗРУЛИВАЕМ ВИДЫ ИЗМЕРЕНИЙ (Many-to-Many)
+  //       const targetMeasTypes = parseMultipleNames(item.measurementTypesNames);
+  //       for (const mTypeName of targetMeasTypes) {
+  //         let mTypeId = measTypeCache.get(mTypeName.toLowerCase());
+  //         if (!mTypeId) {
+  //           const [existing] = await tx
+  //             .select()
+  //             .from(measurementTypes)
+  //             .where(
+  //               eq(
+  //                 sql`lower(${measurementTypes.name})`,
+  //                 mTypeName.toLowerCase()
+  //               )
+  //             )
+  //             .limit(1);
+  //           if (existing) {
+  //             mTypeId = existing.id;
+  //           } else {
+  //             const insertedTypes = await tx
+  //               .insert(measurementTypes)
+  //               .values({ name: mTypeName.toLowerCase() })
+  //               .returning();
+  //             // 🎯 ИСПРАВЛЕНИЕ: Безопасное извлечение объекта из массива
+  //             const inserted = insertedTypes[0];
+  //             if (!inserted)
+  //               throw new Error(
+  //                 `Не удалось создать вид измерений: ${mTypeName}`
+  //               );
+  //             mTypeId = inserted.id;
+  //           }
+  //           measTypeCache.set(mTypeName.toLowerCase(), mTypeId);
+  //         }
+  //         // Записываем связь в промежуточную таблицу
+  //         await tx
+  //           .insert(measurementTypesToDevices)
+  //           .values({ deviceId, measurementTypeId: mTypeId })
+  //           .onConflictDoNothing();
+  //       }
 
-        // 🎯 4. РАЗРУЛИВАЕМ ПЕРВИЧНЫЕ ЭТАЛОНЫ (Many-to-Many)
-        const targetStandards = parseMultipleNames(item.primaryStandardsNames);
-        for (const stdName of targetStandards) {
-          let stdId = standardCache.get(stdName.toLowerCase());
-          if (!stdId) {
-            const [existing] = await tx
-              .select()
-              .from(primaryStandarts)
-              .where(
-                eq(sql`lower(${primaryStandarts.name})`, stdName.toLowerCase())
-              )
-              .limit(1);
-            if (existing) {
-              stdId = existing.id;
-            } else {
-              const insertedStandards = await tx
-                .insert(primaryStandarts)
-                .values({ name: stdName.toLowerCase() })
-                .returning();
-              // 🎯 ИСПРАВЛЕНИЕ: Безопасное извлечение объекта из массива
-              const inserted = insertedStandards[0];
-              if (!inserted)
-                throw new Error(
-                  `Не удалось создать первичный эталон: ${stdName}`
-                );
-              stdId = inserted.id;
-            }
-            standardCache.set(stdName.toLowerCase(), stdId);
-          }
-          // Записываем связь в промежуточную таблицу
-          await tx
-            .insert(primaryStandartsToDevices)
-            .values({ deviceId, primaryStandartId: stdId })
-            .onConflictDoNothing();
-        }
+  //       // 🎯 4. РАЗРУЛИВАЕМ ПЕРВИЧНЫЕ ЭТАЛОНЫ (Many-to-Many)
+  //       const targetStandards = parseMultipleNames(item.primaryStandardsNames);
+  //       for (const stdName of targetStandards) {
+  //         let stdId = standardCache.get(stdName.toLowerCase());
+  //         if (!stdId) {
+  //           const [existing] = await tx
+  //             .select()
+  //             .from(primaryStandarts)
+  //             .where(
+  //               eq(sql`lower(${primaryStandarts.name})`, stdName.toLowerCase())
+  //             )
+  //             .limit(1);
+  //           if (existing) {
+  //             stdId = existing.id;
+  //           } else {
+  //             const insertedStandards = await tx
+  //               .insert(primaryStandarts)
+  //               .values({ name: stdName.toLowerCase() })
+  //               .returning();
+  //             // 🎯 ИСПРАВЛЕНИЕ: Безопасное извлечение объекта из массива
+  //             const inserted = insertedStandards[0];
+  //             if (!inserted)
+  //               throw new Error(
+  //                 `Не удалось создать первичный эталон: ${stdName}`
+  //               );
+  //             stdId = inserted.id;
+  //           }
+  //           standardCache.set(stdName.toLowerCase(), stdId);
+  //         }
+  //         // Записываем связь в промежуточную таблицу
+  //         await tx
+  //           .insert(primaryStandartsToDevices)
+  //           .values({ deviceId, primaryStandartId: stdId })
+  //           .onConflictDoNothing();
+  //       }
 
-        importedCount++;
-      }
-    });
+  //       importedCount++;
+  //     }
+  //   });
 
-    // Запись общего действия в лог аудита (опционально, можно расширить лог на каждый прибор)
-    // if (this.auditLogService && importedCount > 0) {
-    //   await this.auditLogService.logAction({
-    //     action: 'create',
-    //     description: `Выполнен пакетный импорт приборов из Excel. Успешно загружено: ${importedCount} шт.`,
-    //     userId,
-    //   });
-    // }
+  //   // Запись общего действия в лог аудита (опционально, можно расширить лог на каждый прибор)
+  //   // if (this.auditLogService && importedCount > 0) {
+  //   //   await this.auditLogService.logAction({
+  //   //     action: 'create',
+  //   //     description: `Выполнен пакетный импорт приборов из Excel. Успешно загружено: ${importedCount} шт.`,
+  //   //     userId,
+  //   //   });
+  //   // }
 
-    return importedCount;
-  }
+  //   return importedCount;
+  // }
 
   async executeRawSql(sqlQuery: string) {
     try {
@@ -2025,40 +1462,6 @@ export class DeviceService {
       };
     }
   }
-
-  // async getDevicesBarcodeData(ids: string[]) {
-  //   if (!ids || ids.length === 0) return [];
-
-  //   const cleanIds = ids.map((id) => id.toLowerCase().trim());
-
-  //   return await this.db
-  //     .select({
-  //       id: devices.id,
-  //       name: devices.name,
-  //       model: devices.model,
-  //       serialNumber: devices.serialNumber,
-  //       statusName: statuses.name,
-  //       controlType: metrologyControleTypes.name,
-  //       validUntil: verifications.validUntil,
-  //     })
-  //     .from(devices)
-  //     .leftJoin(statuses, eq(devices.statusId, statuses.id))
-  //     .leftJoin(
-  //       verifications,
-  //       and(
-  //         eq(verifications.deviceId, devices.id),
-  //         eq(
-  //           verifications.date,
-  //           sql`(SELECT MAX(date) FROM verifications WHERE device_id = ${devices.id})`
-  //         )
-  //       )
-  //     )
-  //     .leftJoin(
-  //       metrologyControleTypes,
-  //       eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
-  //     )
-  //     .where(inArray(devices.id, cleanIds));
-  // }
 
   async getDevicesBarcodeData(input: PrintBarcodesInput) {
     // const { deviceIds, controlType, historyLinkIds } = input;
@@ -2242,5 +1645,415 @@ export class DeviceService {
     }
 
     return results;
+  }
+
+  async updateMetrologyCache(db: any, deviceId: string): Promise<void> {
+    // 1. Забираем характеристики прибора за один проход
+    const rows = await db
+      .select({
+        grsiNumber: devices.grsiNumber,
+        releaseDate: devices.releaseDate,
+        receiptDate: devices.receiptDate,
+        verificationInterval: devices.verificationInterval,
+        eqName: equipmentTypes.name,
+        scopeName: scopes.name,
+      })
+      .from(devices)
+      .leftJoin(equipmentTypes, eq(devices.equipmentTypeId, equipmentTypes.id))
+      .leftJoin(scopesToDevices, eq(scopesToDevices.deviceId, devices.id))
+      .leftJoin(scopes, eq(scopesToDevices.scopeId, scopes.id))
+      .where(eq(devices.id, deviceId));
+
+    if (!rows || rows.length === 0) return;
+
+    const firstRow = rows[0];
+    const eqTypeName = firstRow.eqName
+      ? firstRow.eqName.toLowerCase().trim()
+      : '';
+    const hasGrsi = !!firstRow.grsiNumber && firstRow.grsiNumber.trim() !== '';
+
+    // Собираем сферы
+    const scopeNames = rows
+      .map((r: any) => r.scopeName?.toLowerCase().trim() ?? '')
+      .filter(Boolean);
+
+    const isNotGr =
+      scopeNames.includes('не гр') ||
+      scopeNames.includes('вне сферы государственного регулирования (не гр)');
+
+    // 2. Вычисляем строгое название целевого контроля (Ваша логика)
+    let targetControlName = 'осмотр';
+    if (
+      eqTypeName === 'индикатор' ||
+      eqTypeName === 'вспомогательное оборудование (во)'
+    ) {
+      targetControlName = 'осмотр';
+    } else if (eqTypeName === 'средство измерений (си)') {
+      targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
+    } else if (eqTypeName === 'средство контроля (ск)') {
+      targetControlName = isNotGr
+        ? 'осмотр'
+        : hasGrsi
+        ? 'поверка'
+        : 'калибровка';
+    } else if (eqTypeName === 'испытательное оборудование (ио)') {
+      targetControlName = isNotGr ? 'осмотр' : 'аттестация';
+    }
+
+    // 3. Ищем самый свежий документ этого контроля в истории
+    const [latestTargetDoc] = await db
+      .select({ validUntil: verifications.validUntil })
+      .from(verifications)
+      .leftJoin(
+        metrologyControleTypes,
+        eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+      )
+      .where(
+        and(
+          eq(verifications.deviceId, deviceId),
+          eq(metrologyControleTypes.name, targetControlName)
+        )
+      )
+      .orderBy(sql`${verifications.date} DESC NULLS LAST`)
+      .limit(1);
+
+    // 4. ИНТЕГРАЦИЯ ВАШЕГО МЕТОДА РАСЧЕТА СЛЕДУЮЩЕЙ ДАТЫ
+    let nextVerificationDateStr: string | null = null;
+
+    if (latestTargetDoc?.validUntil) {
+      // Если дата из базы, безопасно переводим в формат YYYY-MM-DD
+      nextVerificationDateStr = new Date(latestTargetDoc.validUntil)
+        .toISOString()
+        .slice(0, 10);
+    } else {
+      const baseDate = firstRow.releaseDate || firstRow.receiptDate;
+      if (baseDate && firstRow.verificationInterval) {
+        const nextDate = new Date(baseDate);
+        nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
+        nextVerificationDateStr = nextDate.toISOString().slice(0, 10);
+      } else {
+        // Вариант 3: Данных нет совсем.
+        // Берём текущую дату и форматируем по ЛОКАЛЬНОМУ времени (без сдвигов UTC!)
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+
+        // Результат: "2026-08-24" (или "2026-08-01", если хотите именно первое число месяца)
+        nextVerificationDateStr = `${year}-${month}-${day}`;
+      }
+    }
+
+    // Записываем стейт в карточку прибора
+    await db
+      .update(devices)
+      .set({
+        cachedControl: targetControlName,
+        nextVerificationDate: nextVerificationDateStr, // Теперь сюда улетит чистая строка без багов
+        updatedAt: new Date(),
+      })
+      .where(eq(devices.id, deviceId));
+  }
+
+  async importDevicesFromExcel(
+    items: ImportDeviceItem[],
+    userId: string
+  ): Promise<number> {
+    if (items.length === 0) return 0;
+
+    // Всеядная регулярка, которая сразу переводит элементы в нижний регистр
+    const parseMultipleNames = (
+      rawString: string | null | undefined
+    ): string[] => {
+      if (!rawString) return [];
+      return rawString
+        .split(/[,;/|\n\r]+/)
+        .map((name) => name.trim().toLowerCase())
+        .filter((name) => name.length > 0);
+    };
+
+    // Инициализируем кэш-карты для работы в памяти O(1)
+    const cityCache = new Map<string, string>();
+    const companyCache = new Map<string, string>();
+    const siteCache = new Map<string, string>(); // Ключ: "companyId_cityId_siteName"
+    const statusCache = new Map<string, string>();
+    const typeCache = new Map<string, string>();
+    const scopeCache = new Map<string, string>();
+    const measTypeCache = new Map<string, string>();
+    const standardCache = new Map<string, string>();
+
+    // Быстрый Set для мгновенного отсечения дубликатов приборов в JS за наносекунды
+    const existingDevicesSet = new Set<string>(); // Ключ: "serial_model"
+
+    // =========================================================================
+    // ЭТАП 1: ПРЕДЗАГРУЗКА ВСЕХ СУЩЕСТВУЮЩИХ СПРАВОЧНИКОВ ИЗ БД (Pre-loading)
+    // =========================================================================
+    await Promise.all([
+      this.db
+        .select()
+        .from(cities)
+        .then((res) => res.forEach((r) => cityCache.set(r.name, r.id))),
+      this.db
+        .select()
+        .from(companies)
+        .then((res) => res.forEach((r) => companyCache.set(r.name, r.id))),
+      this.db
+        .select()
+        .from(statuses)
+        .then((res) => res.forEach((r) => statusCache.set(r.name, r.id))),
+      this.db
+        .select()
+        .from(equipmentTypes)
+        .then((res) => res.forEach((r) => typeCache.set(r.name, r.id))),
+      this.db
+        .select()
+        .from(scopes)
+        .then((res) => res.forEach((r) => scopeCache.set(r.name, r.id))),
+      this.db
+        .select()
+        .from(measurementTypes)
+        .then((res) => res.forEach((r) => measTypeCache.set(r.name, r.id))),
+      this.db
+        .select()
+        .from(primaryStandarts)
+        .then((res) => res.forEach((r) => standardCache.set(r.name, r.id))),
+      this.db
+        .select()
+        .from(productionSites)
+        .then((res) =>
+          res.forEach((r) =>
+            siteCache.set(`${r.companyId}_${r.cityId}_${r.name}`, r.id)
+          )
+        ),
+      // Предзагрузка дубликатов (вытягиваем только два легких текстовых поля)
+      this.db
+        .select({ serial: devices.serialNumber, model: devices.model })
+        .from(devices)
+        .then((res) =>
+          res.forEach((r) => existingDevicesSet.add(`${r.serial}_${r.model}`))
+        ),
+    ]);
+
+    let importedCount = 0;
+    // =========================================================================
+    // ЭТАП 2: АТОМАРНАЯ ТРАНЗАКЦИЯ И ЦИКЛ СБОРКИ ПАКЕТОВ (Bulk Data Processing)
+    // =========================================================================
+    await this.db.transaction(async (tx) => {
+      const devicesToInsert: any[] = [];
+
+      // Массивы для отложенной пакетной записи Many-to-Many связей
+      const scopeRelationsToInsert: any[] = [];
+      const measRelationsToInsert: any[] = [];
+      const stdRelationsToInsert: any[] = [];
+
+      for (const item of items) {
+        const normCity = item.cityName.trim().toLowerCase();
+        const normCompany = item.companyName.trim().toLowerCase();
+        const normSite = item.productionSiteName.trim().toLowerCase();
+        const normStatus = item.statusName.trim().toLowerCase();
+        const normType = item.equipmentTypeName?.trim().toLowerCase();
+        const normSerial = item.serialNumber.trim().toLowerCase();
+        const normModel = item.model.trim().toLowerCase();
+
+        // 1. Быстрая проверка на дубликат прибора в памяти JS (База данных отдыхает)
+        if (existingDevicesSet.has(`${normSerial}_${normModel}`)) {
+          continue;
+        }
+
+        // 2. Динамическое создание Города (только если его вообще не было в системе)
+        let cityId = cityCache.get(normCity);
+        if (!cityId) {
+          const [inserted] = await tx
+            .insert(cities)
+            .values({ name: normCity })
+            .returning();
+          if (!inserted)
+            throw new Error(`Не удалось создать город: ${item.cityName}`);
+          cityId = inserted.id;
+          cityCache.set(normCity, cityId);
+        }
+
+        // 3. Динамическое создание Компании
+        let companyId = companyCache.get(normCompany);
+        if (!companyId) {
+          const [inserted] = await tx
+            .insert(companies)
+            .values({ name: normCompany })
+            .returning();
+          if (!inserted)
+            throw new Error(`Не удалось создать компанию: ${item.companyName}`);
+          companyId = inserted.id;
+          companyCache.set(normCompany, companyId);
+        }
+
+        // 4. Динамическое создание Площадки (Production Site)
+        const siteKey = `${companyId}_${cityId}_${normSite}`;
+        let siteId = siteCache.get(siteKey);
+        if (!siteId) {
+          const [inserted] = await tx
+            .insert(productionSites)
+            .values({ name: normSite, companyId, cityId })
+            .returning();
+          if (!inserted)
+            throw new Error(
+              `Не удалось создать площадку: ${item.productionSiteName}`
+            );
+          siteId = inserted.id;
+          siteCache.set(siteKey, siteId);
+        }
+
+        // 5. Динамическое создание Статуса
+        let statusId = statusCache.get(normStatus);
+        if (!statusId) {
+          const [inserted] = await tx
+            .insert(statuses)
+            .values({ name: normStatus })
+            .returning();
+          if (!inserted)
+            throw new Error(`Не удалось создать статус: ${item.statusName}`);
+          statusId = inserted.id;
+          statusCache.set(normStatus, statusId);
+        }
+
+        // 6. Динамическое создание Типа оборудования
+        let equipmentTypeId: string | null = null;
+        if (normType) {
+          equipmentTypeId = typeCache.get(normType) || null;
+          if (!equipmentTypeId) {
+            const [inserted] = await tx
+              .insert(equipmentTypes)
+              .values({ name: normType })
+              .returning();
+            if (!inserted)
+              throw new Error(
+                `Не удалось создать тип оборудования: ${item.equipmentTypeName}`
+              );
+            equipmentTypeId = inserted.id;
+            typeCache.set(normType, equipmentTypeId);
+          }
+        }
+
+        // Паттерн Enterprise-импорта: Генерируем UUID прибора на бэкенде.
+        // Это позволяет нам связать Many-to-Many таблицы с прибором ДО того, как он запишется в базу!
+        const generatedDeviceId = crypto.randomUUID();
+        const parsedInterval = item.verificationInterval
+          ? parseInt(item.verificationInterval, 10)
+          : null;
+
+        // Накапливаем плоский объект прибора в пакетный массив
+        devicesToInsert.push({
+          id: generatedDeviceId,
+          name: item.name.trim(),
+          model: item.model.trim(),
+          serialNumber: item.serialNumber.trim(),
+          grsiNumber: item.grsiNumber?.trim() || null,
+          inventoryNumber: item.inventoryNumber?.trim() || null,
+          manufacturer: item.manufacturer?.trim() || null,
+          verificationInterval: isNaN(parsedInterval as number)
+            ? null
+            : parsedInterval,
+          nomenclature: item.nomenclature?.trim() || null,
+          comment: item.comment?.trim() || null,
+          statusId: statusId!,
+          productionSiteId: siteId!,
+          equipmentTypeId: equipmentTypeId,
+          archived: false,
+          measurementRange: item.measurementRange?.trim() || null,
+          accuracy: item.accuracy?.trim() || null,
+        });
+
+        // 7. Сбор пакета связей для Сфер госрегулирования
+        const targetScopes = parseMultipleNames(item.scopesNames);
+        for (const scopeName of targetScopes) {
+          let scopeId = scopeCache.get(scopeName);
+          if (!scopeId) {
+            const [inserted] = await tx
+              .insert(scopes)
+              .values({ name: scopeName })
+              .returning();
+            if (!inserted)
+              throw new Error(`Не удалось создать сферу: ${scopeName}`);
+            scopeId = inserted.id;
+            scopeCache.set(scopeName, scopeId);
+          }
+          scopeRelationsToInsert.push({ deviceId: generatedDeviceId, scopeId });
+        }
+
+        // 8. Сбор пакета связей для Видов измерений
+        const targetMeasTypes = parseMultipleNames(item.measurementTypesNames);
+        for (const mTypeName of targetMeasTypes) {
+          let mTypeId = measTypeCache.get(mTypeName);
+          if (!mTypeId) {
+            const [inserted] = await tx
+              .insert(measurementTypes)
+              .values({ name: mTypeName })
+              .returning();
+            if (!inserted)
+              throw new Error(`Не удалось создать вид измерений: ${mTypeName}`);
+            mTypeId = inserted.id;
+            measTypeCache.set(mTypeName, mTypeId);
+          }
+          measRelationsToInsert.push({
+            deviceId: generatedDeviceId,
+            measurementTypeId: mTypeId,
+          });
+        }
+
+        // 9. Сбор пакета связей для Первичных эталонов
+        const targetStandards = parseMultipleNames(item.primaryStandardsNames);
+        for (const stdName of targetStandards) {
+          let stdId = standardCache.get(stdName);
+          if (!stdId) {
+            const [inserted] = await tx
+              .insert(primaryStandarts)
+              .values({ name: stdName })
+              .returning();
+            if (!inserted)
+              throw new Error(`Не удалось создать эталон: ${stdName}`);
+            stdId = inserted.id;
+            standardCache.set(stdName, stdId);
+          }
+          stdRelationsToInsert.push({
+            deviceId: generatedDeviceId,
+            primaryStandartId: stdId,
+          });
+        }
+
+        importedCount++;
+        existingDevicesSet.add(`${normSerial}_${normModel}`);
+      }
+      // =========================================================================
+      // ЭТАП 3: МАССОВЫЙ ИНСЕРТ ВСЕХ ПАКЕТОВ И ПАРАЛЛЕЛЬНЫЙ ПЕРЕСЧЕТ КЭША МЕТРОЛОГИИ
+      // =========================================================================
+      if (devicesToInsert.length > 0) {
+        // 1. Вставляем всю пачку приборов одним махом (Мгновенная операция на диске)
+        await tx.insert(devices).values(devicesToInsert);
+
+        if (scopeRelationsToInsert.length > 0) {
+          await tx
+            .insert(scopesToDevices)
+            .values(scopeRelationsToInsert)
+            .onConflictDoNothing();
+        }
+        if (measRelationsToInsert.length > 0) {
+          await tx
+            .insert(measurementTypesToDevices)
+            .values(measRelationsToInsert)
+            .onConflictDoNothing();
+        }
+        if (stdRelationsToInsert.length > 0) {
+          await tx
+            .insert(primaryStandartsToDevices)
+            .values(stdRelationsToInsert)
+            .onConflictDoNothing();
+        }
+
+        await Promise.all(
+          devicesToInsert.map((d) => this.updateMetrologyCache(tx, d.id))
+        );
+      }
+    });
+
+    return importedCount;
   }
 }

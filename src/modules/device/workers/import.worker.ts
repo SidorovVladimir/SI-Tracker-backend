@@ -19,7 +19,7 @@ export const createImportWorker = () => {
         const { io } = await import('../../../index');
 
         try {
-          const BATCH_SIZE = 50;
+          const BATCH_SIZE = 500;
           let importedTotal = 0;
           const totalItems = items.length;
 
@@ -47,7 +47,7 @@ export const createImportWorker = () => {
             }
 
             if (i + BATCH_SIZE < items.length) {
-              await new Promise((resolve) => setTimeout(resolve, 200));
+              await new Promise((resolve) => setTimeout(resolve, 150));
             }
           }
 

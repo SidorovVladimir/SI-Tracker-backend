@@ -1,5 +1,6 @@
 import {
   boolean,
+  date,
   index,
   integer,
   pgEnum,
@@ -25,49 +26,80 @@ import {
 } from '../../verification/models/verification.model';
 
 // Прибор (Инструмент)
-export const devices = pgTable('devices', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  name: varchar('name').notNull(), // Наименование прибора
-  model: varchar('model').notNull(), // Модель прибора
-  serialNumber: varchar('serial_number').notNull(), // Серийный номер прибора
-  releaseDate: timestamp('release_date'), // Дата выпуска
-  grsiNumber: varchar('grsi_number', { length: 100 }), // ГРСИ
-  csmCode: varchar('csm_code', { length: 100 }), // Код СИ из прайса ЦСМ (договорной)
-  measurementRange: varchar('measurement_range'), // Диапазон измерений
-  accuracy: varchar('accuracy'), // Точность
-  inventoryNumber: varchar('inventory_number', { length: 100 }), // Инвентарный номер
-  receiptDate: timestamp('receipt_date'), // Дата получения
-  manufacturer: varchar('manufacturer'), // Производитель
-  verificationInterval: integer('verification_interval'), // МПИ (межповерочный интервал)
-  archived: boolean('archived').notNull().default(false), // В архиве
-  nomenclature: varchar('nomenclature'), // Номенклатура по 1С
-  comment: text('comment'),
-  leadTimeDays: integer('lead_time_days'),
+export const devices = pgTable(
+  'devices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name').notNull(), // Наименование прибора
+    model: varchar('model').notNull(), // Модель прибора
+    serialNumber: varchar('serial_number').notNull(), // Серийный номер прибора
+    releaseDate: timestamp('release_date'), // Дата выпуска
+    grsiNumber: varchar('grsi_number', { length: 100 }), // ГРСИ
+    csmCode: varchar('csm_code', { length: 100 }), // Код СИ из прайса ЦСМ (договорной)
+    measurementRange: varchar('measurement_range'), // Диапазон измерений
+    accuracy: varchar('accuracy'), // Точность
+    inventoryNumber: varchar('inventory_number', { length: 100 }), // Инвентарный номер
+    receiptDate: timestamp('receipt_date'), // Дата получения
+    manufacturer: varchar('manufacturer'), // Производитель
+    verificationInterval: integer('verification_interval'), // МПИ (межповерочный интервал)
+    archived: boolean('archived').notNull().default(false), // В архиве
+    nomenclature: varchar('nomenclature'), // Номенклатура по 1С
+    comment: text('comment'),
+    leadTimeDays: integer('lead_time_days'),
 
-  statusId: uuid('status_id')
-    .notNull()
-    .references(() => statuses.id),
-  productionSiteId: uuid('production_site_id')
-    .notNull()
-    .references(() => productionSites.id),
-  equipmentTypeId: uuid('equipment_type_id').references(
-    () => equipmentTypes.id
-  ),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
+    statusId: uuid('status_id')
+      .notNull()
+      .references(() => statuses.id),
+    productionSiteId: uuid('production_site_id')
+      .notNull()
+      .references(() => productionSites.id),
+    equipmentTypeId: uuid('equipment_type_id').references(
+      () => equipmentTypes.id
+    ),
 
-  updatedAt: timestamp('updated_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  createdById: uuid('created_by_id').references(() => users.id, {
-    onDelete: 'set null',
-  }),
+    // Хранит рассчитанный целевой контроль: 'поверка' | 'калибровка' | 'аттестация' | 'осмотр'
+    cachedControl: varchar('cached_control', { length: 50 }),
+    // Хранит valid_until из последнего целевого документа
+    nextVerificationDate: date('next_verification_date'),
 
-  updatedById: uuid('updated_by_id').references(() => users.id, {
-    onDelete: 'set null',
-  }),
-});
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdById: uuid('created_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+
+    updatedById: uuid('updated_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (table) => ({
+    // 1. Поиск по архиву (для разделения активных и архивных приборов)
+    archivedIdx: index('idx_devices_archived').on(table.archived),
+
+    // 2. Внешние ключи (чтобы Postgres мгновенно связывал таблицы при getDevicesWithRelations)
+    statusIdIdx: index('idx_devices_status_id').on(table.statusId),
+    productionSiteIdIdx: index('idx_devices_production_site_id').on(
+      table.productionSiteId
+    ),
+    equipmentTypeIdIdx: index('idx_devices_equipment_type_id').on(
+      table.equipmentTypeId
+    ),
+
+    // 3. Составной индекс для мгновенной фильтрации по кэшу метрологии и датам
+    metrologyCacheIdx: index('idx_devices_metrology_cache').on(
+      table.cachedControl,
+      table.nextVerificationDate
+    ),
+
+    // 4. Индекс по дате обновления (ускоряет дефолтную сортировку orderBy desc(d.updatedAt))
+    updatedAtIdx: index('idx_devices_updated_at').on(table.updatedAt),
+  })
+);
 
 export const deviceDocumentTypeEnum = pgEnum('device_document_type', [
   'manual', // Руководство по эксплуатации (РЭ)

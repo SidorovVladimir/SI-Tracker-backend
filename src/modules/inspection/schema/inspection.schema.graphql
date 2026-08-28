@@ -17,7 +17,7 @@ type InspectionPoolItem {
 type InspectionPoolResponse {
   items: [InspectionPoolItem!]!
   totalCount: Int!
-  yearlySummary: [MonthlySummary!]!
+  # yearlySummary: [MonthlySummary!]!
 }
 
 type InspectedDeviceLink {
@@ -48,6 +48,8 @@ extend type Query {
     limit: Int!
     offset: Int!
   ): InspectionPoolResponse!
+
+  getInspectionCalendarSummary: [MonthlySummary!]!
 
   getInspectionBatchesArchive(
     limit: Int!
