@@ -70,29 +70,37 @@ export const budgetPlans = pgTable('budget_plans', {
 });
 
 // 4. СТРОКИ БЮДЖЕТА (СНИМОК ЦЕН)
-export const budgetPlanItems = pgTable('budget_plan_items', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  budgetPlanId: uuid('budget_plan_id')
-    .notNull()
-    .references(() => budgetPlans.id, { onDelete: 'cascade' }),
-  deviceId: uuid('device_id')
-    .notNull()
-    .references(() => devices.id, { onDelete: 'cascade' }),
-  deviceName: varchar('device_name').notNull(),
-  deviceModel: varchar('device_model').notNull(),
-  matchedPricelistItemId: uuid('matched_pricelist_item_id').references(
-    () => pricelistItems.id
-  ),
-  matchMethod: text('match_method').notNull(),
-  basePrice: numeric('base_price', { precision: 10, scale: 2 }).notNull(),
-  vatRate: numeric('vat_rate', { precision: 5, scale: 4 })
-    .notNull()
-    .default('0.2200'),
-  totalCost: numeric('total_cost', { precision: 10, scale: 2 }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
+export const budgetPlanItems = pgTable(
+  'budget_plan_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    budgetPlanId: uuid('budget_plan_id')
+      .notNull()
+      .references(() => budgetPlans.id, { onDelete: 'cascade' }),
+    deviceId: uuid('device_id')
+      .notNull()
+      .references(() => devices.id, { onDelete: 'cascade' }),
+    deviceName: varchar('device_name').notNull(),
+    deviceModel: varchar('device_model').notNull(),
+    matchedPricelistItemId: uuid('matched_pricelist_item_id').references(
+      () => pricelistItems.id
+    ),
+    matchMethod: text('match_method').notNull(),
+    basePrice: numeric('base_price', { precision: 10, scale: 2 }).notNull(),
+    vatRate: numeric('vat_rate', { precision: 5, scale: 4 })
+      .notNull()
+      .default('0.2200'),
+    totalCost: numeric('total_cost', { precision: 10, scale: 2 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    deviceIdIdx: index('idx_budget_items_device_id').on(table.deviceId),
+    planIdIdx: index('idx_budget_items_plan_id').on(table.budgetPlanId),
+    createIdx: index('idx_budget_items_created_at').on(table.createdAt),
+  })
+);
 
 // --- РЕЙЛЕЙШЕНЫ (RELATIONS) ДЛЯ СИНТАКСИСА DB.QUERY ---
 
