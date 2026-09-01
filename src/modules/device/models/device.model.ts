@@ -61,6 +61,7 @@ export const devices = pgTable(
     cachedControl: varchar('cached_control', { length: 50 }),
     // Хранит valid_until из последнего целевого документа
     nextVerificationDate: date('next_verification_date'),
+    nextInspectionDate: date('next_inspection_date'),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -94,6 +95,11 @@ export const devices = pgTable(
     metrologyCacheIdx: index('idx_devices_metrology_cache').on(
       table.cachedControl,
       table.nextVerificationDate
+    ),
+
+    inspectionCacheIdx: index('idx_devices_inspection_cache').on(
+      table.cachedControl,
+      table.nextInspectionDate
     ),
 
     // 4. Индекс по дате обновления (ускоряет дефолтную сортировку orderBy desc(d.updatedAt))

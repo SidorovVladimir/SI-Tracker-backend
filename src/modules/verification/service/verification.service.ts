@@ -899,7 +899,138 @@ export class VerificationPlanningService {
     END
   `;
 
-    // Базовые условия пула (Только активные приборы, исключая мертвые статусы и осмотры)
+    //   // Базовые условия пула (Только активные приборы, исключая мертвые статусы и осмотры)
+    //   const basePoolConditions = [
+    //     eq(devices.archived, false),
+    //     notInArray(
+    //       devices.statusId,
+    //       this.db
+    //         .select({ id: statuses.id })
+    //         .from(statuses)
+    //         .where(inArray(statuses.name, excludedStatuses))
+    //     ),
+    //     sql`${devices.cachedControl} != 'осмотр'`,
+    //     sql`${devices.nextVerificationDate} IS NOT NULL`,
+    //   ];
+
+    //   // Фильтрация по конкретному типу контроля (если передан controlTypeId)
+    //   if (controlTypeId && controlTypeId !== 'ALL') {
+    //     if (controlTypeId === 'NOT_SPECIFIED') {
+    //       basePoolConditions.push(
+    //         or(
+    //           sql`${devices.cachedControl} IS NULL`,
+    //           eq(devices.cachedControl, 'не указан')
+    //         ) as SQL
+    //       );
+    //     } else {
+    //       basePoolConditions.push(
+    //         sql`${devices.cachedControl} = (SELECT name FROM metrology_controle_types WHERE id = ${controlTypeId})`
+    //       );
+    //     }
+    //   }
+
+    //   // -------------------------------------------------------------------------
+    //   // ЧАСТЬ 2: ФОРМИРОВАНИЕ СЦЕНАРИЕВ (А — зафиксирован в партии, Б — авторасчет)
+    //   // -------------------------------------------------------------------------
+
+    //   // Условие Сценария А: Прибор привязан к черновику/отправленной партии, и месяц партии совпадает с открытым
+    //   const scenarioACondition = sql`
+    //   EXISTS (
+    //     SELECT 1 FROM devices_to_batches dtb
+    //     JOIN verification_batches vb ON dtb.batch_id = vb.id
+    //     WHERE dtb.device_id = ${devices.id}
+    //       AND vb.status IN ('draft', 'sent')
+    //       AND vb.type = 'verification'
+    //       AND to_char(vb.planned_date, 'YYYY-MM') = ${targetMonth}
+    //   )
+    // `;
+
+    //   // Условие Сценария Б: Прибор НЕ привязан к активным партиям вообще, И его расчетный месяц совпал с открытым
+    //   const scenarioBCondition = sql`
+    //   NOT EXISTS (
+    //     SELECT 1 FROM devices_to_batches dtb
+    //     JOIN verification_batches vb ON dtb.batch_id = vb.id
+    //     WHERE dtb.device_id = ${devices.id} AND vb.status IN ('draft', 'sent') AND vb.type = 'verification'
+    //   ) AND ${finalTargetMonthSql} = ${targetMonth}
+    // `;
+
+    //   // Объединяем сценарии через OR в итоговый фильтр
+    //   const finalWhereClause = and(
+    //     ...basePoolConditions,
+    //     or(scenarioACondition, scenarioBCondition)
+    //   );
+
+    //   // -------------------------------------------------------------------------
+    //   // ЧАСТЬ 3: БЫСТРЫЕ АГРЕГАЦИИ (Подсчет счетчиков типов для вкладки мета-данных)
+    //   // -------------------------------------------------------------------------
+    //   const typeCountsQuery = await this.db
+    //     .select({
+    //       controlType: devices.cachedControl,
+    //       count: sql<number>`count(*)::int`,
+    //     })
+    //     .from(devices)
+    //     .where(finalWhereClause)
+    //     .groupBy(devices.cachedControl);
+
+    //   let unassignedCount = 0;
+    //   const typeCounts = typeCountsQuery
+    //     .map((row) => {
+    //       if (!row.controlType || row.controlType === 'не указан') {
+    //         unassignedCount += row.count;
+    //         return null;
+    //       }
+    //       return { typeName: row.controlType, count: row.count };
+    //     })
+    //     .filter(Boolean);
+
+    //   // Подсчитываем общую длину отфильтрованного пула (Мгновенно в БД)
+    //   const [totalCountResult] = await this.db
+    //     .select({ count: sql<number>`count(*)::int` })
+    //     .from(devices)
+    //     .where(finalWhereClause);
+
+    //   const totalCount = totalCountResult?.count ?? 0;
+
+    //   if (totalCount === 0) {
+    //     return {
+    //       items: [],
+    //       totalCount: 0,
+    //       meta: { unassignedCount: 0, typeCounts: [] },
+    //     };
+    //   }
+
+    //   // -------------------------------------------------------------------------
+    //   // ЧАСТЬ 4: ПОЛУЧЕНИЕ ТОЛЬКО ПАГИНИРОВАННОЙ СТРАНИЦЫ ДАННЫХ (Limit / Offset)
+    //   // -------------------------------------------------------------------------
+    //   const paginatedDevices = await this.db.query.devices.findMany({
+    //     where: finalWhereClause,
+    //     limit,
+    //     offset,
+    //     orderBy: (d) => [asc(d.nextVerificationDate)], // Сортируем прямо в БД по дате окончания действия
+    //     columns: {
+    //       id: true,
+    //       name: true,
+    //       model: true,
+    //       serialNumber: true,
+    //       cachedControl: true,
+    //       nextVerificationDate: true,
+    //     },
+    //     with: {
+    //       devicesToBatches: {
+    //         with: { batch: true },
+    //         where: sql`batch_id IN (SELECT id FROM verification_batches WHERE status IN ('draft', 'sent'))`,
+    //       },
+    //       verifications: {
+    //         orderBy: (v, { desc }) => [desc(v.date)],
+    //         limit: 5,
+    //         with: { metrologyControleType: true },
+    //       },
+    //     },
+    //   });
+
+    // =========================================================================
+    // ЧАСТЬ 1: БАЗОВЫЕ УСЛОВИЯ И СЦЕНАРИИ ДЛЯ ВСЕГО МЕСЯЦА
+    // =========================================================================
     const basePoolConditions = [
       eq(devices.archived, false),
       notInArray(
@@ -913,62 +1044,69 @@ export class VerificationPlanningService {
       sql`${devices.nextVerificationDate} IS NOT NULL`,
     ];
 
-    // Фильтрация по конкретному типу контроля (если передан controlTypeId)
+    const scenarioACondition = sql`
+      EXISTS (
+        SELECT 1 FROM devices_to_batches dtb
+        JOIN verification_batches vb ON dtb.batch_id = vb.id
+        WHERE dtb.device_id = ${devices.id}
+          AND vb.status IN ('draft', 'sent')
+          AND vb.type = 'verification'
+          AND to_char(vb.planned_date, 'YYYY-MM') = ${targetMonth}
+      )
+    `;
+
+    const scenarioBCondition = sql`
+      NOT EXISTS (
+        SELECT 1 FROM devices_to_batches dtb
+        JOIN verification_batches vb ON dtb.batch_id = vb.id
+        WHERE dtb.device_id = ${devices.id} 
+          AND vb.status IN ('draft', 'sent')
+          AND vb.type = 'verification'
+      ) AND ${finalTargetMonthSql} = ${targetMonth}
+    `;
+
+    // 🌟 ГЛОБАЛЬНЫЙ ФИЛЬТР МЕСЯЦА (Чистый, без привязки к конкретной вкладке)
+    const whereGlobalMonth = and(
+      ...basePoolConditions,
+      or(scenarioACondition, scenarioBCondition)
+    );
+
+    // =========================================================================
+    // ЧАСТЬ 2: ДИНАМИЧЕСКИЙ ФИЛЬТР ДЛЯ СТРОК ТЕКУЩЕЙ ВКЛАДКИ
+    // =========================================================================
+    const pageConditions = [...basePoolConditions];
+
     if (controlTypeId && controlTypeId !== 'ALL') {
       if (controlTypeId === 'NOT_SPECIFIED') {
-        basePoolConditions.push(
+        pageConditions.push(
           or(
             sql`${devices.cachedControl} IS NULL`,
             eq(devices.cachedControl, 'не указан')
           ) as SQL
         );
       } else {
-        basePoolConditions.push(
-          sql`${devices.cachedControl} = (SELECT name FROM metrology_controle_types WHERE id = ${controlTypeId})`
+        pageConditions.push(
+          sql`${devices.cachedControl} = (SELECT LOWER(name) FROM metrology_controle_types WHERE id = ${controlTypeId})`
         );
       }
     }
 
-    // -------------------------------------------------------------------------
-    // ЧАСТЬ 2: ФОРМИРОВАНИЕ СЦЕНАРИЕВ (А — зафиксирован в партии, Б — авторасчет)
-    // -------------------------------------------------------------------------
-
-    // Условие Сценария А: Прибор привязан к черновику/отправленной партии, и месяц партии совпадает с открытым
-    const scenarioACondition = sql`
-    EXISTS (
-      SELECT 1 FROM devices_to_batches dtb
-      JOIN verification_batches vb ON dtb.batch_id = vb.id
-      WHERE dtb.device_id = ${devices.id}
-        AND vb.status IN ('draft', 'sent')
-        AND to_char(vb.planned_date, 'YYYY-MM') = ${targetMonth}
-    )
-  `;
-
-    // Условие Сценария Б: Прибор НЕ привязан к активным партиям вообще, И его расчетный месяц совпал с открытым
-    const scenarioBCondition = sql`
-    NOT EXISTS (
-      SELECT 1 FROM devices_to_batches dtb
-      JOIN verification_batches vb ON dtb.batch_id = vb.id
-      WHERE dtb.device_id = ${devices.id} AND vb.status IN ('draft', 'sent')
-    ) AND ${finalTargetMonthSql} = ${targetMonth}
-  `;
-
-    // Объединяем сценарии через OR в итоговый фильтр
+    // Итоговое условие для пагинации строк конкретного таба
     const finalWhereClause = and(
-      ...basePoolConditions,
+      ...pageConditions,
       or(scenarioACondition, scenarioBCondition)
     );
 
-    // -------------------------------------------------------------------------
-    // ЧАСТЬ 3: БЫСТРЫЕ АГРЕГАЦИИ (Подсчет счетчиков типов для вкладки мета-данных)
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // ЧАСТЬ 3: БЫСТРЫЕ АГРЕГАЦИИ СЧЕТЧИКОВ (Считаем по ГЛОБАЛЬНОМУ фильтру)
+    // =========================================================================
     const typeCountsQuery = await this.db
       .select({
         controlType: devices.cachedControl,
         count: sql<number>`count(*)::int`,
       })
       .from(devices)
-      .where(finalWhereClause)
+      .where(whereGlobalMonth) // 🌟 Считаем от общего пула месяца!
       .groupBy(devices.cachedControl);
 
     let unassignedCount = 0;
@@ -982,15 +1120,23 @@ export class VerificationPlanningService {
       })
       .filter(Boolean);
 
-    // Подсчитываем общую длину отфильтрованного пула (Мгновенно в БД)
-    const [totalCountResult] = await this.db
+    // 🌟 СЧЕТЧИК ТАБА «ВСЕ ПРИБОРЫ» (Всегда показывает полную сумму за месяц)
+    const [globalCountResult] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(devices)
+      .where(whereGlobalMonth);
+
+    const globalTotalCount = globalCountResult?.count ?? 0;
+
+    // СЧЕТЧИК СТРОК ТЕКУЩЕЙ ВКЛАДКИ (Нужен для пагинации DataGrid)
+    const [pageCountResult] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(devices)
       .where(finalWhereClause);
 
-    const totalCount = totalCountResult?.count ?? 0;
+    const pageTotalCount = pageCountResult?.count ?? 0;
 
-    if (totalCount === 0) {
+    if (globalTotalCount === 0) {
       return {
         items: [],
         totalCount: 0,
@@ -998,14 +1144,14 @@ export class VerificationPlanningService {
       };
     }
 
-    // -------------------------------------------------------------------------
-    // ЧАСТЬ 4: ПОЛУЧЕНИЕ ТОЛЬКО ПАГИНИРОВАННОЙ СТРАНИЦЫ ДАННЫХ (Limit / Offset)
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // ЧАСТЬ 4: ПОЛУЧЕНИЕ СТРОК (Тут жестко по finalWhereClause с лимитами)
+    // =========================================================================
     const paginatedDevices = await this.db.query.devices.findMany({
-      where: finalWhereClause,
+      where: finalWhereClause, // Вытягиваем только строки выбранного таба
       limit,
       offset,
-      orderBy: (d) => [asc(d.nextVerificationDate)], // Сортируем прямо в БД по дате окончания действия
+      orderBy: (d) => [asc(d.nextVerificationDate)],
       columns: {
         id: true,
         name: true,
@@ -1021,7 +1167,8 @@ export class VerificationPlanningService {
         },
         verifications: {
           orderBy: (v, { desc }) => [desc(v.date)],
-          limit: 1, // Выгребаем строго 1 последнюю запись, а не историю!
+          limit: 5,
+          with: { metrologyControleType: true },
         },
       },
     });
@@ -1033,6 +1180,14 @@ export class VerificationPlanningService {
       const activeBatchLink = device.devicesToBatches?.[0] || null;
       // const latestVerification = device.verifications?.[0] || null;
 
+      const latestMetrologyDoc =
+        device.verifications?.find(
+          (v: any) =>
+            v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+        ) ||
+        device.verifications?.[0] ||
+        null; // Если вдруг ничего кроме осмотров нет, берем что есть
+
       const isManualPlacement = !!activeBatchLink;
       const targetBatchId = activeBatchLink?.batch?.id || null;
 
@@ -1043,6 +1198,9 @@ export class VerificationPlanningService {
         serialNumber: device.serialNumber,
         validUntil: device.nextVerificationDate
           ? new Date(device.nextVerificationDate).toISOString()
+          : null,
+        lastControlDate: latestMetrologyDoc?.date
+          ? new Date(latestMetrologyDoc.date).toISOString()
           : null,
         suggestedMonth: targetMonth,
         targetBatchId,
@@ -1056,7 +1214,7 @@ export class VerificationPlanningService {
 
     return {
       items,
-      totalCount,
+      totalCount: pageTotalCount,
       meta: {
         unassignedCount,
         typeCounts,
@@ -1377,7 +1535,12 @@ export class VerificationPlanningService {
         verificationBatches,
         eq(devicesToBatches.batchId, verificationBatches.id)
       )
-      .where(inArray(verificationBatches.status, ['draft', 'sent']));
+      .where(
+        and(
+          inArray(verificationBatches.status, ['draft', 'sent']),
+          eq(verificationBatches.type, 'verification')
+        )
+      );
 
     // Храним связи приборов и месяцев их партий в Map для моментального поиска за O(1)
     const batchMonthsMap = new Map<string, string>();
@@ -1390,6 +1553,8 @@ export class VerificationPlanningService {
         batchMonthsMap.set(b.deviceId, mKey);
       }
     }
+
+    const maxDateLimit = `${year}-12-31`;
 
     // 2. Выгребаем из базы только те приборы, которые активны, не в осмотре и имеют даты (Сверхбыстрый Index Scan)
     // Мы запрашиваем ТОЛЬКО 3 легких поля, база не будет тратить ресурсы
@@ -1405,6 +1570,7 @@ export class VerificationPlanningService {
           eq(devices.archived, false),
           sql`${devices.cachedControl} != 'осмотр'`,
           sql`${devices.nextVerificationDate} IS NOT NULL`,
+          lte(devices.nextVerificationDate, maxDateLimit),
           notInArray(
             devices.statusId,
             this.db
@@ -1600,12 +1766,14 @@ export class VerificationPlanningService {
     const [allVerifications, allArshinBuffers] = await Promise.all([
       this.db.query.verifications.findMany({
         where: inArray(verifications.deviceId, uniqueDeviceIds),
-        orderBy: (v, { desc }) => [desc(v.date)], // Сортируем сразу в БД
+        orderBy: (v, { desc }) => [desc(v.date)],
+        // 🔥 УВЕЛИЧИВАЕМ ЗАПАС: Берем последние 5 документов прибора, чтобы цеховые осмотры не затирали гоповерки
+        limit: uniqueDeviceIds.length * 5,
         with: { metrologyControleType: true, verificationOrganization: true },
       }),
       this.db.query.arshinVerificationBuffer.findMany({
         where: inArray(arshinVerificationBuffer.deviceId, uniqueDeviceIds),
-        orderBy: (ab, { desc }) => [desc(ab.verificationDate)], // Сортируем сразу в БД
+        orderBy: (ab, { desc }) => [desc(ab.verificationDate)],
       }),
     ]);
 
@@ -1623,16 +1791,37 @@ export class VerificationPlanningService {
       arshinMap.get(ab.deviceId)!.push(ab);
     }
 
-    // ПОТОК 4: Собираем финальное дерево связей на стороне Node.js (работает за микросекунды)
+    // ПОТОК 4: Собираем финальное дерево связей на стороне Node.js
     const batchRelationsMap = new Map<string, any[]>();
 
     for (const rel of relationsData) {
-      // Достаем из Map только ПЕРВУЮ (самую свежую, благодаря orderBy) верификацию
       const deviceVerifications = verificationsMap.get(rel.deviceId) || [];
-      const latestVerification =
-        deviceVerifications.length > 0 ? [deviceVerifications[0]] : [];
 
-      // Достаем все записи буфера для этого прибора
+      // 🔥 🔥 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Ищем документ под тип конкретного журнала
+      let matchedVerification: any = null;
+
+      if (targetType === 'verification') {
+        // Мы в Журнале ПОВЕРОК: ищем самый свежий документ, который НЕ является осмотром
+        matchedVerification = deviceVerifications.find(
+          (v) =>
+            v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+        );
+      } else {
+        // Мы в Журнале ОСМОТРОВ: ищем самый свежий документ, который ЯВЛЯЕТСЯ осмотром
+        matchedVerification = deviceVerifications.find(
+          (v) =>
+            v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
+        );
+      }
+
+      // Если по какому-то прибору истории нужного типа еще нет, берем самую последнюю запись как фоллбэк
+      if (!matchedVerification && deviceVerifications.length > 0) {
+        matchedVerification = deviceVerifications[0];
+      }
+
+      const latestVerification = matchedVerification
+        ? [matchedVerification]
+        : [];
       const deviceArshinBuffers = arshinMap.get(rel.deviceId) || [];
 
       const deviceToBatchNode = {
@@ -1646,7 +1835,7 @@ export class VerificationPlanningService {
           name: rel.deviceName,
           model: rel.deviceModel,
           serialNumber: rel.deviceSerialNumber,
-          verifications: latestVerification,
+          verifications: latestVerification, // Сюда улетит юридически чистый документ!
           arshinBuffers: deviceArshinBuffers,
         },
       };
@@ -1656,7 +1845,6 @@ export class VerificationPlanningService {
       batchRelationsMap.get(rel.batchId)!.push(deviceToBatchNode);
     }
 
-    // Возвращаем данные в точном соответствии с вашим исходным контрактом
     return batches.map((b) => ({
       ...b,
       devicesToBatches: batchRelationsMap.get(b.id) || [],
@@ -1910,7 +2098,7 @@ export class VerificationPlanningService {
           deviceId: deviceId,
           batchId: batchId ?? null,
           protocolNumber: docNum,
-          result: applicability ? 'Годен' : 'Не годен',
+          result: applicability ? 'годен' : 'не годен',
           documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${vriId}`,
           date: verificationDate,
           validUntil: validDate,
@@ -2080,8 +2268,8 @@ export class VerificationPlanningService {
       .values({
         deviceId: input.deviceId,
         batchId: input.batchId ?? null,
-        protocolNumber: input.protocolNumber,
-        result: input.result,
+        protocolNumber: input.protocolNumber.trim().toLowerCase(),
+        result: input.result.trim().toLowerCase(),
         date: input.date,
         validUntil: input.validUntil ?? null,
         documentUrl: input.documentUrl ?? null,
@@ -2102,13 +2290,13 @@ export class VerificationPlanningService {
     let targetStatusId = deviceExists.statusId;
 
     // Оптимизируем поиск статусов: убираем lower(trim) из левой части SQL, так как в БД всё в нижнем регистре
-    if (input.result === 'Не годен') {
+    if (input.result === 'не годен') {
       const [rejectedStatus] = await tx
         .select({ id: statuses.id })
         .from(statuses)
         .where(eq(statuses.name, 'забракован'));
       if (rejectedStatus) targetStatusId = rejectedStatus.id;
-    } else if (input.result === 'Годен') {
+    } else if (input.result === 'годен') {
       const [activeStatus] = await tx
         .select({ id: statuses.id })
         .from(statuses)

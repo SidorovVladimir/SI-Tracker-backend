@@ -843,7 +843,7 @@ export class AnalyticsService {
         and(
           eq(devices.archived, false),
           eq(devices.statusId, activeStatusId),
-          eq(verifications.result, 'Не годен')
+          eq(verifications.result, 'не годен')
         )
       );
 

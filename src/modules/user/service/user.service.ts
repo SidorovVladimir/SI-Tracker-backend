@@ -46,10 +46,12 @@ export class UserService {
   }
 
   async getByEmail(login: string) {
+    const normalizedLogin = login.trim().toLowerCase();
+
     const result = await this.db
       .select()
       .from(users)
-      .where(eq(users.login, login))
+      .where(eq(users.login, normalizedLogin))
       .limit(1);
     if (!result[0]) {
       return null;
@@ -65,9 +67,9 @@ export class UserService {
         'Пользователь с таким почтовым адресом существует'
       );
     const userData: NewUser = {
-      firstName: input.firstName.toLowerCase(),
-      lastName: input.lastName.toLowerCase(),
-      login: input.login,
+      firstName: input.firstName.trim().toLowerCase(),
+      lastName: input.lastName.trim().toLowerCase(),
+      login: input.login.trim().toLowerCase(),
       passwordHash: await hashPassword(input.password),
       // role: input.email === process.env.ADMIN_EMAIL ? 'admin' : 'user',
       role: input.role,
@@ -95,8 +97,8 @@ export class UserService {
 
   async updateUser(userId: string, input: UpdateUserInput): Promise<User> {
     const newUser = {
-      firstName: input.firstName.toLowerCase(),
-      lastName: input.lastName.toLowerCase(),
+      firstName: input.firstName.trim().toLowerCase(),
+      lastName: input.lastName.trim().toLowerCase(),
       role: input.role,
     };
     const [user] = await this.db

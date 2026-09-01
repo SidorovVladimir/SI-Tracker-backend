@@ -10,6 +10,7 @@ const VerificationInput = z.object({
   documentUrl: z.string().nullable(),
   metrologyControleTypeId: z.uuid().nullable(),
   verificationOrganizationId: z.uuid().nullable(),
+  newOrganizationName: z.string().nullable(),
   cost: z.coerce
     .number('Стоимость должна быть числом')
     .min(0, 'Стоимость не может быть отрицательной')

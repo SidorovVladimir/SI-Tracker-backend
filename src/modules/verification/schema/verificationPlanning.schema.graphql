@@ -5,6 +5,7 @@ type PlanningPoolItem {
   model: String!
   serialNumber: String!
   validUntil: String # Может быть null, если нет поверок
+  lastControlDate: String
   suggestedMonth: String! # Формат "YYYY-MM"
   targetBatchId: ID # ID партии, если закреплен вручную
   isManualPlacement: Boolean! # Флаг для интерфейса

@@ -700,7 +700,7 @@ export class InspectionService {
           date: now,
           validUntil: item.isSuccess ? validUntilDate : null,
           metrologyControleTypeId: inspectionType.id,
-          result: item.isSuccess ? 'Годен' : 'Не годен',
+          result: item.isSuccess ? 'годен' : 'не годен',
           batchId: newBatch.id,
           comment: item.isSuccess
             ? 'Плановый осмотр'
@@ -845,16 +845,18 @@ export class InspectionService {
           : new Date(batch.plannedDate).toISOString(),
       comment: batch.comment,
       createdBy: batch.createdBy,
-      devicesToBatches: (batch.devicesToBatches ?? []).map((link: any) => ({
-        id: link.id,
-        deviceStatus: link.deviceStatus,
-        device: {
-          id: link.device.id,
-          name: link.device.name,
-          model: link.device.model,
-          serialNumber: link.device.serialNumber,
-        },
-      })),
+      devicesToBatches: (batch.devicesToBatches ?? [])
+        .filter((link: any) => !!link?.device)
+        .map((link: any) => ({
+          id: link.id,
+          deviceStatus: link.deviceStatus,
+          device: {
+            id: link.device.id,
+            name: link.device.name,
+            model: link.device.model,
+            serialNumber: link.device.serialNumber,
+          },
+        })),
     }));
 
     return {
@@ -887,14 +889,13 @@ export class InspectionService {
     // Выгребаем плоский список дат следующих осмотров активных приборов
     const activeInspectionDevices = await this.db
       .select({
-        nextVerificationDate: devices.nextVerificationDate,
+        nextInspectionDate: devices.nextInspectionDate,
       })
       .from(devices)
       .where(
         and(
           eq(devices.archived, false),
-          eq(devices.cachedControl, 'осмотр'), // Прямой Index Scan
-          sql`${devices.nextVerificationDate} IS NOT NULL`,
+          sql`${devices.nextInspectionDate} IS NOT NULL`,
           notInArray(
             devices.statusId,
             this.db
@@ -908,7 +909,7 @@ export class InspectionService {
     // Считаем годовую статистику на стороне Node.js (безопасно для PGlite)
     for (const device of activeInspectionDevices) {
       const [dYear, dMonth, dDay] = device
-        .nextVerificationDate!.split('-')
+        .nextInspectionDate!.split('-')
         .map(Number) as [number, number, number];
       const inspectDate = new Date(dYear, dMonth - 1, dDay);
 
@@ -950,14 +951,14 @@ export class InspectionService {
     const activeInspectionDevices = await this.db
       .select({
         id: devices.id,
-        nextVerificationDate: devices.nextVerificationDate,
+        nextInspectionDate: devices.nextInspectionDate,
       })
       .from(devices)
       .where(
         and(
           eq(devices.archived, false),
-          eq(devices.cachedControl, 'осмотр'),
-          sql`${devices.nextVerificationDate} IS NOT NULL`,
+          // eq(devices.cachedControl, 'осмотр'),
+          sql`${devices.nextInspectionDate} IS NOT NULL`,
           notInArray(
             devices.statusId,
             this.db
@@ -972,7 +973,7 @@ export class InspectionService {
 
     for (const device of activeInspectionDevices) {
       const [dYear, dMonth, dDay] = device
-        .nextVerificationDate!.split('-')
+        .nextInspectionDate!.split('-')
         .map(Number) as [number, number, number];
       const inspectDate = new Date(dYear, dMonth - 1, dDay);
 
@@ -998,18 +999,19 @@ export class InspectionService {
       where: inArray(devices.id, targetDeviceIds),
       limit,
       offset,
-      orderBy: (d) => [asc(d.nextVerificationDate)],
+      orderBy: (d) => [asc(d.nextInspectionDate)],
       columns: {
         id: true,
         name: true,
         model: true,
         serialNumber: true,
-        nextVerificationDate: true,
+        nextInspectionDate: true,
+        cachedControl: true,
       },
       with: {
         verifications: {
           orderBy: (v, { desc }) => [desc(v.date)],
-          limit: 1,
+          limit: 10,
           with: { metrologyControleType: true },
         },
       },
@@ -1017,13 +1019,24 @@ export class InspectionService {
 
     // 3. Формируем легкий плоский маппинг из 20 записей
     const items = pageDevices.map((device) => {
-      const latestInspection = device.verifications?.[0] || null;
+      // const latestInspection = device.verifications?.[0] || null;
+
+      const latestInspection =
+        device.verifications?.find(
+          (v) =>
+            v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
+        ) || null;
 
       const [dYear, dMonth, dDay] = device
-        .nextVerificationDate!.split('-')
+        .nextInspectionDate!.split('-')
         .map(Number) as [number, number, number];
       const inspectDate = new Date(dYear, dMonth - 1, dDay);
       const isOverdue = inspectDate < currentMonthStart;
+
+      const displayControlType =
+        device.cachedControl === 'осмотр'
+          ? 'Обязательный осмотр'
+          : 'Внутренний осмотр СИ/СК';
 
       return {
         id: device.id,
@@ -1035,7 +1048,7 @@ export class InspectionService {
           : null,
         validUntil: inspectDate.toISOString(),
         isOverdue,
-        controlType: 'осмотр',
+        controlType: displayControlType,
       };
     });
 

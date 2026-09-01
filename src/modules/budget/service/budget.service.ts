@@ -17,7 +17,6 @@ import { DrizzleDB } from '../../../db/client';
 import { productionSites } from '../../location/models/productionSites.model';
 import { companies } from '../../location/models/company.model';
 import { cities } from '../../location/models/city.model';
-import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
 
 import {
   budgetPlanItems,
@@ -26,7 +25,6 @@ import {
   pricelists,
 } from '../models/budget.model';
 import { statuses } from '../../catalog/models/status.model';
-import { equipmentTypes } from '../../catalog/models/equipmentType.model';
 import { devices } from '../../device/models/device.model';
 import { verifications } from '../../verification/models/verification.model';
 
@@ -191,11 +189,8 @@ export class BudgetService {
       conditions.push(eq(productionSites.id, filters.siteId));
     }
 
-    // Выражение для извлечения номера месяца, безопасное для PGlite (работает со строками YYYY-MM-DD)
-    // substring('2026-08-24' from 6 for 2) -> '08' -> ::int
-    const monthNumSql = sql`substring(${devices.nextVerificationDate} from 6 for 2)::int`;
+    const monthNumSql = sql`EXTRACT(MONTH FROM ${devices.nextVerificationDate}::date)::int`;
 
-    // 3. ГЛАВНЫЙ АНАЛИТИЧЕСКИЙ ЗАПРОС (Чистый, без подзапросов и EXTRACT)
     const result = await this.db
       .select({
         rowId: groupColumn,
@@ -221,7 +216,7 @@ export class BudgetService {
           verifications.id,
           sql`(
         SELECT sub_v.id FROM ${verifications} sub_v 
-        WHERE sub_v.device_id = ${devices.id} 
+        WHERE sub_v.device_id = ${devices.id} AND sub_v.cost IS NOT NULL AND sub_v.cost > 0
         ORDER BY sub_v.date DESC NULLS LAST, sub_v.created_at DESC 
         LIMIT 1
       )`
@@ -265,7 +260,7 @@ export class BudgetService {
       const targetMonth = currentRow.months[monthNum - 1];
 
       if (targetMonth) {
-        targetMonth.totalCost = monthTotal;
+        targetMonth.totalCost += monthTotal;
       }
 
       currentRow.totalYearCost += monthTotal;
@@ -941,7 +936,7 @@ export class BudgetService {
       with: {
         verifications: {
           orderBy: (v, { desc }) => [desc(v.date)],
-          limit: 1, // Тянем строго последнюю стоимость
+          limit: 5, // Тянем строго последнюю стоимость
           columns: { cost: true },
         },
       },
@@ -1006,7 +1001,12 @@ export class BudgetService {
         }
         // РЕЖИМ 2: Расчёт цен на основе исторической стоимости
         else {
-          const historicalCost = device.verifications?.[0]?.cost || '0.00';
+          const historicalVerification = device.verifications?.find(
+            (v: any) =>
+              v.metrologyControleType?.name?.toLowerCase().trim() !==
+                'осмотр' && parseFloat(v.cost || '0') > 0
+          );
+          const historicalCost = historicalVerification?.cost || '0.00';
           const historical = parseFloat(historicalCost);
           if (historical > 0) {
             basePrice = historical;

@@ -31,9 +31,9 @@ async function main() {
     await tx
       .insert(users)
       .values({
-        login: process.env.ADMIN_EMAIL!,
-        firstName: process.env.ADMIN_FIRSTNAME!,
-        lastName: process.env.ADMIN_LASTNAME!,
+        login: process.env.ADMIN_EMAIL!.toLowerCase(),
+        firstName: process.env.ADMIN_FIRSTNAME!.toLowerCase(),
+        lastName: process.env.ADMIN_LASTNAME!.toLowerCase(),
         passwordHash,
         role: 'superadmin',
       })

@@ -42,6 +42,7 @@ input VerificationInput {
   documentUrl: String
   metrologyControleTypeId: ID
   verificationOrganizationId: ID
+  newOrganizationName: String
   cost: Float
 }
 

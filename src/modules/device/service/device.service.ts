@@ -39,7 +39,7 @@ import {
 
 export interface PrintBarcodesInput {
   deviceIds?: string[];
-  // controlType?: string;
+  controlType?: string;
   historyLinkIds?: string[];
 }
 
@@ -115,25 +115,41 @@ export class DeviceService {
     }
 
     // 4. МГНОВЕННЫЙ ФИЛЬТР МЕТРОЛОГИИ (По нашим новым кэш-колонкам)
+    const isInspectionFilter = cleanStr(filter?.metrologyControle) === 'осмотр';
+
     if (filter?.metrologyControle) {
       conditions.push(
         eq(devices.cachedControl, cleanStr(filter.metrologyControle)!)
       );
     }
+    // if (filter?.dateStart) {
+    //   conditions.push(
+    //     sql`${devices.nextVerificationDate} >= ${String(filter.dateStart).slice(
+    //       0,
+    //       10
+    //     )}`
+    //   );
+    // }
+    // if (filter?.dateEnd) {
+    //   conditions.push(
+    //     sql`${devices.nextVerificationDate} <= ${String(filter.dateEnd).slice(
+    //       0,
+    //       10
+    //     )}`
+    //   );
+    // }
+    const dateColumnSql = isInspectionFilter
+      ? devices.nextInspectionDate
+      : devices.nextVerificationDate;
+
     if (filter?.dateStart) {
       conditions.push(
-        sql`${devices.nextVerificationDate} >= ${String(filter.dateStart).slice(
-          0,
-          10
-        )}`
+        sql`${dateColumnSql} >= ${String(filter.dateStart).slice(0, 10)}`
       );
     }
     if (filter?.dateEnd) {
       conditions.push(
-        sql`${devices.nextVerificationDate} <= ${String(filter.dateEnd).slice(
-          0,
-          10
-        )}`
+        sql`${dateColumnSql} <= ${String(filter.dateEnd).slice(0, 10)}`
       );
     }
 
@@ -161,6 +177,8 @@ export class DeviceService {
         releaseDate: true,
         manufacturer: true,
         cachedControl: true, // Забираем значение кэша для маппинга
+        nextVerificationDate: true, // Вытягиваем кэш метрологии
+        nextInspectionDate: true,
       },
       with: {
         status: { columns: { name: true } },
@@ -173,7 +191,7 @@ export class DeviceService {
         },
         verifications: {
           orderBy: (v) => [sql`${v.date} DESC NULLS LAST`],
-          limit: 2, // Ограничиваем выборку истории в памяти Node.js
+          limit: 5, // Ограничиваем выборку истории в памяти Node.js
           columns: {
             id: true,
             date: true,
@@ -212,7 +230,10 @@ export class DeviceService {
           status: d.status,
           productionSite: d.productionSite,
           latestVerification: targetControl,
+          cachedControl: d.cachedControl,
           latestInspection: absoluteLatestInspection,
+          nextVerificationDate: d.nextVerificationDate,
+          nextInspectionDate: d.nextInspectionDate,
         };
       }),
       totalCount: countResult?.count ?? 0,
@@ -249,6 +270,7 @@ export class DeviceService {
         updatedAt: true,
         createdById: true,
         updatedById: true,
+        nextInspectionDate: true,
       },
       with: {
         status: { columns: { id: true, name: true } },
@@ -489,22 +511,23 @@ export class DeviceService {
   }
 
   async createDevice(input: CreateDeviceInput, userId: string) {
+    console.log(input);
     const deviceData = {
-      name: input.name.toLowerCase(),
-      model: input.model.toLowerCase(),
-      serialNumber: input.serialNumber.toLowerCase(),
+      name: input.name.trim().toLowerCase(),
+      model: input.model.trim().toLowerCase(),
+      serialNumber: input.serialNumber.trim().toLowerCase(),
       releaseDate: input.releaseDate,
-      csmCode: input.csmCode?.toLowerCase() ?? null,
-      grsiNumber: input.grsiNumber?.toLowerCase() ?? null,
-      measurementRange: input.measurementRange?.toLowerCase() ?? null,
-      accuracy: input.accuracy?.toLowerCase() ?? null,
-      inventoryNumber: input.inventoryNumber?.toLowerCase() ?? null,
+      csmCode: input.csmCode?.trim().toLowerCase() ?? null,
+      grsiNumber: input.grsiNumber?.trim().toLowerCase() ?? null,
+      measurementRange: input.measurementRange?.trim().toLowerCase() ?? null,
+      accuracy: input.accuracy?.trim().toLowerCase() ?? null,
+      inventoryNumber: input.inventoryNumber?.trim().toLowerCase() ?? null,
       receiptDate: input.receiptDate,
-      manufacturer: input.manufacturer?.toLowerCase() ?? null,
+      manufacturer: input.manufacturer?.trim().toLowerCase() ?? null,
       verificationInterval: input.verificationInterval,
       archived: input.archived,
-      nomenclature: input.nomenclature?.toLowerCase() ?? null,
-      comment: input.comment?.toLowerCase() ?? null,
+      nomenclature: input.nomenclature?.trim().toLowerCase() ?? null,
+      comment: input.comment?.trim().toLowerCase() ?? null,
       statusId: input.statusId,
       productionSiteId: input.productionSiteId,
       equipmentTypeId: input.equipmentTypeId ?? null,
@@ -548,6 +571,62 @@ export class DeviceService {
         }));
         await tx.insert(measurementTypesToDevices).values(measurementTypesData);
       }
+
+      //  if (input.verifications && input.verifications.length > 0) {
+      //   const verificationsToInsert = [];
+
+      //   // Перебираем пришедшие документы последовательно
+      //   for (const v of input.verifications) {
+      //     let finalOrgId = v.verificationOrganizationId ?? null;
+
+      //     // 🔥 ЕСЛИ UUID ПУСТОЙ, НО ЕСТЬ ТЕКСТ НОВОЙ ОРГАНИЗАЦИИ (Импорт из Аршина / Ручной ввод)
+      //     if (!finalOrgId && v.newOrganizationName && v.newOrganizationName.trim() !== '') {
+      //       const cleanOrgName = v.newOrganizationName.trim();
+      //       const searchOrgName = cleanOrgName.toLowerCase();
+
+      //       // 1. Проверяем на бэкенде, вдруг такую организацию уже создал другой метролог (защита от дублей)
+      //       const [existingOrg] = await tx
+      //         .select({ id: verificationOrganizations.id })
+      //         .from(verificationOrganizations)
+      //         .where(sql`LOWER(${verificationOrganizations.name}) = ${searchOrgName}`)
+      //         .limit(1);
+
+      //       if (existingOrg) {
+      //         finalOrgId = existingOrg.id; // Нашли в базе — привязываем к ней
+      //       } else {
+      //         // 2. Не нашли — честно заносим новый ЦСМ в глобальный справочник
+      //         const [newOrg] = await tx
+      //           .insert(verificationOrganizations)
+      //           .values({ name: cleanOrgName }) // Пишем красивое имя с правильным регистром
+      //           .returning({ id: verificationOrganizations.id });
+
+      //         if (!newOrg) {
+      //           throw new Error(`Не удалось автоматически создать организацию: "${cleanOrgName}"`);
+      //         }
+      //         finalOrgId = newOrg.id; // Запоминаем сгенерированный базой UUID
+      //       }
+      //     }
+
+      //     // Формируем DTO документа для вставки в базу данных
+      //     verificationsToInsert.push({
+      //       deviceId: newDevice.id, // ID только что созданной карточки прибора
+      //       batchId: v.batchId ?? null,
+      //       protocolNumber: v.protocolNumber ?? null,
+      //       result: v.result ?? 'годен',
+      //       documentUrl: v.documentUrl ?? null,
+      //       comment: v.comment ?? null,
+      //       date: v.date,
+      //       validUntil: v.validUntil ?? null,
+      //       metrologyControleTypeId: v.metrologyControleTypeId ?? null,
+
+      //       // 🔥 ЗАПИСЫВАЕМ СЮДА: Чистый, гарантированный UUID (старый или только что созданный)
+      //       verificationOrganizationId: finalOrgId,
+
+      //       cost: v.cost !== undefined && v.cost !== null && String(v.cost).trim() !== ''
+      //         ? String(v.cost)
+      //         : '0.00',
+      //     });
+      //   }
 
       // 4. Добавление переданных верификаций
       if (input.verifications && input.verifications.length > 0) {
@@ -593,21 +672,21 @@ export class DeviceService {
     if (!oldDataSnapshot) throw new Error('Device not found');
 
     const deviceData = {
-      name: input.name.toLowerCase(),
-      model: input.model.toLowerCase(),
-      serialNumber: input.serialNumber.toLowerCase(),
+      name: input.name.trim().toLowerCase(),
+      model: input.model.trim().toLowerCase(),
+      serialNumber: input.serialNumber.trim().toLowerCase(),
       releaseDate: input.releaseDate,
-      csmCode: input.csmCode?.toLowerCase() ?? null,
-      grsiNumber: input.grsiNumber?.toLowerCase() ?? null,
-      measurementRange: input.measurementRange?.toLowerCase() ?? null,
-      accuracy: input.accuracy?.toLowerCase() ?? null,
-      inventoryNumber: input.inventoryNumber?.toLowerCase() ?? null,
+      csmCode: input.csmCode?.trim().toLowerCase() ?? null,
+      grsiNumber: input.grsiNumber?.trim().toLowerCase() ?? null,
+      measurementRange: input.measurementRange?.trim().toLowerCase() ?? null,
+      accuracy: input.accuracy?.trim().toLowerCase() ?? null,
+      inventoryNumber: input.inventoryNumber?.trim().toLowerCase() ?? null,
       receiptDate: input.receiptDate,
-      manufacturer: input.manufacturer?.toLowerCase() ?? null,
+      manufacturer: input.manufacturer?.trim().toLowerCase() ?? null,
       verificationInterval: input.verificationInterval,
       archived: input.archived,
-      nomenclature: input.nomenclature?.toLowerCase() ?? null,
-      comment: input.comment?.toLowerCase() ?? null,
+      nomenclature: input.nomenclature?.trim().toLowerCase() ?? null,
+      comment: input.comment?.trim().toLowerCase() ?? null,
       statusId: input.statusId,
       productionSiteId: input.productionSiteId,
       equipmentTypeId: input.equipmentTypeId ?? null,
@@ -1463,23 +1542,207 @@ export class DeviceService {
     }
   }
 
+  // async getDevicesBarcodeData(input: PrintBarcodesInput) {
+  //   // const { deviceIds, controlType, historyLinkIds } = input;
+  //   const { deviceIds, historyLinkIds } = input;
+  //   const results: any[] = [];
+
+  //   // ВЕТКА А: ПЕЧАТЬ ИЗ АРХИВА (По явным ID связей из devices_to_batches)
+  //   if (historyLinkIds && historyLinkIds.length > 0) {
+  //     const cleanLinkIds = historyLinkIds.map((id) => id.toLowerCase().trim());
+
+  //     const archiveRecords = await this.db
+  //       .select({
+  //         id: devicesToBatches.id, // ID самой связи, чтобы Apollo закэшировал строку
+  //         name: devices.name,
+  //         model: devices.model,
+  //         serialNumber: devices.serialNumber,
+  //         statusName: sql<string>`CASE WHEN ${verifications.result} = 'годен' THEN 'исправен' ELSE 'неисправен' END`,
+  //         // controlType: sql<string>`CASE WHEN ${verificationBatches.type} = 'inspection' THEN 'осмотр' ELSE 'поверка' END`,
+  //         controlType: metrologyControleTypes.name,
+  //         validUntil: verifications.validUntil,
+  //       })
+  //       .from(devicesToBatches)
+  //       .leftJoin(devices, eq(devicesToBatches.deviceId, devices.id))
+  //       .leftJoin(statuses, eq(devices.statusId, statuses.id))
+  //       .leftJoin(
+  //         verificationBatches,
+  //         eq(devicesToBatches.batchId, verificationBatches.id)
+  //       )
+  //       // Привязываемся к verifications строго по совпадению deviceId и batchId!
+  //       .leftJoin(
+  //         verifications,
+  //         and(
+  //           eq(verifications.deviceId, devicesToBatches.deviceId),
+  //           eq(verifications.batchId, devicesToBatches.batchId)
+  //         )
+  //       )
+  //       .leftJoin(
+  //         metrologyControleTypes,
+  //         eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+  //       )
+
+  //       .where(inArray(devicesToBatches.id, cleanLinkIds));
+
+  //     results.push(...archiveRecords);
+  //   }
+
+  //   // ВЕТКА Б: УМНАЯ ПЕЧАТЬ С ГЛАВНОЙ СТРАНИЦЫ (По чистым ID приборов)
+  //   if (deviceIds && deviceIds.length > 0) {
+  //     const cleanDeviceIds = deviceIds.map((id) => id.toLowerCase().trim());
+
+  //     for (const deviceId of cleanDeviceIds) {
+  //       let typeConditionSql = '';
+
+  //       // 🎯 ЛОГИКА АВТОМАТИКИ НА СЕРВЕРЕ:
+  //       // Если фронтенд НЕ передал controlType (печать с главной страницы)
+  //       // if (!controlType) {
+  //       // Делаем экспресс-проверку прибора в БД: относится ли он к сфере госрегулирования (СИ)?
+  //       // Например, проверяем имя типа оборудования. Настройте это условие под вашу БД.
+  //       const [deviceCheck] = await this.db
+  //         .select({
+  //           typeName: equipmentTypes.name,
+  //           grsiNumber: devices.grsiNumber,
+  //         })
+  //         .from(devices)
+  //         .leftJoin(
+  //           equipmentTypes,
+  //           eq(devices.equipmentTypeId, equipmentTypes.id)
+  //         )
+  //         .where(eq(devices.id, deviceId));
+
+  //       const deviceScopesData = await this.db
+  //         .select({ scopeName: scopes.name })
+  //         .from(scopesToDevices)
+  //         .leftJoin(scopes, eq(scopesToDevices.scopeId, scopes.id))
+  //         .where(eq(scopesToDevices.deviceId, deviceId));
+
+  //       const eqTypeName = deviceCheck?.typeName?.toLowerCase().trim() ?? '';
+  //       const deviceScopes = deviceScopesData.map(
+  //         (s) => s.scopeName?.toLowerCase().trim() ?? ''
+  //       );
+
+  //       const hasGrsi =
+  //         !!deviceCheck?.grsiNumber && deviceCheck.grsiNumber.trim() !== '';
+
+  //       const isNotGr =
+  //         deviceScopes.includes('не гр') ||
+  //         deviceScopes.includes(
+  //           'вне сферы государственного регулирования (не гр)'
+  //         );
+
+  //       let targetControlName = 'осмотр';
+
+  //       if (
+  //         eqTypeName === 'индикатор' ||
+  //         eqTypeName === 'вспомогательное оборудование (во)'
+  //       ) {
+  //         // Индикаторы и ВО — это всегда осмотр без исключений
+  //         targetControlName = 'осмотр';
+  //       } else if (eqTypeName === 'средство измерений (си)') {
+  //         // СИ: Если есть ГРСИ И при этом (сферы пустые ИЛИ сфера точно НЕ "не ГР") -> ПОВЕРКА.
+  //         // Во всех остальных случаях (есть "не ГР" ИЛИ нет ГРСИ) -> ОСМОТР.
+  //         if (hasGrsi && !isNotGr) {
+  //           targetControlName = 'поверка';
+  //         } else {
+  //           targetControlName = 'осмотр';
+  //         }
+  //       } else if (eqTypeName === 'средство контроля (ск)') {
+  //         console.log('2', eqTypeName);
+  //         // СК: Если сфера "не ГР" -> ОСМОТР.
+  //         if (isNotGr) {
+  //           console.log('3', isNotGr);
+  //           targetControlName = 'осмотр';
+  //         } else {
+  //           console.log('4', hasGrsi);
+  //           // Если другая сфера или пусто: смотрим на ГРСИ. Есть ГРСИ -> ПОВЕРКА, нет ГРСИ -> КАЛИБРОВКА.
+  //           targetControlName = hasGrsi ? 'поверка' : 'калибровка';
+  //         }
+  //       } else if (eqTypeName === 'испытательное оборудование (ио)') {
+  //         // ИО: Если сфера "не ГР" -> ОСМОТР. Если нет "не ГР" или пусто -> АТТЕСТАЦИЯ.
+  //         targetControlName = isNotGr ? 'осмотр' : 'аттестация';
+  //       }
+
+  //       // Формируем SQL-условие для подзапроса MAX(date)
+  //       typeConditionSql = `AND LOWER(mct.name) = '${targetControlName}'`;
+  //       // } else {
+  //       //   // Если фронтенд жестко передал тип (из конкретных журналов) — используем его напрямую
+  //       //   typeConditionSql = `AND LOWER(mct.name) = '${controlType
+  //       //     .toLowerCase()
+  //       //     .trim()}'`;
+  //       // }
+
+  //       // Вытаскиваем данные прибора с учетом вычисленного условия typeCondition
+  //       const [deviceRecord] = await this.db
+  //         .select({
+  //           id: devices.id,
+  //           name: devices.name,
+  //           model: devices.model,
+  //           serialNumber: devices.serialNumber,
+  //           statusName: sql<string>`CASE WHEN ${verifications.result} = 'годен' THEN 'исправен' ELSE 'неисправен' END`,
+  //           controlType: metrologyControleTypes.name,
+  //           validUntil: verifications.validUntil,
+  //         })
+  //         .from(devices)
+  //         .leftJoin(statuses, eq(devices.statusId, statuses.id))
+  //         .leftJoin(
+  //           verifications,
+  //           and(
+  //             eq(verifications.deviceId, devices.id),
+  //             // eq(
+  //             //   verifications.date,
+  //             //   sql`(
+  //             //     SELECT MAX(v.date)
+  //             //     FROM verifications v
+  //             //     LEFT JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+  //             //     WHERE v.device_id = ${devices.id} ${sql.raw(typeConditionSql)}
+  //             //   )`
+  //             // )
+  //             eq(
+  //               verifications.id,
+  //               sql`(
+  //                 SELECT v.id
+  //                 FROM verifications v
+  //                 LEFT JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
+  //                 WHERE v.device_id = ${devices.id} ${sql.raw(typeConditionSql)}
+  //                 ORDER BY v.date DESC, v.id DESC
+  //                 LIMIT 1
+  //               )`
+  //             )
+  //           )
+  //         )
+  //         .leftJoin(
+  //           metrologyControleTypes,
+  //           eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+  //         )
+  //         .where(eq(devices.id, deviceId));
+
+  //       if (deviceRecord) {
+  //         results.push(deviceRecord);
+  //       }
+  //     }
+  //   }
+
+  //   return results;
+  // }
+
   async getDevicesBarcodeData(input: PrintBarcodesInput) {
-    // const { deviceIds, controlType, historyLinkIds } = input;
-    const { deviceIds, historyLinkIds } = input;
+    const { deviceIds, controlType, historyLinkIds } = input;
     const results: any[] = [];
 
+    // =========================================================================
     // ВЕТКА А: ПЕЧАТЬ ИЗ АРХИВА (По явным ID связей из devices_to_batches)
+    // =========================================================================
     if (historyLinkIds && historyLinkIds.length > 0) {
       const cleanLinkIds = historyLinkIds.map((id) => id.toLowerCase().trim());
 
       const archiveRecords = await this.db
         .select({
-          id: devicesToBatches.id, // ID самой связи, чтобы Apollo закэшировал строку
+          id: devicesToBatches.id,
           name: devices.name,
           model: devices.model,
           serialNumber: devices.serialNumber,
-          statusName: sql<string>`CASE WHEN ${verifications.result} = 'Годен' THEN 'исправен' ELSE 'неисправен' END`,
-          // controlType: sql<string>`CASE WHEN ${verificationBatches.type} = 'inspection' THEN 'осмотр' ELSE 'поверка' END`,
+          statusName: sql<string>`CASE WHEN ${verifications.result} = 'годен' THEN 'исправен' ELSE 'неисправен' END`,
           controlType: metrologyControleTypes.name,
           validUntil: verifications.validUntil,
         })
@@ -1490,7 +1753,6 @@ export class DeviceService {
           verificationBatches,
           eq(devicesToBatches.batchId, verificationBatches.id)
         )
-        // Привязываемся к verifications строго по совпадению deviceId и batchId!
         .leftJoin(
           verifications,
           and(
@@ -1502,105 +1764,50 @@ export class DeviceService {
           metrologyControleTypes,
           eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
         )
-
         .where(inArray(devicesToBatches.id, cleanLinkIds));
 
       results.push(...archiveRecords);
     }
 
-    // ВЕТКА Б: УМНАЯ ПЕЧАТЬ С ГЛАВНОЙ СТРАНИЦЫ (По чистым ID приборов)
+    // =========================================================================
+    // ВЕТКА Б: МГНОВЕННАЯ МАССОВАЯ ПЕЧАТЬ С ГЛАВНЫХ СТРАНИЦ ЖУРНАЛОВ
+    // =========================================================================
     if (deviceIds && deviceIds.length > 0) {
       const cleanDeviceIds = deviceIds.map((id) => id.toLowerCase().trim());
 
-      for (const deviceId of cleanDeviceIds) {
-        let typeConditionSql = '';
+      // 1. Сначала выгребаем характеристики нужных приборов за ОДИН быстрый запрос (никаких циклов!)
+      const targetDevices = await this.db
+        .select({
+          id: devices.id,
+          name: devices.name,
+          model: devices.model,
+          serialNumber: devices.serialNumber,
+          cachedControl: devices.cachedControl, // Читаем уже готовый расчет автомата!
+        })
+        .from(devices)
+        .where(inArray(devices.id, cleanDeviceIds));
 
-        // 🎯 ЛОГИКА АВТОМАТИКИ НА СЕРВЕРЕ:
-        // Если фронтенд НЕ передал controlType (печать с главной страницы)
-        // if (!controlType) {
-        // Делаем экспресс-проверку прибора в БД: относится ли он к сфере госрегулирования (СИ)?
-        // Например, проверяем имя типа оборудования. Настройте это условие под вашу БД.
-        const [deviceCheck] = await this.db
-          .select({
-            typeName: equipmentTypes.name,
-            grsiNumber: devices.grsiNumber,
-          })
-          .from(devices)
-          .leftJoin(
-            equipmentTypes,
-            eq(devices.equipmentTypeId, equipmentTypes.id)
-          )
-          .where(eq(devices.id, deviceId));
-
-        const deviceScopesData = await this.db
-          .select({ scopeName: scopes.name })
-          .from(scopesToDevices)
-          .leftJoin(scopes, eq(scopesToDevices.scopeId, scopes.id))
-          .where(eq(scopesToDevices.deviceId, deviceId));
-
-        const eqTypeName = deviceCheck?.typeName?.toLowerCase().trim() ?? '';
-        const deviceScopes = deviceScopesData.map(
-          (s) => s.scopeName?.toLowerCase().trim() ?? ''
-        );
-
-        const hasGrsi =
-          !!deviceCheck?.grsiNumber && deviceCheck.grsiNumber.trim() !== '';
-
-        const isNotGr =
-          deviceScopes.includes('не гр') ||
-          deviceScopes.includes(
-            'вне сферы государственного регулирования (не гр)'
-          );
-
+      // 2. Пробегаем по приборам и вытаскиваем для каждого точечный актуальный документ
+      for (const dev of targetDevices) {
+        // Вычисляем, какой тип документа искать в истории для вывода на бирку
         let targetControlName = 'осмотр';
 
-        if (
-          eqTypeName === 'индикатор' ||
-          eqTypeName === 'вспомогательное оборудование (во)'
-        ) {
-          // Индикаторы и ВО — это всегда осмотр без исключений
+        if (controlType?.toLowerCase().trim() === 'inspection') {
+          // Если печатаем из Журнала осмотров — нам на бирке нужен строго Осмотр
           targetControlName = 'осмотр';
-        } else if (eqTypeName === 'средство измерений (си)') {
-          // СИ: Если есть ГРСИ И при этом (сферы пустые ИЛИ сфера точно НЕ "не ГР") -> ПОВЕРКА.
-          // Во всех остальных случаях (есть "не ГР" ИЛИ нет ГРСИ) -> ОСМОТР.
-          if (hasGrsi && !isNotGr) {
-            targetControlName = 'поверка';
-          } else {
-            targetControlName = 'осмотр';
-          }
-        } else if (eqTypeName === 'средство контроля (ск)') {
-          console.log('2', eqTypeName);
-          // СК: Если сфера "не ГР" -> ОСМОТР.
-          if (isNotGr) {
-            console.log('3', isNotGr);
-            targetControlName = 'осмотр';
-          } else {
-            console.log('4', hasGrsi);
-            // Если другая сфера или пусто: смотрим на ГРСИ. Есть ГРСИ -> ПОВЕРКА, нет ГРСИ -> КАЛИБРОВКА.
-            targetControlName = hasGrsi ? 'поверка' : 'калибровка';
-          }
-        } else if (eqTypeName === 'испытательное оборудование (ио)') {
-          // ИО: Если сфера "не ГР" -> ОСМОТР. Если нет "не ГР" или пусто -> АТТЕСТАЦИЯ.
-          targetControlName = isNotGr ? 'осмотр' : 'аттестация';
+        } else {
+          // Если из Журнала поверок — берем то, что для прибора рассчитал автомат (поверка/калибровка/аттестация)
+          targetControlName = dev.cachedControl || 'поверка';
         }
 
-        // Формируем SQL-условие для подзапроса MAX(date)
-        typeConditionSql = `AND LOWER(mct.name) = '${targetControlName}'`;
-        // } else {
-        //   // Если фронтенд жестко передал тип (из конкретных журналов) — используем его напрямую
-        //   typeConditionSql = `AND LOWER(mct.name) = '${controlType
-        //     .toLowerCase()
-        //     .trim()}'`;
-        // }
-
-        // Вытаскиваем данные прибора с учетом вычисленного условия typeCondition
+        // Вытаскиваем прибор и связываем с ЕДИНСТВЕННЫМ последним документом нужного типа
         const [deviceRecord] = await this.db
           .select({
             id: devices.id,
             name: devices.name,
             model: devices.model,
             serialNumber: devices.serialNumber,
-            statusName: sql<string>`CASE WHEN ${verifications.result} = 'Годен' THEN 'исправен' ELSE 'неисправен' END`,
+            statusName: sql<string>`CASE WHEN ${verifications.result} = 'годен' THEN 'исправен' ELSE 'неисправен' END`,
             controlType: metrologyControleTypes.name,
             validUntil: verifications.validUntil,
           })
@@ -1610,22 +1817,18 @@ export class DeviceService {
             verifications,
             and(
               eq(verifications.deviceId, devices.id),
-              // eq(
-              //   verifications.date,
-              //   sql`(
-              //     SELECT MAX(v.date)
-              //     FROM verifications v
-              //     LEFT JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-              //     WHERE v.device_id = ${devices.id} ${sql.raw(typeConditionSql)}
-              //   )`
-              // )
+              // Вытаскиваем строго последний ID документа заданного типа контроля (Поверка или Осмотр)
               eq(
                 verifications.id,
                 sql`(
                   SELECT v.id
                   FROM verifications v
                   LEFT JOIN metrology_controle_types mct ON v.metrology_controle_type_id = mct.id
-                  WHERE v.device_id = ${devices.id} ${sql.raw(typeConditionSql)}
+                  WHERE v.device_id = ${
+                    devices.id
+                  } AND LOWER(mct.name) = ${targetControlName
+                  .toLowerCase()
+                  .trim()}
                   ORDER BY v.date DESC, v.id DESC
                   LIMIT 1
                 )`
@@ -1636,10 +1839,15 @@ export class DeviceService {
             metrologyControleTypes,
             eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
           )
-          .where(eq(devices.id, deviceId));
+          .where(eq(devices.id, dev.id));
 
         if (deviceRecord) {
-          results.push(deviceRecord);
+          // Если прибор абсолютно новый и документов в истории еще нет, leftJoin вернет пустые поля верификации.
+          // Подстрахуем и запишем вычисленный тип контроля, чтобы бирка не была пустой.
+          results.push({
+            ...deviceRecord,
+            controlType: deviceRecord.controlType || targetControlName,
+          });
         }
       }
     }
@@ -1681,23 +1889,41 @@ export class DeviceService {
       scopeNames.includes('не гр') ||
       scopeNames.includes('вне сферы государственного регулирования (не гр)');
 
+    const isSiOrSk =
+      eqTypeName === 'средство измерений (си)' ||
+      eqTypeName === 'средство контроля (ск)';
+
     // 2. Вычисляем строгое название целевого контроля (Ваша логика)
     let targetControlName = 'осмотр';
-    if (
-      eqTypeName === 'индикатор' ||
-      eqTypeName === 'вспомогательное оборудование (во)'
-    ) {
-      targetControlName = 'осмотр';
-    } else if (eqTypeName === 'средство измерений (си)') {
-      targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
-    } else if (eqTypeName === 'средство контроля (ск)') {
-      targetControlName = isNotGr
-        ? 'осмотр'
-        : hasGrsi
-        ? 'поверка'
-        : 'калибровка';
+    // if (
+    //   eqTypeName === 'индикатор' ||
+    //   eqTypeName === 'вспомогательное оборудование (во)'
+    // ) {
+    //   targetControlName = 'осмотр';
+    // } else if (eqTypeName === 'средство измерений (си)') {
+    //   targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
+    // } else if (eqTypeName === 'средство контроля (ск)') {
+    //   targetControlName = isNotGr
+    //     ? 'осмотр'
+    //     : hasGrsi
+    //     ? 'поверка'
+    //     : 'калибровка';
+    // } else if (eqTypeName === 'испытательное оборудование (ио)') {
+    //   targetControlName = isNotGr ? 'осмотр' : 'аттестация';
+    // }
+
+    if (isSiOrSk) {
+      // По словам метролога: если есть ГРСИ и сфера -> поверка. Всё остальное -> калибровка.
+      if (hasGrsi && !isNotGr) {
+        targetControlName = 'поверка';
+      } else {
+        targetControlName = 'калибровка';
+      }
     } else if (eqTypeName === 'испытательное оборудование (ио)') {
-      targetControlName = isNotGr ? 'осмотр' : 'аттестация';
+      targetControlName = 'аттестация';
+    } else {
+      // Только индикаторы и ВО изначально считаются «простыми» и сразу планируются на осмотр
+      targetControlName = 'осмотр';
     }
 
     // 3. Ищем самый свежий документ этого контроля в истории
@@ -1717,31 +1943,71 @@ export class DeviceService {
       .orderBy(sql`${verifications.date} DESC NULLS LAST`)
       .limit(1);
 
+    // Б) Ищем последний документ ИМЕННО ОСМОТРА
+    const [latestInspectionDoc] = await db
+      .select({ validUntil: verifications.validUntil })
+      .from(verifications)
+      .leftJoin(
+        metrologyControleTypes,
+        eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+      )
+      .where(
+        and(
+          eq(verifications.deviceId, deviceId),
+          eq(metrologyControleTypes.name, 'осмотр')
+        )
+      )
+      .orderBy(sql`${verifications.date} DESC NULLS LAST`)
+      .limit(1);
+
     // 4. ИНТЕГРАЦИЯ ВАШЕГО МЕТОДА РАСЧЕТА СЛЕДУЮЩЕЙ ДАТЫ
     let nextVerificationDateStr: string | null = null;
 
     if (latestTargetDoc?.validUntil) {
-      // Если дата из базы, безопасно переводим в формат YYYY-MM-DD
       nextVerificationDateStr = new Date(latestTargetDoc.validUntil)
         .toISOString()
         .slice(0, 10);
-    } else {
+    } else if (targetControlName !== 'осмотр') {
       const baseDate = firstRow.releaseDate || firstRow.receiptDate;
       if (baseDate && firstRow.verificationInterval) {
         const nextDate = new Date(baseDate);
         nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
         nextVerificationDateStr = nextDate.toISOString().slice(0, 10);
       } else {
-        // Вариант 3: Данных нет совсем.
-        // Берём текущую дату и форматируем по ЛОКАЛЬНОМУ времени (без сдвигов UTC!)
         const today = new Date();
         const year = today.getFullYear();
         const month = String(today.getMonth() + 1).padStart(2, '0');
         const day = String(today.getDate()).padStart(2, '0');
-
-        // Результат: "2026-08-24" (или "2026-08-01", если хотите именно первое число месяца)
         nextVerificationDateStr = `${year}-${month}-${day}`;
       }
+    } else {
+      nextVerificationDateStr = null;
+    }
+
+    let nextInspectionDateStr: string | null = null;
+
+    if (latestInspectionDoc?.validUntil) {
+      nextInspectionDateStr = new Date(latestInspectionDoc.validUntil)
+        .toISOString()
+        .slice(0, 10);
+    } else if (targetControlName === 'осмотр') {
+      // 🔥 Считаем дефолтную дату ТОЛЬКО для Индикаторов и ВО!
+      const baseDate = firstRow.releaseDate || firstRow.receiptDate;
+      if (baseDate && firstRow.verificationInterval) {
+        const nextDate = new Date(baseDate);
+        nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
+        nextInspectionDateStr = nextDate.toISOString().slice(0, 10);
+      } else {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        nextInspectionDateStr = `${year}-${month}-${day}`;
+      }
+    } else {
+      // Для СИ, СК и ИО, которые еще ни разу не осматривались,
+      // оставляем null, чтобы они не лезли в календарь осмотров раньше времени.
+      nextInspectionDateStr = null;
     }
 
     // Записываем стейт в карточку прибора
@@ -1750,6 +2016,7 @@ export class DeviceService {
       .set({
         cachedControl: targetControlName,
         nextVerificationDate: nextVerificationDateStr, // Теперь сюда улетит чистая строка без багов
+        nextInspectionDate: nextInspectionDateStr,
         updatedAt: new Date(),
       })
       .where(eq(devices.id, deviceId));

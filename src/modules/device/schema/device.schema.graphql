@@ -80,6 +80,7 @@ type DeviceWithRelations {
   updatedAt: String!
   createdBy: User
   updatedBy: User
+  nextInspectionDate: String
   documents: [DeviceDocument!]!
   productionSite: ProductionSiteRelation!
   verifications: [VerificationRelation!]!
@@ -107,8 +108,11 @@ type DeviceTableItem {
   status: Status!
   archived: Boolean
   productionSite: ProductionSiteRelation!
+  cachedControl: String
   latestVerification: VerificationTableItem
   latestInspection: InspectionTableItem
+  nextVerificationDate: String
+  nextInspectionDate: String
 }
 
 type VerificationTableItem {
@@ -147,7 +151,7 @@ type JobStatusResponse {
 
 input PrintBarcodesInput {
   deviceIds: [ID!] # Используется на главной странице
-  # controlType: String # 'inspection' | 'verification' (для главной)
+  controlType: String # 'inspection' | 'verification' (для главной)
   historyLinkIds: [ID!] # Используется в архивах (ID из devices_to_batches)
 }
 
