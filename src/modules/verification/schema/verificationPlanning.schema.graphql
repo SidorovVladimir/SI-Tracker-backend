@@ -11,6 +11,7 @@ type PlanningPoolItem {
   isManualPlacement: Boolean! # Флаг для интерфейса
   controlType: String! # Тип контроля для фильтров ("Поверка", "Индикатор")
   isOverdue: Boolean!
+  scheduleStatus: String!
 }
 
 type PoolMetaTypeCounts {
@@ -21,6 +22,8 @@ type PoolMetaTypeCounts {
 type PoolMeta {
   unassignedCount: Int!
   typeCounts: [PoolMetaTypeCounts!]!
+  globalTotalCount: Int!
+  pausedTotalCount: Int!
 }
 
 type PlanningPoolResponse {

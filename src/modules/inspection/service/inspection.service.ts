@@ -612,9 +612,13 @@ export class InspectionService {
   //     yearlySummary: formattedSummary,
   //   };
   // }
+  // async createBulkInspection(
+  //   items: InspectionItemInput[],
+  //   intervalMonths: number,
+  //   userId: string
+  // ) {
   async createBulkInspection(
-    items: InspectionItemInput[],
-    intervalMonths: number,
+    items: { deviceId: string; isSuccess: boolean; intervalMonths: number }[],
     userId: string
   ) {
     if (!items.length) return false;
@@ -639,8 +643,8 @@ export class InspectionService {
 
       const now = new Date();
       // Вычисляем validUntilDate без смещения времени
-      const validUntilDate = new Date();
-      validUntilDate.setMonth(validUntilDate.getMonth() + intervalMonths);
+      // const validUntilDate = new Date();
+      // validUntilDate.setMonth(validUntilDate.getMonth() + intervalMonths);
 
       const year = now.getFullYear();
       const startOfYear = new Date(`${year}-01-01T00:00:00.000Z`);
@@ -680,7 +684,7 @@ export class InspectionService {
           plannedDate: now,
           status: 'completed',
           type: 'inspection',
-          comment: `Внутренний осмотр. Периодичность: ${intervalMonths} мес.`,
+          comment: `Комплексный внутренний осмотр партии оборудования (${items.length} ед.).`,
           createdById: userId,
         })
         .returning({ id: verificationBatches.id });
@@ -695,16 +699,30 @@ export class InspectionService {
       for (const item of items) {
         allDeviceIds.push(item.deviceId);
 
+        // Индивидуальный расчет дедлайна для каждого конкретного прибора
+        let itemValidUntil: Date | null = null;
+
+        if (item.isSuccess && item.intervalMonths > 0) {
+          itemValidUntil = new Date();
+          itemValidUntil.setMonth(
+            itemValidUntil.getMonth() + item.intervalMonths
+          );
+        }
+
         verificationValues.push({
           deviceId: item.deviceId,
           date: now,
-          validUntil: item.isSuccess ? validUntilDate : null,
+          validUntil: itemValidUntil,
           metrologyControleTypeId: inspectionType.id,
           result: item.isSuccess ? 'годен' : 'не годен',
           batchId: newBatch.id,
           comment: item.isSuccess
-            ? 'Плановый осмотр'
-            : 'Выявлены дефекты при осмотре',
+            ? `Плановый осмотр. Периодичность повтора: ${
+                item.intervalMonths > 0
+                  ? `${item.intervalMonths} мес.`
+                  : 'Разово'
+              }`
+            : 'Выявлены дефекты при техническом осмотре',
         });
 
         devicesToBatchesValues.push({
@@ -895,6 +913,7 @@ export class InspectionService {
       .where(
         and(
           eq(devices.archived, false),
+          inArray(devices.scheduleStatus, ['active', 'paused_verification']),
           sql`${devices.nextInspectionDate} IS NOT NULL`,
           notInArray(
             devices.statusId,
@@ -957,6 +976,7 @@ export class InspectionService {
       .where(
         and(
           eq(devices.archived, false),
+          inArray(devices.scheduleStatus, ['active', 'paused_verification']),
           // eq(devices.cachedControl, 'осмотр'),
           sql`${devices.nextInspectionDate} IS NOT NULL`,
           notInArray(

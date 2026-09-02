@@ -14,6 +14,7 @@ import {
   or,
   asc,
   SQL,
+  isNull,
 } from 'drizzle-orm';
 import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
 import { DeviceService } from '../../device/service/device.service';
@@ -899,140 +900,9 @@ export class VerificationPlanningService {
     END
   `;
 
-    //   // Базовые условия пула (Только активные приборы, исключая мертвые статусы и осмотры)
-    //   const basePoolConditions = [
-    //     eq(devices.archived, false),
-    //     notInArray(
-    //       devices.statusId,
-    //       this.db
-    //         .select({ id: statuses.id })
-    //         .from(statuses)
-    //         .where(inArray(statuses.name, excludedStatuses))
-    //     ),
-    //     sql`${devices.cachedControl} != 'осмотр'`,
-    //     sql`${devices.nextVerificationDate} IS NOT NULL`,
-    //   ];
-
-    //   // Фильтрация по конкретному типу контроля (если передан controlTypeId)
-    //   if (controlTypeId && controlTypeId !== 'ALL') {
-    //     if (controlTypeId === 'NOT_SPECIFIED') {
-    //       basePoolConditions.push(
-    //         or(
-    //           sql`${devices.cachedControl} IS NULL`,
-    //           eq(devices.cachedControl, 'не указан')
-    //         ) as SQL
-    //       );
-    //     } else {
-    //       basePoolConditions.push(
-    //         sql`${devices.cachedControl} = (SELECT name FROM metrology_controle_types WHERE id = ${controlTypeId})`
-    //       );
-    //     }
-    //   }
-
-    //   // -------------------------------------------------------------------------
-    //   // ЧАСТЬ 2: ФОРМИРОВАНИЕ СЦЕНАРИЕВ (А — зафиксирован в партии, Б — авторасчет)
-    //   // -------------------------------------------------------------------------
-
-    //   // Условие Сценария А: Прибор привязан к черновику/отправленной партии, и месяц партии совпадает с открытым
-    //   const scenarioACondition = sql`
-    //   EXISTS (
-    //     SELECT 1 FROM devices_to_batches dtb
-    //     JOIN verification_batches vb ON dtb.batch_id = vb.id
-    //     WHERE dtb.device_id = ${devices.id}
-    //       AND vb.status IN ('draft', 'sent')
-    //       AND vb.type = 'verification'
-    //       AND to_char(vb.planned_date, 'YYYY-MM') = ${targetMonth}
-    //   )
-    // `;
-
-    //   // Условие Сценария Б: Прибор НЕ привязан к активным партиям вообще, И его расчетный месяц совпал с открытым
-    //   const scenarioBCondition = sql`
-    //   NOT EXISTS (
-    //     SELECT 1 FROM devices_to_batches dtb
-    //     JOIN verification_batches vb ON dtb.batch_id = vb.id
-    //     WHERE dtb.device_id = ${devices.id} AND vb.status IN ('draft', 'sent') AND vb.type = 'verification'
-    //   ) AND ${finalTargetMonthSql} = ${targetMonth}
-    // `;
-
-    //   // Объединяем сценарии через OR в итоговый фильтр
-    //   const finalWhereClause = and(
-    //     ...basePoolConditions,
-    //     or(scenarioACondition, scenarioBCondition)
-    //   );
-
-    //   // -------------------------------------------------------------------------
-    //   // ЧАСТЬ 3: БЫСТРЫЕ АГРЕГАЦИИ (Подсчет счетчиков типов для вкладки мета-данных)
-    //   // -------------------------------------------------------------------------
-    //   const typeCountsQuery = await this.db
-    //     .select({
-    //       controlType: devices.cachedControl,
-    //       count: sql<number>`count(*)::int`,
-    //     })
-    //     .from(devices)
-    //     .where(finalWhereClause)
-    //     .groupBy(devices.cachedControl);
-
-    //   let unassignedCount = 0;
-    //   const typeCounts = typeCountsQuery
-    //     .map((row) => {
-    //       if (!row.controlType || row.controlType === 'не указан') {
-    //         unassignedCount += row.count;
-    //         return null;
-    //       }
-    //       return { typeName: row.controlType, count: row.count };
-    //     })
-    //     .filter(Boolean);
-
-    //   // Подсчитываем общую длину отфильтрованного пула (Мгновенно в БД)
-    //   const [totalCountResult] = await this.db
-    //     .select({ count: sql<number>`count(*)::int` })
-    //     .from(devices)
-    //     .where(finalWhereClause);
-
-    //   const totalCount = totalCountResult?.count ?? 0;
-
-    //   if (totalCount === 0) {
-    //     return {
-    //       items: [],
-    //       totalCount: 0,
-    //       meta: { unassignedCount: 0, typeCounts: [] },
-    //     };
-    //   }
-
-    //   // -------------------------------------------------------------------------
-    //   // ЧАСТЬ 4: ПОЛУЧЕНИЕ ТОЛЬКО ПАГИНИРОВАННОЙ СТРАНИЦЫ ДАННЫХ (Limit / Offset)
-    //   // -------------------------------------------------------------------------
-    //   const paginatedDevices = await this.db.query.devices.findMany({
-    //     where: finalWhereClause,
-    //     limit,
-    //     offset,
-    //     orderBy: (d) => [asc(d.nextVerificationDate)], // Сортируем прямо в БД по дате окончания действия
-    //     columns: {
-    //       id: true,
-    //       name: true,
-    //       model: true,
-    //       serialNumber: true,
-    //       cachedControl: true,
-    //       nextVerificationDate: true,
-    //     },
-    //     with: {
-    //       devicesToBatches: {
-    //         with: { batch: true },
-    //         where: sql`batch_id IN (SELECT id FROM verification_batches WHERE status IN ('draft', 'sent'))`,
-    //       },
-    //       verifications: {
-    //         orderBy: (v, { desc }) => [desc(v.date)],
-    //         limit: 5,
-    //         with: { metrologyControleType: true },
-    //       },
-    //     },
-    //   });
-
-    // =========================================================================
-    // ЧАСТЬ 1: БАЗОВЫЕ УСЛОВИЯ И СЦЕНАРИИ ДЛЯ ВСЕГО МЕСЯЦА
-    // =========================================================================
     const basePoolConditions = [
       eq(devices.archived, false),
+      // eq(devices.scheduleStatus, 'active'),
       notInArray(
         devices.statusId,
         this.db
@@ -1076,19 +946,45 @@ export class VerificationPlanningService {
     // =========================================================================
     const pageConditions = [...basePoolConditions];
 
+    // if (controlTypeId && controlTypeId !== 'ALL') {
+    //   if (controlTypeId === 'NOT_SPECIFIED') {
+    //     pageConditions.push(
+    //       or(
+    //         sql`${devices.cachedControl} IS NULL`,
+    //         eq(devices.cachedControl, 'не указан')
+    //       ) as SQL
+    //     );
+    //   } else {
+    //     pageConditions.push(
+    //       sql`${devices.cachedControl} = (SELECT LOWER(name) FROM metrology_controle_types WHERE id = ${controlTypeId})`
+    //     );
+    //   }
+    // }
     if (controlTypeId && controlTypeId !== 'ALL') {
-      if (controlTypeId === 'NOT_SPECIFIED') {
+      if (controlTypeId === 'PAUSED') {
+        // 🔥 ВЫБРАН ТАБ «РЕЗЕРВ»: Вытаскиваем приборы этого месяца, которые стоят на паузе
         pageConditions.push(
-          or(
-            sql`${devices.cachedControl} IS NULL`,
-            eq(devices.cachedControl, 'не указан')
-          ) as SQL
+          inArray(devices.scheduleStatus, ['paused_all', 'paused_verification'])
         );
       } else {
-        pageConditions.push(
-          sql`${devices.cachedControl} = (SELECT LOWER(name) FROM metrology_controle_types WHERE id = ${controlTypeId})`
-        );
+        // ВЫБРАНЫ СТАНДАРТНЫЕ ТАБЫ (Поверка, Калибровка): Приборы на паузе должны быть СКРЫТЫ!
+        pageConditions.push(eq(devices.scheduleStatus, 'active'));
+
+        if (controlTypeId === 'NOT_SPECIFIED') {
+          pageConditions.push(
+            or(
+              isNull(devices.cachedControl),
+              eq(devices.cachedControl, 'не указан')
+            ) as SQL
+          );
+        } else {
+          pageConditions.push(
+            sql`${devices.cachedControl} = (SELECT LOWER(name) FROM metrology_controle_types WHERE id = ${controlTypeId})`
+          );
+        }
       }
+    } else {
+      pageConditions.push(eq(devices.scheduleStatus, 'active'));
     }
 
     // Итоговое условие для пагинации строк конкретного таба
@@ -1106,7 +1002,8 @@ export class VerificationPlanningService {
         count: sql<number>`count(*)::int`,
       })
       .from(devices)
-      .where(whereGlobalMonth) // 🌟 Считаем от общего пула месяца!
+      .where(and(whereGlobalMonth, eq(devices.scheduleStatus, 'active')))
+
       .groupBy(devices.cachedControl);
 
     let unassignedCount = 0;
@@ -1124,9 +1021,20 @@ export class VerificationPlanningService {
     const [globalCountResult] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(devices)
-      .where(whereGlobalMonth);
+      .where(and(whereGlobalMonth, eq(devices.scheduleStatus, 'active')));
 
     const globalTotalCount = globalCountResult?.count ?? 0;
+    const [pausedCountResult] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(devices)
+      .where(
+        and(
+          whereGlobalMonth,
+          inArray(devices.scheduleStatus, ['paused_all', 'paused_verification']) // Вытаскиваем паузы
+        )
+      );
+
+    const pausedTotalCount = pausedCountResult?.count ?? 0;
 
     // СЧЕТЧИК СТРОК ТЕКУЩЕЙ ВКЛАДКИ (Нужен для пагинации DataGrid)
     const [pageCountResult] = await this.db
@@ -1136,11 +1044,16 @@ export class VerificationPlanningService {
 
     const pageTotalCount = pageCountResult?.count ?? 0;
 
-    if (globalTotalCount === 0) {
+    if (globalTotalCount === 0 && pausedTotalCount === 0) {
       return {
         items: [],
         totalCount: 0,
-        meta: { unassignedCount: 0, typeCounts: [] },
+        meta: {
+          unassignedCount: 0,
+          typeCounts: [],
+          globalTotalCount: 0,
+          pausedTotalCount: 0,
+        },
       };
     }
 
@@ -1159,6 +1072,7 @@ export class VerificationPlanningService {
         serialNumber: true,
         cachedControl: true,
         nextVerificationDate: true,
+        scheduleStatus: true,
       },
       with: {
         devicesToBatches: {
@@ -1206,18 +1120,29 @@ export class VerificationPlanningService {
         targetBatchId,
         isManualPlacement,
         controlType: device.cachedControl || 'не указан',
+        scheduleStatus: device.scheduleStatus,
         isOverdue: device.nextVerificationDate
           ? new Date(device.nextVerificationDate) < now
           : false,
       };
     });
 
+    // return {
+    //   items,
+    //   totalCount: pageTotalCount,
+    //   meta: {
+    //     unassignedCount,
+    //     typeCounts,
+    //   },
+    // };
     return {
       items,
       totalCount: pageTotalCount,
       meta: {
+        globalTotalCount,
         unassignedCount,
         typeCounts,
+        pausedTotalCount,
       },
     };
   }
@@ -1554,7 +1479,7 @@ export class VerificationPlanningService {
       }
     }
 
-    const maxDateLimit = `${year}-12-31`;
+    const maxDateLimit = `${year + 1}-02-28`;
 
     // 2. Выгребаем из базы только те приборы, которые активны, не в осмотре и имеют даты (Сверхбыстрый Index Scan)
     // Мы запрашиваем ТОЛЬКО 3 легких поля, база не будет тратить ресурсы
@@ -1568,6 +1493,7 @@ export class VerificationPlanningService {
       .where(
         and(
           eq(devices.archived, false),
+          eq(devices.scheduleStatus, 'active'),
           sql`${devices.cachedControl} != 'осмотр'`,
           sql`${devices.nextVerificationDate} IS NOT NULL`,
           lte(devices.nextVerificationDate, maxDateLimit),

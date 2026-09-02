@@ -29,6 +29,7 @@ type Device {
   manufacturer: String
   verificationInterval: Int
   archived: Boolean!
+  scheduleStatus: String!
   nomenclature: String
   comment: String
   statusId: ID!
@@ -73,6 +74,7 @@ type DeviceWithRelations {
   manufacturer: String
   verificationInterval: Int
   archived: Boolean!
+  scheduleStatus: String!
   nomenclature: String
   comment: String
   status: Status!
@@ -81,6 +83,7 @@ type DeviceWithRelations {
   createdBy: User
   updatedBy: User
   nextInspectionDate: String
+  nextVerificationDate: String
   documents: [DeviceDocument!]!
   productionSite: ProductionSiteRelation!
   verifications: [VerificationRelation!]!
@@ -137,6 +140,7 @@ type DeviceBarcodeData {
   model: String!
   serialNumber: String!
   controlType: String
+  date: String
   validUntil: String
   statusName: String
 }
@@ -212,6 +216,7 @@ input UpdateDeviceInput {
   manufacturer: String
   verificationInterval: Int
   archived: Boolean!
+  scheduleStatus: String!
   nomenclature: String
   comment: String
   statusId: ID!

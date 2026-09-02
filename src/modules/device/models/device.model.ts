@@ -62,6 +62,11 @@ export const devices = pgTable(
     // Хранит valid_until из последнего целевого документа
     nextVerificationDate: date('next_verification_date'),
     nextInspectionDate: date('next_inspection_date'),
+    // 🔥 ЕДИНЫЙ СТАТУС ПЛАНИРОВАНИЯ (Вместо пачки тумблеров)
+    // 'active'              = Полный план (Поверка + ТО)
+    // 'paused_verification' = Поверка на паузе (Внутреннее ТО продолжается)
+    // 'paused_all'          = Полная заморозка (Резерв на складе)
+    scheduleStatus: text('schedule_status').notNull().default('active'),
 
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

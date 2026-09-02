@@ -70,10 +70,8 @@ export const Mutation = {
     _: unknown,
     {
       items,
-      intervalMonths,
     }: {
       items: any[];
-      intervalMonths: number;
     },
     { db, currentUser }: Context
   ) => {
@@ -85,10 +83,6 @@ export const Mutation = {
       undefined,
       deviceService
     );
-    return await inspectionService.createBulkInspection(
-      items,
-      intervalMonths,
-      currentUser.id
-    );
+    return await inspectionService.createBulkInspection(items, currentUser.id);
   },
 };

@@ -260,6 +260,7 @@ export class DeviceService {
         manufacturer: true,
         verificationInterval: true,
         archived: true,
+        scheduleStatus: true,
         nomenclature: true,
         comment: true,
         leadTimeDays: true,
@@ -271,6 +272,7 @@ export class DeviceService {
         createdById: true,
         updatedById: true,
         nextInspectionDate: true,
+        nextVerificationDate: true,
       },
       with: {
         status: { columns: { id: true, name: true } },
@@ -572,77 +574,84 @@ export class DeviceService {
         await tx.insert(measurementTypesToDevices).values(measurementTypesData);
       }
 
-      //  if (input.verifications && input.verifications.length > 0) {
-      //   const verificationsToInsert = [];
-
-      //   // Перебираем пришедшие документы последовательно
-      //   for (const v of input.verifications) {
-      //     let finalOrgId = v.verificationOrganizationId ?? null;
-
-      //     // 🔥 ЕСЛИ UUID ПУСТОЙ, НО ЕСТЬ ТЕКСТ НОВОЙ ОРГАНИЗАЦИИ (Импорт из Аршина / Ручной ввод)
-      //     if (!finalOrgId && v.newOrganizationName && v.newOrganizationName.trim() !== '') {
-      //       const cleanOrgName = v.newOrganizationName.trim();
-      //       const searchOrgName = cleanOrgName.toLowerCase();
-
-      //       // 1. Проверяем на бэкенде, вдруг такую организацию уже создал другой метролог (защита от дублей)
-      //       const [existingOrg] = await tx
-      //         .select({ id: verificationOrganizations.id })
-      //         .from(verificationOrganizations)
-      //         .where(sql`LOWER(${verificationOrganizations.name}) = ${searchOrgName}`)
-      //         .limit(1);
-
-      //       if (existingOrg) {
-      //         finalOrgId = existingOrg.id; // Нашли в базе — привязываем к ней
-      //       } else {
-      //         // 2. Не нашли — честно заносим новый ЦСМ в глобальный справочник
-      //         const [newOrg] = await tx
-      //           .insert(verificationOrganizations)
-      //           .values({ name: cleanOrgName }) // Пишем красивое имя с правильным регистром
-      //           .returning({ id: verificationOrganizations.id });
-
-      //         if (!newOrg) {
-      //           throw new Error(`Не удалось автоматически создать организацию: "${cleanOrgName}"`);
-      //         }
-      //         finalOrgId = newOrg.id; // Запоминаем сгенерированный базой UUID
-      //       }
-      //     }
-
-      //     // Формируем DTO документа для вставки в базу данных
-      //     verificationsToInsert.push({
-      //       deviceId: newDevice.id, // ID только что созданной карточки прибора
-      //       batchId: v.batchId ?? null,
-      //       protocolNumber: v.protocolNumber ?? null,
-      //       result: v.result ?? 'годен',
-      //       documentUrl: v.documentUrl ?? null,
-      //       comment: v.comment ?? null,
-      //       date: v.date,
-      //       validUntil: v.validUntil ?? null,
-      //       metrologyControleTypeId: v.metrologyControleTypeId ?? null,
-
-      //       // 🔥 ЗАПИСЫВАЕМ СЮДА: Чистый, гарантированный UUID (старый или только что созданный)
-      //       verificationOrganizationId: finalOrgId,
-
-      //       cost: v.cost !== undefined && v.cost !== null && String(v.cost).trim() !== ''
-      //         ? String(v.cost)
-      //         : '0.00',
-      //     });
-      //   }
-
-      // 4. Добавление переданных верификаций
       if (input.verifications && input.verifications.length > 0) {
-        const verificationsData = input.verifications.map((verification) => ({
-          ...verification,
-          metrologyControleTypeId: verification.metrologyControleTypeId ?? null,
-          verificationOrganizationId:
-            verification.verificationOrganizationId ?? null,
-          deviceId: newDevice.id,
-          cost:
-            verification.cost !== undefined && verification.cost !== null
-              ? String(verification.cost)
-              : '0.00',
-        }));
-        await tx.insert(verifications).values(verificationsData);
+        const verificationsToInsert = [];
+
+        // Перебираем пришедшие документы последовательно
+        for (const v of input.verifications) {
+          let finalOrgId = v.verificationOrganizationId ?? null;
+
+          if (
+            !finalOrgId &&
+            v.newOrganizationName &&
+            v.newOrganizationName.trim() !== ''
+          ) {
+            const cleanOrgName = v.newOrganizationName.trim();
+            const searchOrgName = cleanOrgName.toLowerCase();
+
+            const [existingOrg] = await tx
+              .select({ id: verificationOrganizations.id })
+              .from(verificationOrganizations)
+              .where(
+                sql`LOWER(${verificationOrganizations.name}) = ${searchOrgName}`
+              )
+              .limit(1);
+
+            if (existingOrg) {
+              finalOrgId = existingOrg.id;
+            } else {
+              const [newOrg] = await tx
+                .insert(verificationOrganizations)
+                .values({ name: cleanOrgName })
+                .returning();
+
+              if (!newOrg) {
+                throw new Error(
+                  `Не удалось автоматически создать организацию: "${cleanOrgName}"`
+                );
+              }
+              finalOrgId = newOrg.id;
+            }
+          }
+
+          verificationsToInsert.push({
+            deviceId: newDevice.id,
+            protocolNumber: v.protocolNumber ?? null,
+            result: v.result,
+            documentUrl: v.documentUrl ?? null,
+            comment: v.comment ?? null,
+            date: v.date,
+            validUntil: v.validUntil ?? null,
+            metrologyControleTypeId: v.metrologyControleTypeId ?? null,
+
+            verificationOrganizationId: finalOrgId,
+
+            cost:
+              v.cost !== undefined &&
+              v.cost !== null &&
+              String(v.cost).trim() !== ''
+                ? String(v.cost)
+                : '0.00',
+          });
+        }
+        await tx.insert(verifications).values(verificationsToInsert);
       }
+
+      // // 4. Добавление переданных верификаций
+      // if (input.verifications && input.verifications.length > 0) {
+      //   const verificationsData = input.verifications.map((verification) => ({
+      //     ...verification,
+      //     metrologyControleTypeId: verification.metrologyControleTypeId ?? null,
+      //     verificationOrganizationId:
+      //       verification.verificationOrganizationId ?? null,
+      //     deviceId: newDevice.id,
+      //     cost:
+      //       verification.cost !== undefined && verification.cost !== null
+      //         ? String(verification.cost)
+      //         : '0.00',
+      //   }));
+      //   await tx.insert(verifications).values(verificationsData);
+      // }
 
       await this.updateMetrologyCache(tx, newDevice.id);
 
@@ -685,6 +694,7 @@ export class DeviceService {
       manufacturer: input.manufacturer?.trim().toLowerCase() ?? null,
       verificationInterval: input.verificationInterval,
       archived: input.archived,
+      scheduleStatus: input.scheduleStatus,
       nomenclature: input.nomenclature?.trim().toLowerCase() ?? null,
       comment: input.comment?.trim().toLowerCase() ?? null,
       statusId: input.statusId,
@@ -761,6 +771,41 @@ export class DeviceService {
       // 5. Синхронизация верификаций (добавление / обновление)
       if (input.verifications && input.verifications.length > 0) {
         for (const v of input.verifications as any[]) {
+          let finalOrgId = v.verificationOrganizationId ?? null;
+
+          if (
+            !finalOrgId &&
+            v.newOrganizationName &&
+            v.newOrganizationName.trim() !== ''
+          ) {
+            const cleanOrgName = v.newOrganizationName.trim();
+            const searchOrgName = cleanOrgName.toLowerCase();
+
+            const [existingOrg] = await tx
+              .select({ id: verificationOrganizations.id })
+              .from(verificationOrganizations)
+              .where(
+                sql`LOWER(${verificationOrganizations.name}) = ${searchOrgName}`
+              )
+              .limit(1);
+
+            if (existingOrg) {
+              finalOrgId = existingOrg.id;
+            } else {
+              const [newOrg] = await tx
+                .insert(verificationOrganizations)
+                .values({ name: cleanOrgName })
+                .returning();
+
+              if (!newOrg) {
+                throw new Error(
+                  `Не удалось автоматически создать организацию: "${cleanOrgName}"`
+                );
+              }
+              finalOrgId = newOrg.id;
+            }
+          }
+
           const payload = {
             date: v.date ? new Date(v.date) : new Date(),
             validUntil: v.validUntil ? new Date(v.validUntil) : null,
@@ -770,10 +815,16 @@ export class DeviceService {
             comment: v.comment,
             documentUrl: v.documentUrl || null,
             metrologyControleTypeId: v.metrologyControleTypeId ?? null,
-            verificationOrganizationId: v.verificationOrganizationId ?? null,
+            verificationOrganizationId: finalOrgId,
             deviceId: id,
+            // cost:
+            //   v.cost !== undefined && v.cost !== null ? String(v.cost) : '0.00',
             cost:
-              v.cost !== undefined && v.cost !== null ? String(v.cost) : '0.00',
+              v.cost !== undefined &&
+              v.cost !== null &&
+              String(v.cost).trim() !== ''
+                ? String(v.cost)
+                : '0.00',
           };
 
           if (v.id) {
@@ -1744,6 +1795,7 @@ export class DeviceService {
           serialNumber: devices.serialNumber,
           statusName: sql<string>`CASE WHEN ${verifications.result} = 'годен' THEN 'исправен' ELSE 'неисправен' END`,
           controlType: metrologyControleTypes.name,
+          date: verifications.date,
           validUntil: verifications.validUntil,
         })
         .from(devicesToBatches)
@@ -1810,6 +1862,7 @@ export class DeviceService {
             statusName: sql<string>`CASE WHEN ${verifications.result} = 'годен' THEN 'исправен' ELSE 'неисправен' END`,
             controlType: metrologyControleTypes.name,
             validUntil: verifications.validUntil,
+            date: verifications.date,
           })
           .from(devices)
           .leftJoin(statuses, eq(devices.statusId, statuses.id))
@@ -2323,4 +2376,43 @@ export class DeviceService {
 
     return importedCount;
   }
+
+  // async getPausedDevices(limit = 20, offset = 0) {
+  //   const [items, [countResult]] = await Promise.all([
+  //     this.db
+  //       .select({
+  //         id: devices.id,
+  //         name: devices.name,
+  //         model: devices.model,
+  //         serialNumber: devices.serialNumber,
+  //         cachedControl: devices.cachedControl,
+  //         nextVerificationDate: devices.nextVerificationDate,
+  //         nextInspectionDate: devices.nextInspectionDate,
+  //       })
+  //       .from(devices)
+  //       .where(
+  //         and(
+  //           eq(devices.archived, false),
+  //           eq(devices.isMaintenancePaused, true)
+  //         )
+  //       )
+  //       .limit(limit)
+  //       .offset(offset),
+
+  //     this.db
+  //       .select({ count: sql<number>`count(*)::int` })
+  //       .from(devices)
+  //       .where(
+  //         and(
+  //           eq(devices.archived, false),
+  //           eq(devices.isMaintenancePaused, true)
+  //         )
+  //       ),
+  //   ]);
+
+  //   return {
+  //     items,
+  //     totalCount: countResult?.count ?? 0,
+  //   };
+  // }
 }
