@@ -13,6 +13,7 @@ import { relations } from 'drizzle-orm';
 import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
 import { devices } from '../../device/models/device.model';
 import { users } from '../../user/user.model';
+import { statuses } from '../../catalog/models/status.model';
 
 // Данные о поверках
 export const verifications = pgTable(
@@ -132,6 +133,7 @@ export const devicesToBatches = pgTable(
       .notNull()
       .references(() => verificationBatches.id, { onDelete: 'cascade' }),
     deviceStatus: text('device_status').notNull().default('selected'), // 'selected' | 'dismantled' | 'returned'
+    previousStatusId: uuid('previous_status_id').references(() => statuses.id),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

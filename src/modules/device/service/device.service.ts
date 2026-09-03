@@ -513,7 +513,6 @@ export class DeviceService {
   }
 
   async createDevice(input: CreateDeviceInput, userId: string) {
-    console.log(input);
     const deviceData = {
       name: input.name.trim().toLowerCase(),
       model: input.model.trim().toLowerCase(),

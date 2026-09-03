@@ -432,7 +432,15 @@ export class VerificationPlanningService {
 
     // 1. АТОМАРНАЯ ТРАНЗАКЦИЯ (Только сверхбыстрые дисковые операции)
     await this.db.transaction(async (tx) => {
-      // ОПТИМИЗАЦИЯ 1: Вместо цикла из 500 запросов — делаем 1 МАССОВЫЙ SELECT для логов
+      const [targetBatch] = await tx
+        .select({ status: verificationBatches.status })
+        .from(verificationBatches)
+        .where(eq(verificationBatches.id, batchId))
+        .limit(1);
+
+      if (!targetBatch) {
+        throw new Error('Партия не найдена в системе.');
+      }
       const devicesData = await tx
         .select({
           id: devices.id,
@@ -445,7 +453,37 @@ export class VerificationPlanningService {
 
       logsToRecord = devicesData;
 
-      // 2. Исключаем выбранные приборы из партии одним запросом (Мгновенно по составному индексу)
+      if (targetBatch.status === 'sent') {
+        const [statusHealthy] = await tx
+          .select({ id: statuses.id })
+          .from(statuses)
+          .where(eq(statuses.name, 'исправен'))
+          .limit(1);
+
+        for (const deviceId of deviceIds) {
+          // Вытаскиваем сохраненный слепок статуса для этого прибора из этой партии
+          const [savedLink] = await tx
+            .select({ previousStatusId: devicesToBatches.previousStatusId })
+            .from(devicesToBatches)
+            .where(
+              and(
+                eq(devicesToBatches.batchId, batchId),
+                eq(devicesToBatches.deviceId, deviceId)
+              )
+            )
+            .limit(1);
+          const targetStatusId =
+            savedLink?.previousStatusId || statusHealthy?.id;
+
+          if (targetStatusId) {
+            await tx
+              .update(devices)
+              .set({ statusId: targetStatusId, updatedAt: new Date() })
+              .where(eq(devices.id, deviceId));
+          }
+        }
+      }
+
       await tx
         .delete(devicesToBatches)
         .where(
@@ -498,20 +536,74 @@ export class VerificationPlanningService {
 
   // 4. Сменить статус партии (например, 'draft' -> 'sent' когда машина уехала в ЦСМ)
   async updateBatchStatus(id: string, status: 'draft' | 'sent' | 'completed') {
-    const [updatedBatch] = await this.db
-      .update(verificationBatches)
-      .set({
-        status,
-        updatedAt: new Date(),
-      })
-      .where(eq(verificationBatches.id, id))
-      .returning();
+    const now = new Date();
 
-    if (!updatedBatch) {
-      throw new Error('Партия для обновления статуса не найдена');
-    }
+    return await this.db.transaction(async (tx) => {
+      const [currentBatch] = await tx
+        .select()
+        .from(verificationBatches)
+        .where(eq(verificationBatches.id, id))
+        .limit(1);
 
-    return updatedBatch;
+      if (!currentBatch) {
+        throw new Error('Партия для обновления статуса не найдена');
+      }
+
+      const [updatedBatch] = await tx
+        .update(verificationBatches)
+        .set({
+          status,
+          updatedAt: now,
+        })
+        .where(eq(verificationBatches.id, id))
+        .returning();
+
+      const deviceToBatchesList = await tx
+        .select()
+        .from(devicesToBatches)
+        .where(eq(devicesToBatches.batchId, id));
+
+      if (!deviceToBatchesList.length) {
+        return updatedBatch;
+      }
+
+      const deviceIds = deviceToBatchesList.map((db) => db.deviceId);
+
+      if (status === 'sent') {
+        const [statusOnVerification] = await tx
+          .select({ id: statuses.id })
+          .from(statuses)
+          .where(eq(statuses.name, 'на поверке (в цсм)'))
+          .limit(1);
+
+        if (!statusOnVerification) {
+          throw new Error(
+            'Статус "на поверке (в цсм)" не найден в справочнике!'
+          );
+        }
+
+        for (const deviceLink of deviceToBatchesList) {
+          const [currentDevice] = await tx
+            .select({ statusId: devices.statusId })
+            .from(devices)
+            .where(eq(devices.id, deviceLink.deviceId))
+            .limit(1);
+
+          if (currentDevice?.statusId) {
+            await tx
+              .update(devicesToBatches)
+              .set({ previousStatusId: currentDevice.statusId })
+              .where(eq(devicesToBatches.id, deviceLink.id));
+          }
+        }
+
+        await tx
+          .update(devices)
+          .set({ statusId: statusOnVerification.id, updatedAt: now })
+          .where(inArray(devices.id, deviceIds));
+      }
+      return updatedBatch;
+    });
   }
 
   // private calculateNextVerificationDate(device: any): Date {
