@@ -134,8 +134,14 @@ export class DeviceAuditLogService {
           action: deviceAuditLogs.action,
           description: deviceAuditLogs.description,
           // ОПТИМИЗАЦИЯ: Убрали to_jsonb::text. Забираем нативные поля, Drizzle сам распарсит их в JSON!
-          oldData: deviceAuditLogs.oldData,
-          newData: deviceAuditLogs.newData,
+          // oldData: deviceAuditLogs.oldData,
+          // newData: deviceAuditLogs.newData,
+          oldData: sql<
+            string | null
+          >`to_jsonb(${deviceAuditLogs.oldData})::text`,
+          newData: sql<
+            string | null
+          >`to_jsonb(${deviceAuditLogs.newData})::text`,
           createdAt: deviceAuditLogs.createdAt,
           // Вытаскиваем плоские поля юзера, чтобы избежать дублирования
           user: users,
