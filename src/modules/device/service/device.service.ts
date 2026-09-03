@@ -602,7 +602,7 @@ export class DeviceService {
             } else {
               const [newOrg] = await tx
                 .insert(verificationOrganizations)
-                .values({ name: cleanOrgName })
+                .values({ name: searchOrgName })
                 .returning();
 
               if (!newOrg) {
