@@ -105,11 +105,11 @@ export class ArshinService {
 
           result.push({
             vriId: item.vri_id,
-            docNum: finalDocNum,
+            docNum: finalDocNum.toLowerCase(),
             verificationDate: item.verification_date,
             validDate: item.valid_date || null,
             applicability: item.applicability,
-            orgTitle: item.org_title,
+            orgTitle: item.org_title.toLowerCase(),
             mitNumber: item.mit_number,
           });
         }
@@ -313,11 +313,11 @@ export class ArshinService {
 
       return {
         arshinId: vri.vri_id,
-        protocolNumber: finalDocNum,
+        protocolNumber: finalDocNum.toLowerCase(),
         date: vri.verification_date,
         validUntil: vri.valid_date || null,
         isApplicable: vri.applicability,
-        organizationName: vri.org_title,
+        organizationName: vri.org_title.toLowerCase(),
         documentUrl: `https://fgis.gost.ru/fundmetrology/cm/results/${vri.vri_id}`,
       };
     });

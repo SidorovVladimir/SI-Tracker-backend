@@ -2281,6 +2281,24 @@ export class VerificationPlanningService {
       throw new Error('Указанное оборудование не найдено в системе');
     }
 
+    const normalizedProtocolNumber = input.protocolNumber.trim().toLowerCase();
+
+    const [existingVerification] = await tx
+      .select({ id: verifications.id })
+      .from(verifications)
+      .where(
+        and(
+          eq(verifications.deviceId, input.deviceId),
+          eq(verifications.protocolNumber, normalizedProtocolNumber)
+        )
+      );
+
+    if (existingVerification) {
+      throw new Error(
+        `Поверка с номером протокола "${input.protocolNumber}" для данного оборудования уже существует`
+      );
+    }
+
     const [verificationRecord] = await tx
       .insert(verifications)
       .values({
