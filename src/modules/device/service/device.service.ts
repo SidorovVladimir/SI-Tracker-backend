@@ -1969,7 +1969,7 @@ export class DeviceService {
       if (hasGrsi && !isNotGr) {
         targetControlName = 'поверка';
       } else {
-        targetControlName = 'калибровка';
+        targetControlName = 'осмотр';
       }
     } else if (eqTypeName === 'испытательное оборудование (ио)') {
       targetControlName = 'аттестация';
@@ -2037,12 +2037,15 @@ export class DeviceService {
     }
 
     let nextInspectionDateStr: string | null = null;
+    const isIndicatorOrVo =
+      eqTypeName === 'индикатор' ||
+      eqTypeName === 'вспомогательное оборудование (во)';
 
     if (latestInspectionDoc?.validUntil) {
       nextInspectionDateStr = new Date(latestInspectionDoc.validUntil)
         .toISOString()
         .slice(0, 10);
-    } else if (targetControlName === 'осмотр') {
+    } else if (targetControlName === 'осмотр' || isIndicatorOrVo) {
       // 🔥 Считаем дефолтную дату ТОЛЬКО для Индикаторов и ВО!
       const baseDate = firstRow.releaseDate || firstRow.receiptDate;
       if (baseDate && firstRow.verificationInterval) {
