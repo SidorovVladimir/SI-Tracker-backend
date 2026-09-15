@@ -44,6 +44,9 @@ export const devices = pgTable(
     verificationInterval: integer('verification_interval'), // МПИ (межповерочный интервал)
     archived: boolean('archived').notNull().default(false), // В архиве
     nomenclature: varchar('nomenclature'), // Номенклатура по 1С
+    isVoluntaryCalibration: boolean('is_voluntary_calibration')
+      .notNull()
+      .default(false),
     comment: text('comment'),
     leadTimeDays: integer('lead_time_days'),
 

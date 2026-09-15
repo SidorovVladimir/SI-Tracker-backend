@@ -37,6 +37,7 @@ export const UpdateDeviceInputSchema = z.object({
   manufacturer: z.string().nullable(),
   verificationInterval: z.number().int().nullable(),
   archived: z.boolean(),
+  isVoluntaryCalibration: z.boolean(),
   scheduleStatus: z.string(),
   nomenclature: z.string().nullable(),
   comment: z.string().nullable(),

@@ -29,6 +29,7 @@ type Device {
   manufacturer: String
   verificationInterval: Int
   archived: Boolean!
+  isVoluntaryCalibration: Boolean!
   scheduleStatus: String!
   nomenclature: String
   comment: String
@@ -74,6 +75,7 @@ type DeviceWithRelations {
   manufacturer: String
   verificationInterval: Int
   archived: Boolean!
+  isVoluntaryCalibration: Boolean!
   scheduleStatus: String!
   nomenclature: String
   comment: String
@@ -82,6 +84,7 @@ type DeviceWithRelations {
   updatedAt: String!
   createdBy: User
   updatedBy: User
+  cachedControl: String
   nextInspectionDate: String
   nextVerificationDate: String
   documents: [DeviceDocument!]!
@@ -110,10 +113,17 @@ type DeviceTableItem {
   verificationInterval: Int
   status: Status!
   archived: Boolean
+  scheduleStatus: String!
   productionSite: ProductionSiteRelation!
   cachedControl: String
+  isVoluntaryCalibration: Boolean
+  # latestVerification: VerificationTableItem
+  # latestInspection: InspectionTableItem
+
   latestVerification: VerificationTableItem
+  latestCalibration: VerificationTableItem
   latestInspection: InspectionTableItem
+  latestAttestation: VerificationTableItem
   nextVerificationDate: String
   nextInspectionDate: String
 }
@@ -191,6 +201,7 @@ input CreateDeviceInput {
   manufacturer: String
   verificationInterval: Int
   archived: Boolean!
+  isVoluntaryCalibration: Boolean!
   nomenclature: String
   comment: String
   statusId: ID!
@@ -216,6 +227,7 @@ input UpdateDeviceInput {
   manufacturer: String
   verificationInterval: Int
   archived: Boolean!
+  isVoluntaryCalibration: Boolean!
   scheduleStatus: String!
   nomenclature: String
   comment: String

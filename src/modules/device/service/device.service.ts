@@ -175,7 +175,10 @@ export class DeviceService {
         serialNumber: true,
         inventoryNumber: true,
         releaseDate: true,
+        receiptDate: true,
+        scheduleStatus: true,
         manufacturer: true,
+        isVoluntaryCalibration: true,
         cachedControl: true, // Забираем значение кэша для маппинга
         nextVerificationDate: true, // Вытягиваем кэш метрологии
         nextInspectionDate: true,
@@ -207,16 +210,40 @@ export class DeviceService {
     return {
       items: items.map((d) => {
         // Находим среди выгруженных записей ту, что совпадает с вычисленным типом контроля
-        const targetControl =
+        // const targetControl =
+        //   d.verifications.find(
+        //     (v) => v.metrologyControleType?.name === d.cachedControl
+        //   ) || null;
+
+        // 1. Ищем строго последнюю ПОВЕРКУ
+        const latestVerificationDoc =
           d.verifications.find(
-            (v) => v.metrologyControleType?.name === d.cachedControl
+            (v) => v.metrologyControleType?.name === 'поверка'
           ) || null;
 
-        // Находим осмотр для выделенной колонки
-        const absoluteLatestInspection =
+        // 2. Ищем строго последнюю КАЛИБРОВКУ
+        const latestCalibrationDoc =
+          d.verifications.find(
+            (v) => v.metrologyControleType?.name === 'калибровка'
+          ) || null;
+
+        // 3. Ищем строго последний ОСМОТР
+        const latestInspectionDoc =
           d.verifications.find(
             (v) => v.metrologyControleType?.name === 'осмотр'
           ) || null;
+
+        // 4. Ищем строго последнюю АТТЕСТАЦИЮ (для ИО)
+        const latestAttestationDoc =
+          d.verifications.find(
+            (v) => v.metrologyControleType?.name === 'аттестация'
+          ) || null;
+
+        // // Находим осмотр для выделенной колонки
+        // const absoluteLatestInspection =
+        //   d.verifications.find(
+        //     (v) => v.metrologyControleType?.name === 'осмотр'
+        //   ) || null;
 
         return {
           id: d.id,
@@ -226,12 +253,19 @@ export class DeviceService {
           serialNumber: d.serialNumber,
           inventoryNumber: d.inventoryNumber,
           releaseDate: d.releaseDate,
+          receiptDate: d.receiptDate,
           manufacturer: d.manufacturer,
           status: d.status,
+          scheduleStatus: d.scheduleStatus,
           productionSite: d.productionSite,
-          latestVerification: targetControl,
+          // latestVerification: targetControl,
+          // latestInspection: absoluteLatestInspection,
+          latestVerification: latestVerificationDoc,
+          latestCalibration: latestCalibrationDoc,
+          latestInspection: latestInspectionDoc,
+          latestAttestation: latestAttestationDoc,
           cachedControl: d.cachedControl,
-          latestInspection: absoluteLatestInspection,
+          isVoluntaryCalibration: d.isVoluntaryCalibration,
           nextVerificationDate: d.nextVerificationDate,
           nextInspectionDate: d.nextInspectionDate,
         };
@@ -260,6 +294,8 @@ export class DeviceService {
         manufacturer: true,
         verificationInterval: true,
         archived: true,
+        cachedControl: true,
+        isVoluntaryCalibration: true,
         scheduleStatus: true,
         nomenclature: true,
         comment: true,
@@ -693,6 +729,7 @@ export class DeviceService {
       manufacturer: input.manufacturer?.trim().toLowerCase() ?? null,
       verificationInterval: input.verificationInterval,
       archived: input.archived,
+      isVoluntaryCalibration: input.isVoluntaryCalibration,
       scheduleStatus: input.scheduleStatus,
       nomenclature: input.nomenclature?.trim().toLowerCase() ?? null,
       comment: input.comment?.trim().toLowerCase() ?? null,
@@ -1915,6 +1952,7 @@ export class DeviceService {
         releaseDate: devices.releaseDate,
         receiptDate: devices.receiptDate,
         verificationInterval: devices.verificationInterval,
+        isVoluntaryCalibration: devices.isVoluntaryCalibration,
         eqName: equipmentTypes.name,
         scopeName: scopes.name,
       })
@@ -1965,8 +2003,10 @@ export class DeviceService {
     // }
 
     if (isSiOrSk) {
-      // По словам метролога: если есть ГРСИ и сфера -> поверка. Всё остальное -> калибровка.
-      if (hasGrsi && !isNotGr) {
+      if (firstRow.isVoluntaryCalibration) {
+        // 🌟 ВЫСШИЙ ПРИОРТЕТ: Если метролог вручную включил маркер, прибор идет на калибровку
+        targetControlName = 'калибровка';
+      } else if (hasGrsi && !isNotGr) {
         targetControlName = 'поверка';
       } else {
         targetControlName = 'осмотр';
@@ -1979,7 +2019,23 @@ export class DeviceService {
     }
 
     // 3. Ищем самый свежий документ этого контроля в истории
-    const [latestTargetDoc] = await db
+    // const [latestTargetDoc] = await db
+    //   .select({ validUntil: verifications.validUntil })
+    //   .from(verifications)
+    //   .leftJoin(
+    //     metrologyControleTypes,
+    //     eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+    //   )
+    //   .where(
+    //     and(
+    //       eq(verifications.deviceId, deviceId),
+    //       eq(metrologyControleTypes.name, targetControlName)
+    //     )
+    //   )
+    //   .orderBy(sql`${verifications.date} DESC NULLS LAST`)
+    //   .limit(1);
+
+    const [latestVerificationDoc] = await db
       .select({ validUntil: verifications.validUntil })
       .from(verifications)
       .leftJoin(
@@ -1989,7 +2045,7 @@ export class DeviceService {
       .where(
         and(
           eq(verifications.deviceId, deviceId),
-          eq(metrologyControleTypes.name, targetControlName)
+          eq(metrologyControleTypes.name, 'поверка')
         )
       )
       .orderBy(sql`${verifications.date} DESC NULLS LAST`)
@@ -2012,15 +2068,66 @@ export class DeviceService {
       .orderBy(sql`${verifications.date} DESC NULLS LAST`)
       .limit(1);
 
+    // В) Ищем документ Аттестации (только если это ИО, для полноты логики)
+    let latestAttestationDoc = null;
+    if (eqTypeName === 'испытательное оборудование (ио)') {
+      [latestAttestationDoc] = await db
+        .select({ validUntil: verifications.validUntil })
+        .from(verifications)
+        .leftJoin(
+          metrologyControleTypes,
+          eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+        )
+        .where(
+          and(
+            eq(verifications.deviceId, deviceId),
+            eq(metrologyControleTypes.name, 'аттестация')
+          )
+        )
+        .orderBy(sql`${verifications.date} DESC NULLS LAST`)
+        .limit(1);
+    }
+
+    const [latestCalibrationDoc] = await db
+      .select({ validUntil: verifications.validUntil })
+      .from(verifications)
+      .leftJoin(
+        metrologyControleTypes,
+        eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
+      )
+      .where(
+        and(
+          eq(verifications.deviceId, deviceId),
+          eq(metrologyControleTypes.name, 'калибровка')
+        )
+      )
+      .orderBy(sql`${verifications.date} DESC NULLS LAST`)
+      .limit(1);
+
     // 4. ИНТЕГРАЦИЯ ВАШЕГО МЕТОДА РАСЧЕТА СЛЕДУЮЩЕЙ ДАТЫ
     let nextVerificationDateStr: string | null = null;
 
-    if (latestTargetDoc?.validUntil) {
-      nextVerificationDateStr = new Date(latestTargetDoc.validUntil)
+    // Определяем, какой документ является основным для этого поля
+    let mainDocForVerificationField = null;
+
+    if (eqTypeName === 'испытательное оборудование (ио)') {
+      mainDocForVerificationField = latestAttestationDoc;
+    } else if (targetControlName === 'калибровка') {
+      mainDocForVerificationField = latestCalibrationDoc; // Если кэш «калибровка» — приоритет у калибровочных документов
+    } else {
+      mainDocForVerificationField = latestVerificationDoc; // По умолчанию ищем поверку
+    }
+
+    if (mainDocForVerificationField?.validUntil) {
+      nextVerificationDateStr = new Date(mainDocForVerificationField.validUntil)
         .toISOString()
         .slice(0, 10);
-    } else if (targetControlName !== 'осмотр') {
-      const baseDate = firstRow.releaseDate || firstRow.receiptDate;
+    } else if (
+      targetControlName === 'поверка' ||
+      targetControlName === 'аттестация' ||
+      targetControlName === 'калибровка'
+    ) {
+      const baseDate = firstRow.receiptDate || firstRow.releaseDate;
       if (baseDate && firstRow.verificationInterval) {
         const nextDate = new Date(baseDate);
         nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
@@ -2047,7 +2154,7 @@ export class DeviceService {
         .slice(0, 10);
     } else if (targetControlName === 'осмотр' || isIndicatorOrVo) {
       // 🔥 Считаем дефолтную дату ТОЛЬКО для Индикаторов и ВО!
-      const baseDate = firstRow.releaseDate || firstRow.receiptDate;
+      const baseDate = firstRow.receiptDate || firstRow.releaseDate;
       if (baseDate && firstRow.verificationInterval) {
         const nextDate = new Date(baseDate);
         nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
