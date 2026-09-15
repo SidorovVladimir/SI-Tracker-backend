@@ -201,7 +201,6 @@ input CreateDeviceInput {
   manufacturer: String
   verificationInterval: Int
   archived: Boolean!
-  isVoluntaryCalibration: Boolean!
   nomenclature: String
   comment: String
   statusId: ID!
