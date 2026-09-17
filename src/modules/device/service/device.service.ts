@@ -2171,6 +2171,8 @@ export class DeviceService {
         ? latestAttestationDoc
         : targetControlName === 'калибровка'
         ? latestCalibrationDoc
+        : targetControlName === 'осмотр'
+        ? latestInspectionDoc // 🚀 СЮДА: Теперь берется свежий успешный осмотр!
         : latestVerificationDoc;
 
     const isMainDocBroken =
