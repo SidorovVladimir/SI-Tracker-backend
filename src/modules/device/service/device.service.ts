@@ -2178,7 +2178,7 @@ export class DeviceService {
       mainDocForVerificationField?.result === 'неисправен' ||
       mainDocForVerificationField?.result === 'брак';
 
-    const activeBatchLinks = await db
+    const activeRepairLinks = await db
       .select({ id: devicesToBatches.id })
       .from(devicesToBatches)
       .innerJoin(
@@ -2188,15 +2188,18 @@ export class DeviceService {
       .where(
         and(
           eq(devicesToBatches.deviceId, deviceId),
+
           inArray(sql`lower(trim(${verificationBatches.status}))`, [
             'draft',
             'sent',
-          ])
+          ]),
+
+          eq(sql`lower(trim(${verificationBatches.type}))`, 'repair')
         )
       )
       .limit(1);
 
-    const isDeviceInActiveRepairBatch = activeBatchLinks.length > 0;
+    const isDeviceInActiveRepairBatch = activeRepairLinks.length > 0;
 
     // const isMainControlBlocked = isMainDocBroken;
     const isMainControlBlocked = isMainDocBroken || isDeviceInActiveRepairBatch;
