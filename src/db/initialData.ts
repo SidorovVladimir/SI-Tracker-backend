@@ -35,6 +35,8 @@ export const initialStatuses = [
   { name: 'длительное хранение' },
   { name: 'на поверке (в цсм)' },
   { name: 'утерян' },
+  { name: 'в ремонте' },
+  { name: 'списан' },
 ];
 
 export const initialSpheres = [

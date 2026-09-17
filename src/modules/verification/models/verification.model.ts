@@ -102,7 +102,7 @@ export const verificationBatches = pgTable(
     ), // Куда везем (ссылка на вашу таблицу)
     status: text('status').notNull().default('draft'), // 'draft' | 'sent' | 'completed'
     comment: text('comment'),
-    type: text('type').notNull().default('verification'), // 'verification' | 'inspection'
+    type: text('type').notNull().default('verification'), // 'verification' | 'inspection' | 'repair'
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -132,7 +132,7 @@ export const devicesToBatches = pgTable(
     batchId: uuid('batch_id')
       .notNull()
       .references(() => verificationBatches.id, { onDelete: 'cascade' }),
-    deviceStatus: text('device_status').notNull().default('selected'), // 'selected' | 'dismantled' | 'returned'
+    deviceStatus: text('device_status').notNull().default('selected'), // 'selected' | 'dismantled' | 'in_repair' | 'returned'
     previousStatusId: uuid('previous_status_id').references(() => statuses.id),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

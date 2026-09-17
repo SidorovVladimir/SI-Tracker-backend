@@ -74,6 +74,11 @@ type VerificationBatch {
   devicesToBatches: [DeviceToBatchRelation!]!
 }
 
+type RepairPlanningPoolResponse {
+  items: [PlanningPoolItem!]!
+  totalCount: Int!
+}
+
 # Входные данные для создания партии
 input CreateBatchInput {
   # number: String!
@@ -84,6 +89,17 @@ input CreateBatchInput {
 type DraftBatchOption {
   id: ID!
   number: String!
+}
+
+type DeviceRepairHistoryNode {
+  batchId: ID!
+  batchNumber: String!
+  dateIn: String!
+  dateOut: String!
+  master: String!
+  result: String!
+  closingDocType: String!
+  comment: String!
 }
 
 type Query {
@@ -104,6 +120,16 @@ type Query {
 
   getVerificationBatches(year: Int, status: String): [VerificationBatch!]!
   getDraftBatchesByMonth(plannedMonth: String!): [DraftBatchOption!]!
+
+  # 🌟 2. ПОЛУЧИТЬ ПУЛ ДЕФЕКТНЫХ ПРИБОРОВ (Воронка Журнала ремонта)
+  getRepairPlanningPool(limit: Int, offset: Int): RepairPlanningPoolResponse!
+
+  # 🌟 3. Получить черновики ремонтных ведомостей
+  getRepairDraftBatches: [DraftBatchOption!]!
+
+  getRepairBatches(year: Int, status: String): [VerificationBatch!]!
+
+  getDeviceRepairHistory(deviceId: ID!): [DeviceRepairHistoryNode!]!
 }
 
 type Mutation {
@@ -123,4 +149,21 @@ type Mutation {
   deleteVerificationBatch(id: ID!): Boolean!
 
   confirmArshinBuffer(bufferId: String!): Boolean!
+
+  # 🌟 1. Создать новую ремонтную ведомость
+  createRepairBatch(input: CreateBatchInput!): VerificationBatch!
+
+  # 🌟 2. Направить приборы в ремонтную партию
+  addDevicesToRepairBatch(batchId: ID!, deviceIds: [ID!]!): Boolean!
+
+  # 🌟 3. Исключить приборы из ремонта (с откатом к исходному дефекту)
+  removeDevicesFromRepairBatch(batchId: ID!, deviceIds: [ID!]!): Boolean!
+
+  # 🌟 4. Обновить статус ремонтной ведомости ('draft' | 'sent' | 'completed')
+  updateRepairBatchStatus(id: ID!, status: String!): VerificationBatch!
+
+  # 🌟 5. Удалить ремонтную ведомость (с каскадным возвратом приборов в брак)
+  deleteRepairBatch(id: ID!): Boolean!
+
+  bulkScrapDevices(deviceIds: [ID!]!): Boolean!
 }

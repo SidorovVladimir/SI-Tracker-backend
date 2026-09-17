@@ -12,6 +12,7 @@ interface LogActionArgs {
     | 'delete'
     | 'assign_batch'
     | 'remove_batch'
+    | 'assign_repair_batch'
     | 'verify';
   oldData?: any | null;
   newData?: any | null;

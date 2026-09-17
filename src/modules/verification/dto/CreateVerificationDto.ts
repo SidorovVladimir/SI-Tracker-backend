@@ -24,7 +24,11 @@ export type CreateVerificationInput = z.infer<
 export const CreateVerificationModalInputSchema = z.object({
   deviceId: z.uuid('Невалидный ID устройства'),
   batchId: z.uuid().nullable().optional(),
-  protocolNumber: z.string().min(1, 'Номер свидетельства обязателен'),
+  protocolNumber: z
+    .string()
+    .min(1, 'Номер свидетельства обязателен')
+    .nullable()
+    .optional(),
   result: z.string().min(1, 'Результат обязателен'),
 
   // Коэрция (преобразование) строк в объекты Date
@@ -32,9 +36,12 @@ export const CreateVerificationModalInputSchema = z.object({
 
   // Дата окончания может быть null, если результат "Не годен"
   validUntil: z.coerce.date().nullable().optional(),
-  documentUrl: z.string().nullable(),
+  documentUrl: z.string().nullable().optional(),
   metrologyControleTypeId: z.uuid('Невалидный ID типа контроля'),
-  verificationOrganizationId: z.uuid('Невалидный ID организации'),
+  verificationOrganizationId: z
+    .uuid('Невалидный ID организации')
+    .nullable()
+    .optional(),
   comment: z.string().nullable().optional(),
   cost: z.coerce
     .number('Стоимость должна быть числом')

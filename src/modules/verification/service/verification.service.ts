@@ -15,6 +15,8 @@ import {
   asc,
   SQL,
   isNull,
+  ilike,
+  SQLWrapper,
 } from 'drizzle-orm';
 import { verificationOrganizations } from '../../catalog/models/verificationOrganization.model';
 import { DeviceService } from '../../device/service/device.service';
@@ -107,94 +109,6 @@ export class VerificationPlanningService {
 
     return newBatch;
   }
-
-  // 2. Добавить приборы в партию
-  // async addDevicesToBatch(
-  //   batchId: string,
-  //   deviceIds: string[],
-  //   userId: string
-  // ): Promise<boolean> {
-  //   if (deviceIds.length === 0) return true;
-
-  //   const logsToRecord: any[] = [];
-  //   let recordedBatchNumber = '';
-
-  //   await this.db.transaction(async (tx) => {
-  //     const [batch] = await tx
-  //       .select()
-  //       .from(verificationBatches)
-  //       .where(eq(verificationBatches.id, batchId));
-
-  //     if (!batch) {
-  //       throw new Error('Указанная партия поверок не найдена');
-  //     }
-  //     if (batch.status !== 'draft')
-  //       throw new Error(
-  //         'Нельзя добавлять приборы в отправленную/закрытую партию'
-  //       );
-
-  //     recordedBatchNumber = batch.number;
-
-  //     // Если эти приборы уже были привязаны К ДРУГИМ ЧЕРНОВИКАМ партий,
-  //     // мы удаляем старые связи, чтобы не плодить дубли
-  //     await tx.delete(devicesToBatches).where(
-  //       and(
-  //         inArray(devicesToBatches.deviceId, deviceIds),
-  //         // Проверяем через связь, что удаляем только из черновиков (для безопасности)
-  //         inArray(
-  //           devicesToBatches.batchId,
-  //           tx
-  //             .select({ id: verificationBatches.id })
-  //             .from(verificationBatches)
-  //             .where(eq(verificationBatches.status, 'draft'))
-  //         )
-  //       )
-  //     );
-
-  //     // Формируем массив новых связей
-  //     const linksToInsert = deviceIds.map((dId) => ({
-  //       batchId: batchId,
-  //       deviceId: dId,
-  //       deviceStatus: 'selected',
-  //     }));
-
-  //     // Массово вставляем приборы в новую партию
-  //     await tx.insert(devicesToBatches).values(linksToInsert);
-
-  //     for (const dId of deviceIds) {
-  //       const [device] = await tx
-  //         .select()
-  //         .from(devices)
-  //         .where(eq(devices.id, dId));
-  //       if (device) {
-  //         logsToRecord.push({
-  //           deviceId: dId,
-  //           name: device.name,
-  //           model: device.model,
-  //           serialNumber: device.serialNumber,
-  //         });
-  //       }
-  //     }
-  //   });
-  //   if (this.auditLogService && logsToRecord.length > 0) {
-  //     for (const logItem of logsToRecord) {
-  //       await this.auditLogService.logAction({
-  //         deviceId: logItem.deviceId,
-  //         action: 'assign_batch',
-  //         newData: {
-  //           batchId,
-  //           batchNumber: recordedBatchNumber,
-  //           name: logItem.name,
-  //           model: logItem.model,
-  //           serialNumber: logItem.serialNumber,
-  //         },
-  //         userId,
-  //       });
-  //     }
-  //   }
-
-  //   return true;
-  // }
 
   async addDevicesToBatch(
     batchId: string,
@@ -295,130 +209,6 @@ export class VerificationPlanningService {
 
     return true;
   }
-
-  // 3. Удалить приборы из партии (Вернуть их обратно в автоматический пул)
-  // async removeDevicesFromBatch(
-  //   batchId: string,
-  //   deviceIds: string[],
-  //   userId: string
-  // ): Promise<boolean> {
-  //   if (deviceIds.length === 0) return true;
-
-  //   const logsToRecord: any[] = [];
-
-  //   for (const dId of deviceIds) {
-  //     const [device] = await this.db
-  //       .select()
-  //       .from(devices)
-  //       .where(eq(devices.id, dId));
-
-  //     if (device) {
-  //       logsToRecord.push({
-  //         deviceId: dId,
-  //         name: device.name,
-  //         model: device.model,
-  //         serialNumber: device.serialNumber,
-  //       });
-  //     }
-  //   }
-
-  //   await this.db
-  //     .delete(devicesToBatches)
-  //     .where(
-  //       and(
-  //         eq(devicesToBatches.batchId, batchId),
-  //         inArray(devicesToBatches.deviceId, deviceIds)
-  //       )
-  //     );
-
-  //   if (this.auditLogService && logsToRecord.length > 0) {
-  //     for (const logItem of logsToRecord) {
-  //       await this.auditLogService.logAction({
-  //         deviceId: logItem.deviceId,
-  //         action: 'remove_batch',
-  //         oldData: {
-  //           name: logItem.name,
-  //           model: logItem.model,
-  //           serialNumber: logItem.serialNumber,
-  //         },
-  //         userId,
-  //       });
-  //     }
-  //   }
-
-  //   return true;
-  // }
-
-  // async removeDevicesFromBatch(
-  //   batchId: string,
-  //   deviceIds: string[],
-  //   userId: string
-  // ): Promise<boolean> {
-  //   if (deviceIds.length === 0) return true;
-
-  //   // Орачиваем в транзакцию, чтобы гарантировать целостность данных
-  //   return await this.db.transaction(async (tx) => {
-  //     const logsToRecord: any[] = [];
-
-  //     // Используем 'tx' вместо 'this.db' для всех запросов внутри
-  //     for (const dId of deviceIds) {
-  //       const [device] = await tx
-  //         .select()
-  //         .from(devices)
-  //         .where(eq(devices.id, dId));
-
-  //       if (device) {
-  //         logsToRecord.push({
-  //           deviceId: dId,
-  //           name: device.name,
-  //           model: device.model,
-  //           serialNumber: device.serialNumber,
-  //         });
-  //       }
-  //     }
-
-  //     // 1. Исключаем выбранные приборы из партии
-  //     await tx
-  //       .delete(devicesToBatches)
-  //       .where(
-  //         and(
-  //           eq(devicesToBatches.batchId, batchId),
-  //           inArray(devicesToBatches.deviceId, deviceIds)
-  //         )
-  //       );
-
-  //     // 2. 🎯 ПРОВЕРКА НА ПУСТОТУ: Считаем, сколько приборов ОСТАЛОСЬ в этой партии
-  //     const [remaining] = await tx
-  //       .select({ count: sql<number>`count(*)::int` })
-  //       .from(devicesToBatches)
-  //       .where(eq(devicesToBatches.batchId, batchId));
-
-  //     // 3. Если в партии осталось 0 приборов — полностью удаляем саму партию
-  //     if (!remaining || remaining.count === 0) {
-  //       await tx
-  //         .delete(verificationBatches)
-  //         .where(eq(verificationBatches.id, batchId));
-  //     }
-
-  //     // Логирование аудита (работает внутри транзакции)
-  //     if (this.auditLogService && logsToRecord.length > 0) {
-  //       for (const logItem of logsToRecord) {
-  //         await this.auditLogService.logAction({
-  //           deviceId: logItem.deviceId,
-  //           action: 'remove_batch',
-  //           oldData: {
-  //             name: logItem.name,
-  //             model: logItem.model,
-  //             serialNumber: logItem.serialNumber,
-  //           },
-  //           userId,
-  //         });
-  //       }
-  //     }
-
-  //     return true;
-  //   });
-  // }
 
   async removeDevicesFromBatch(
     batchId: string,
@@ -606,347 +396,6 @@ export class VerificationPlanningService {
     });
   }
 
-  // private calculateNextVerificationDate(device: any): Date {
-  //   const latestVerification = device.verifications?.[0];
-
-  //   // Вариант 1: Есть прошлая поверка с датой окончания
-  //   if (latestVerification?.validUntil) {
-  //     return new Date(latestVerification.validUntil);
-  //   }
-
-  //   // Вариант 2: Прибор новый — считаем от даты выпуска/получения + МПИ в месяцах
-  //   const baseDate = device.releaseDate || device.receiptDate;
-  //   if (baseDate && device.verificationInterval) {
-  //     const nextDate = new Date(baseDate);
-  //     nextDate.setMonth(nextDate.getMonth() + device.verificationInterval);
-  //     return nextDate;
-  //   }
-
-  //   // Вариант 3: Данных нет совсем — выталкиваем на текущую дату, чтобы метролог заметил прибор
-  //   return new Date();
-  // }
-
-  // private calculateNextVerificationDate(device: any): Date {
-  //   // Ищем последний легальный контроль (НЕ осмотр)
-  //   const latestVerification = device.verifications?.find(
-  //     (v: any) =>
-  //       v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
-  //   );
-
-  //   // Вариант 1: Есть прошлая поверка с датой окончания
-  //   if (latestVerification?.validUntil) {
-  //     return new Date(latestVerification.validUntil);
-  //   }
-
-  //   // Вариант 2: Прибор новый — считаем от даты выпуска/получения + МПИ в месяцах
-  //   const baseDate = device.releaseDate || device.receiptDate;
-  //   if (baseDate && device.verificationInterval) {
-  //     const nextDate = new Date(baseDate);
-  //     nextDate.setMonth(nextDate.getMonth() + device.verificationInterval);
-  //     return nextDate;
-  //   }
-
-  //   // Вариант 3: Данных нет совсем
-  //   return new Date();
-  // }
-
-  // private calculateNextVerificationDate(
-  //   device: any,
-  //   targetControlName: string
-  // ): Date | null {
-  //   // 🎯 ИСПРАВЛЕНО: Ищем в истории документ СТРОГО вычисленного вида контроля
-
-  //   const latestVerification = device.verifications?.find(
-  //     (v: any) =>
-  //       v.metrologyControleType?.name?.toLowerCase().trim() ===
-  //       targetControlName
-  //   );
-
-  //   // Вариант 1: Есть прошлая запись именно этого контроля с датой окончания
-  //   if (latestVerification?.validUntil) {
-  //     return new Date(latestVerification.validUntil);
-  //   }
-
-  //   // Вариант 2: Прибор новый — считаем от даты выпуска/получения + МПИ в месяцах
-  //   const baseDate = device.releaseDate || device.receiptDate;
-  //   if (baseDate && device.verificationInterval) {
-  //     console.log('hello newDevice');
-  //     const nextDate = new Date(baseDate);
-  //     nextDate.setMonth(nextDate.getMonth() + device.verificationInterval);
-  //     return nextDate;
-  //   }
-
-  //   // Вариант 3: Данных нет совсем
-  //   // Возвращаем null или текущую дату.
-  //   // Лучше возвращать null, чтобы планировщик не пихал "пустые" приборы в текущий месяц без ведома метролога
-  //   // return new Date();
-  //   const currentMonthStart = new Date();
-  //   currentMonthStart.setDate(1);
-  //   currentMonthStart.setHours(0, 0, 0, 0);
-
-  //   return currentMonthStart;
-  // }
-
-  // 5. ПОЛУЧИТЬ ПУЛ ПРИБОРОВ НА ВЫБРАННЫЙ МЕСЯЦ
-  // async getPlanningPoolByMonth(
-  //   targetMonth: string,
-  //   companyDefaultLeadTime = 30,
-  //   limit = 20, // По умолчанию 20 приборов на страницу
-  //   offset = 0, // По умолчанию первая страница (пропуск 0)
-  //   controlTypeId?: string
-  // ) {
-  //   const now = new Date();
-  //   // Генерируем строковый ключ текущего реального месяца (например, "2026-06")
-  //   const currentMonthKey = `${now.getFullYear()}-${String(
-  //     now.getMonth() + 1
-  //   ).padStart(2, '0')}`;
-
-  //   const allDevices = await this.db.query.devices.findMany({
-  //     where: eq(devices.archived, false),
-  //     columns: {
-  //       id: true,
-  //       name: true,
-  //       model: true,
-  //       serialNumber: true,
-  //       releaseDate: true,
-  //       grsiNumber: true,
-  //       receiptDate: true,
-  //       verificationInterval: true,
-  //       leadTimeDays: true,
-  //     },
-  //     with: {
-  //       status: {
-  //         columns: { name: true },
-  //       },
-  //       devicesToBatches: { with: { batch: true } },
-  //       equipmentType: { columns: { name: true } },
-  //       scopesToDevices: {
-  //         with: { scope: { columns: { name: true } } },
-  //       },
-  //       verifications: {
-  //         orderBy: (v, { desc }) => [desc(v.date), desc(v.createdAt)],
-  //         limit: 5,
-  //         with: { metrologyControleType: { columns: { name: true } } },
-  //       },
-  //     },
-  //   });
-
-  //   const pool: PlanningPoolItem[] = [];
-
-  //   for (const device of allDevices) {
-  //     const statusName = device.status?.name?.toLowerCase().trim() ?? '';
-  //     if (
-  //       [
-  //         'длительное хранение',
-  //         'неисправен',
-  //         'забракован',
-  //         'утерян',
-  //         'не годен',
-  //       ].includes(statusName)
-  //     ) {
-  //       continue;
-  //     }
-
-  //     const eqTypeName = device.equipmentType?.name?.toLowerCase().trim() ?? '';
-  //     const grsiNumber = device.grsiNumber;
-  //     const hasGrsi = !!grsiNumber && grsiNumber.trim() !== '';
-  //     const deviceScopes =
-  //       device.scopesToDevices?.map((s: any) =>
-  //         s.scope?.name?.toLowerCase().trim()
-  //       ) ?? [];
-
-  //     const isNotGr =
-  //       deviceScopes.includes('не гр') ||
-  //       deviceScopes.includes(
-  //         'вне сферы государственного регулирования (не гр)'
-  //       );
-
-  //     let targetControlName = 'осмотр';
-
-  //     if (
-  //       eqTypeName === 'индикатор' ||
-  //       eqTypeName === 'вспомогательное оборудование (во)'
-  //     ) {
-  //       targetControlName = 'осмотр';
-  //     } else if (eqTypeName === 'средство измерений (си)') {
-  //       targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
-  //     } else if (eqTypeName === 'средство контроля (ск)') {
-  //       targetControlName = isNotGr
-  //         ? 'осмотр'
-  //         : hasGrsi
-  //         ? 'поверка'
-  //         : 'калибровка';
-  //     } else if (eqTypeName === 'испытательное оборудование (ио)') {
-  //       targetControlName = isNotGr ? 'осмотр' : 'аттестация';
-  //     }
-
-  //     // 🎯 2. ЖЕЛЕЗНОЕ ПРАВИЛО: Если целевой контроль — ОСМОТР, прибор принудительно
-  //     // исключается из этого планировщика пула (поверок/калибровок), так как он идет в журнал осмотров
-  //     if (targetControlName === 'осмотр') {
-  //       continue;
-  //     }
-
-  //     const nextVerificationDate = this.calculateNextVerificationDate(
-  //       device,
-  //       targetControlName
-  //     );
-
-  //     if (!nextVerificationDate) continue;
-
-  //     const latestVerification = device.verifications?.find(
-  //       (v: any) =>
-  //         v.metrologyControleType?.name?.toLowerCase().trim() ===
-  //         targetControlName
-  //     );
-
-  //     let currentControlType = latestVerification?.metrologyControleType?.name;
-  //     if (!currentControlType) {
-
-  //       currentControlType = targetControlName.toLowerCase();
-  //     }
-
-  //     const activeBatchLink = device.devicesToBatches?.find(
-  //       (link) =>
-  //         link.batch?.status === 'draft' || link.batch?.status === 'sent'
-  //     );
-
-  //     // --- СЦЕНАРИЙ А: ПРИБОР УЖЕ ЗАКРЕПЛЕН МЕТРОЛОГОМ ЗА ПАРТИЕЙ ---
-  //     if (activeBatchLink && activeBatchLink.batch) {
-  //       const batchDate = new Date(activeBatchLink.batch.plannedDate);
-  //       const batchMonthKey = `${batchDate.getFullYear()}-${String(
-  //         batchDate.getMonth() + 1
-  //       ).padStart(2, '0')}`;
-
-  //       // Прибор жестко отображается только в том месяце, на который создана партия
-  //       if (batchMonthKey === targetMonth) {
-  //         pool.push({
-  //           id: device.id,
-  //           name: device.name,
-  //           model: device.model,
-  //           serialNumber: device.serialNumber,
-  //           validUntil: latestVerification?.validUntil
-  //             ? new Date(latestVerification.validUntil).toISOString()
-  //             : null,
-  //           suggestedMonth: targetMonth,
-  //           targetBatchId: activeBatchLink.batch.id,
-  //           isManualPlacement: true,
-  //           controlType: currentControlType,
-  //           // isOverdue: nextVerificationDate < now, // Сравниваем с реальным концом поверки
-  //           isOverdue: latestVerification?.validUntil
-  //             ? new Date(latestVerification.validUntil) < now
-  //             : false,
-  //         });
-  //       }
-  //       continue;
-  //     }
-
-  //     // --- СЦЕНАРИЙ Б: АВТОМАТИЧЕСКИЙ РАСЧЕТ ПУЛА (Lead Time + Сбор долгов) ---
-  //     const currentLeadTime = device.leadTimeDays ?? companyDefaultLeadTime;
-  //     const plannedActionDate = new Date(nextVerificationDate);
-  //     plannedActionDate.setDate(plannedActionDate.getDate() - currentLeadTime);
-
-  //     // Вычисляем "родной" плановый месяц отправки прибора по графику логистики
-  //     const actionYear = plannedActionDate.getFullYear();
-  //     const actionMonthStr = String(plannedActionDate.getMonth() + 1).padStart(
-  //       2,
-  //       '0'
-  //     );
-  //     const deviceAutoMonthKey = `${actionYear}-${actionMonthStr}`;
-
-  //     // Проверяем, остался ли прибор в прошлом по графику логистики относительно ТЕКУЩЕГО реального месяца
-  //     const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  //     const isDeviceOverdueInPast = plannedActionDate < currentMonthStart;
-
-  //     // КЛЮЧЕВОЕ ПРАВИЛО ВАРИАНТА Б:
-  //     // Если прибор из прошлого (долг) — его место ТОЛЬКО в текущем месяце.
-  //     // Если прибор в будущем — его место в его родном плановом месяце.
-  //     const finalTargetMonthForDevice = isDeviceOverdueInPast
-  //       ? currentMonthKey
-  //       : deviceAutoMonthKey;
-
-  //     // Выводим прибор в таблицу только если вычисленный целевой месяц совпал с открытым на экране!
-  //     if (finalTargetMonthForDevice === targetMonth) {
-  //       pool.push({
-  //         id: device.id,
-  //         name: device.name,
-  //         model: device.model,
-  //         serialNumber: device.serialNumber,
-  //         validUntil: latestVerification?.validUntil
-  //           ? new Date(latestVerification.validUntil).toISOString()
-  //           : null,
-  //         suggestedMonth: finalTargetMonthForDevice,
-  //         targetBatchId: null,
-  //         isManualPlacement: false,
-  //         controlType: currentControlType,
-  //         isOverdue: nextVerificationDate < now,
-  //       });
-  //     }
-  //   }
-
-  //   pool.sort((a, b) => {
-  //     if (!a.validUntil) return 1;
-  //     if (!b.validUntil) return -1;
-  //     // return (
-  //     //   new Date(a.validUntil).getTime() - new Date(b.validUntil).getTime()
-  //     // );
-  //     return a.validUntil.localeCompare(b.validUntil);
-  //   });
-
-  //   const typeCounts: Record<string, number> = {};
-  //   let unassignedCount = 0;
-
-  //   for (const item of pool) {
-  //     const typeKey = item.controlType.toLowerCase().trim();
-  //     if (!typeKey || typeKey === 'не указан') {
-  //       unassignedCount++;
-  //     } else {
-  //       typeCounts[item.controlType] = (typeCounts[item.controlType] || 0) + 1;
-  //     }
-  //   }
-
-  //   const formattedTypeCounts = Object.entries(typeCounts).map(
-  //     ([name, count]) => ({
-  //       typeName: name,
-  //       count,
-  //     })
-  //   );
-
-  //   let filteredPool = [...pool];
-
-  //   if (controlTypeId && controlTypeId !== 'ALL') {
-  //     if (controlTypeId === 'NOT_SPECIFIED') {
-  //       filteredPool = pool.filter((item) => {
-  //         const t = item.controlType.toLowerCase().trim();
-  //         return !t || t === 'не указан';
-  //       });
-  //     } else {
-  //       const [targetType] = await this.db
-  //         .select()
-  //         .from(metrologyControleTypes)
-  //         .where(eq(metrologyControleTypes.id, controlTypeId));
-
-  //       if (targetType) {
-  //         filteredPool = pool.filter(
-  //           (item) =>
-  //             item.controlType.toLowerCase().trim() ===
-  //             targetType.name.toLowerCase().trim()
-  //         );
-  //       } else {
-  //         filteredPool = [];
-  //       }
-  //     }
-  //   }
-  //   const paginatedItems = filteredPool.slice(offset, offset + limit);
-  //   return {
-  //     items: paginatedItems,
-  //     totalCount: filteredPool.length,
-  //     meta: {
-  //       unassignedCount,
-  //       typeCounts: formattedTypeCounts,
-  //     },
-  //   };
-  // }
-
   async getPlanningPoolByMonth(
     targetMonth: string, // Формат "YYYY-MM"
     companyDefaultLeadTime = 30,
@@ -969,6 +418,7 @@ export class VerificationPlanningService {
       'забракован',
       'утерян',
       'не годен',
+      'списан',
     ];
 
     // -------------------------------------------------------------------------
@@ -1239,279 +689,6 @@ export class VerificationPlanningService {
     };
   }
 
-  // 6. ПОЛУЧИТЬ СВОДНУЮ СТАТИСТИКУ ЗА ГОД (Синхронизировано с Вариантом Б на 100%)
-  // async getYearlyCalendarSummary(year: number, companyDefaultLeadTime = 30) {
-  //   const summary: Record<
-  //     string,
-  //     { month: string; autoCount: number; manualCount: number }
-  //   > = {};
-
-  //   for (let m = 1; m <= 12; m++) {
-  //     const monthKey = `${year}-${String(m).padStart(2, '0')}`;
-  //     summary[monthKey] = { month: monthKey, autoCount: 0, manualCount: 0 };
-  //   }
-
-  //   const now = new Date();
-  //   // Текущий рабочий месяц в формате "YYYY-MM" (например, "2026-06")
-  //   const currentMonthKey = `${now.getFullYear()}-${String(
-  //     now.getMonth() + 1
-  //   ).padStart(2, '0')}`;
-  //   const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  //   const allDevices = await this.db.query.devices.findMany({
-  //     where: eq(devices.archived, false),
-  //     columns: {
-  //       id: true,
-  //       releaseDate: true,
-  //       receiptDate: true,
-  //       grsiNumber: true,
-  //       verificationInterval: true,
-  //       leadTimeDays: true,
-  //     },
-
-  //     with: {
-  //       status: {
-  //         columns: { name: true },
-  //       },
-  //       devicesToBatches: { with: { batch: true } },
-  //       equipmentType: { columns: { name: true } },
-  //       scopesToDevices: {
-  //         with: { scope: { columns: { name: true } } },
-  //       },
-  //       verifications: {
-  //         // orderBy: (v, { desc }) => [desc(v.date)],
-  //         orderBy: (v, { desc }) => [desc(v.date), desc(v.createdAt)],
-  //         limit: 5,
-  //         with: { metrologyControleType: { columns: { name: true } } },
-  //       },
-  //     },
-  //   });
-
-  //   for (const device of allDevices) {
-  //     const statusName = device.status?.name?.toLowerCase().trim() ?? '';
-  //          if (
-  //       [
-  //         'длительное хранение',
-  //         'неисправен',
-  //         'забракован',
-  //         'утерян',
-  //         'не годен',
-  //       ].includes(statusName)
-  //     ) {
-  //       continue;
-  //     }
-
-  //     const eqTypeName = device.equipmentType?.name?.toLowerCase().trim() ?? '';
-  //     const grsiNumber = device.grsiNumber;
-  //     const hasGrsi = !!grsiNumber && grsiNumber.trim() !== '';
-  //     const deviceScopes =
-  //       device.scopesToDevices?.map((s: any) =>
-  //         s.scope?.name?.toLowerCase().trim()
-  //       ) ?? [];
-
-  //     const isNotGr =
-  //       deviceScopes.includes('не гр') ||
-  //       deviceScopes.includes(
-  //         'вне сферы государственного регулирования (не гр)'
-  //       );
-
-  //     let targetControlName = 'осмотр';
-
-  //     if (
-  //       eqTypeName === 'индикатор' ||
-  //       eqTypeName === 'вспомогательное оборудование (во)'
-  //     ) {
-  //       targetControlName = 'осмотр';
-  //     } else if (eqTypeName === 'средство измерений (си)') {
-  //       targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
-  //     } else if (eqTypeName === 'средство контроля (ск)') {
-  //       targetControlName = isNotGr
-  //         ? 'осмотр'
-  //         : hasGrsi
-  //         ? 'поверка'
-  //         : 'калибровка';
-  //     } else if (eqTypeName === 'испытательное оборудование (ио)') {
-  //       targetControlName = isNotGr ? 'осмотр' : 'аттестация';
-  //     }
-
-  //     // 🎯 2. ЖЕЛЕЗНОЕ ПРАВИЛО: Если контроль прибора — ОСМОТР,
-  //     // исключаем его из графиков и календаря поверки ЦСМ, так как у него свой журнал
-  //     if (targetControlName === 'осмотр') {
-  //       continue;
-  //     }
-
-  //     const nextVerificationDate = this.calculateNextVerificationDate(
-  //       device,
-  //       targetControlName
-  //     );
-
-  //     if (!nextVerificationDate) continue;
-
-  //     const activeBatchLink = device.devicesToBatches?.find(
-  //       (link) =>
-  //         link.batch?.status === 'draft' || link.batch?.status === 'sent'
-  //     );
-
-  //     // Сценарий А: Распределяем ручные партии
-  //     if (activeBatchLink && activeBatchLink.batch) {
-  //       const batchDate = new Date(activeBatchLink.batch.plannedDate);
-  //       if (batchDate.getFullYear() === year) {
-  //         const monthKey = `${year}-${String(batchDate.getMonth() + 1).padStart(
-  //           2,
-  //           '0'
-  //         )}`;
-  //         if (summary[monthKey]) summary[monthKey].manualCount++;
-  //       }
-  //       continue;
-  //     }
-
-  //     // Сценарий Б: Распределяем автоматический пул по правилу Варианта Б
-  //     const currentLeadTime = device.leadTimeDays ?? companyDefaultLeadTime;
-  //     const plannedActionDate = new Date(nextVerificationDate);
-  //     plannedActionDate.setDate(plannedActionDate.getDate() - currentLeadTime);
-
-  //     const actionYear = plannedActionDate.getFullYear();
-  //     const actionMonthStr = String(plannedActionDate.getMonth() + 1).padStart(
-  //       2,
-  //       '0'
-  //     );
-  //     const deviceAutoMonthKey = `${actionYear}-${actionMonthStr}`;
-
-  //     const isDeviceOverdueInPast = plannedActionDate < currentMonthStart;
-  //     const finalTargetMonthForDevice = isDeviceOverdueInPast
-  //       ? currentMonthKey
-  //       : deviceAutoMonthKey;
-
-  //     // Приплюсовываем счетчик в вычисленный месяц (если этот месяц входит в текущий отображаемый год)
-  //     if (summary[finalTargetMonthForDevice]) {
-  //       summary[finalTargetMonthForDevice].autoCount++;
-  //     }
-  //   }
-
-  //   return Object.values(summary);
-  // }
-
-  // async getYearlyCalendarSummary(year: number, companyDefaultLeadTime = 30) {
-  //   const now = new Date();
-  //   const currentMonthKey = `${now.getFullYear()}-${String(
-  //     now.getMonth() + 1
-  //   ).padStart(2, '0')}`;
-  //   const currentMonthStart = `${now.getFullYear()}-${String(
-  //     now.getMonth() + 1
-  //   ).padStart(2, '0')}-01`;
-
-  //   // Исключаемые статусы (гарантированно в нижнем регистре в БД)
-  //   const excludedStatuses = [
-  //     'длительное хранение',
-  //     'неисправен',
-  //     'забракован',
-  //     'утерян',
-  //     'не годен',
-  //   ];
-
-  //   // Инициализируем пустую структуру для 12 месяцев запрашиваемого года
-  //   const summary: Record<
-  //     string,
-  //     { month: string; autoCount: number; manualCount: number }
-  //   > = {};
-  //   for (let m = 1; m <= 12; m++) {
-  //     const monthKey = `${year}-${String(m).padStart(2, '0')}`;
-  //     summary[monthKey] = { month: monthKey, autoCount: 0, manualCount: 0 };
-  //   }
-
-  //   // -------------------------------------------------------------------------
-  //   // ВЫЧИСЛИТЕЛЬНЫЕ SQL-ВЫРАЖЕНИЯ (Переносим логику Варианта Б в базу)
-  //   // -------------------------------------------------------------------------
-
-  //   // Сценарий Б: Вычисляем дату отправки прибора (next_verification_date - lead_time_days)
-  //   const calculatedActionDateSql = sql`
-  //   (${devices.nextVerificationDate}::date - COALESCE(${devices.leadTimeDays}, ${companyDefaultLeadTime}) * INTERVAL '1 day')
-  // `;
-
-  //   // Вычисляем строковый ключ года-месяца "YYYY-MM" для этой даты
-  //   const autoMonthKeySql = sql`to_char(${calculatedActionDateSql}, 'YYYY-MM')`;
-
-  //   // Ключевое правило: если долг из прошлого — уходит в текущий месяц, иначе — в плановый родной
-  //   const finalAutoMonthSql = sql`
-  //   CASE
-  //     WHEN ${calculatedActionDateSql} < ${currentMonthStart}::date THEN ${currentMonthKey}
-  //     ELSE ${autoMonthKeySql}
-  //   END
-  // `;
-
-  //   // Сценарий А: Получаем месяц запланированной партии для прибора (если есть активный черновик)
-  //   const activeBatchMonthSql = sql`
-  //   (SELECT to_char(vb.planned_date, 'YYYY-MM')
-  //    FROM devices_to_batches dtb
-  //    JOIN verification_batches vb ON dtb.batch_id = vb.id
-  //    WHERE dtb.device_id = ${devices.id} AND vb.status IN ('draft', 'sent')
-  //    LIMIT 1)
-  // `;
-
-  //   // Итоговое определение целевого месяца для прибора
-  //   const targetMonthSql = sql`
-  //   CASE
-  //     WHEN ${activeBatchMonthSql} IS NOT NULL THEN ${activeBatchMonthSql}
-  //     ELSE ${finalAutoMonthSql}
-  //   END
-  // `;
-
-  //   // Определение типа размещения прибора (manual или auto)
-  //   const placementTypeSql = sql`
-  //   CASE
-  //     WHEN ${activeBatchMonthSql} IS NOT NULL THEN 'manual'
-  //     ELSE 'auto'
-  //   END
-  // `;
-
-  //   // Базовые условия фильтрации (Только активные, исключая мертвые статусы и осмотры)
-  //   const baseConditions = [
-  //     eq(devices.archived, false),
-  //     notInArray(
-  //       devices.statusId,
-  //       this.db
-  //         .select({ id: statuses.id })
-  //         .from(statuses)
-  //         .where(inArray(statuses.name, excludedStatuses))
-  //     ),
-  //     sql`${devices.cachedControl} != 'осмотр'`,
-  //     sql`${devices.nextVerificationDate} IS NOT NULL`,
-  //     // Нас интересуют только приборы, которые попали в месяцы запрашиваемого года
-  //     sql`${targetMonthSql} LIKE ${`${year}-%`}`,
-  //   ];
-
-  //   // -------------------------------------------------------------------------
-  //   // ЗАПРОС АГРЕГАЦИИ: Считаем всё одним GROUP BY в базе данных
-  //   // -------------------------------------------------------------------------
-  //   const statsRows = await this.db
-  //     .select({
-  //       monthKey: targetMonthSql,
-  //       placementType: placementTypeSql,
-  //       count: sql<number>`count(*)::int`,
-  //     })
-  //     .from(devices)
-  //     .where(and(...baseConditions))
-  //     .groupBy(targetMonthSql, placementTypeSql);
-
-  //   // -------------------------------------------------------------------------
-  //   // СБОРКА РЕЗУЛЬТАТА НА СТОРОНЕ NODE.JS
-  //   // -------------------------------------------------------------------------
-  //   for (const row of statsRows) {
-  //     const monthKey = row.monthKey as string;
-
-  //     // Заполняем структуру, только если месяц валидный и есть в нашем запрашиваемом году
-  //     if (summary[monthKey]) {
-  //       if (row.placementType === 'manual') {
-  //         summary[monthKey].manualCount += row.count;
-  //       } else {
-  //         summary[monthKey].autoCount += row.count;
-  //       }
-  //     }
-  //   }
-
-  //   return Object.values(summary);
-  // }
-
   async getYearlyCalendarSummary(year: number, companyDefaultLeadTime = 30) {
     const now = new Date();
 
@@ -1529,6 +706,7 @@ export class VerificationPlanningService {
       'забракован',
       'утерян',
       'не годен',
+      'списан',
     ];
 
     // Инициализируем пустую структуру для 12 месяцев запрашиваемого года
@@ -1650,71 +828,10 @@ export class VerificationPlanningService {
     return Object.values(summary);
   }
 
-  // async getVerificationBatches(
-  //   year?: number,
-  //   status?: string,
-  //   type?: 'verification' | 'inspection', // Наш чистый параметр
-  //   limit?: number, // 🔥 Добавили необязательный лимит
-  //   offset?: number
-  // ) {
-  //   const constraints = [];
-
-  //   if (status) {
-  //     constraints.push(eq(verificationBatches.status, status));
-  //   }
-
-  //   if (year) {
-  //     const startDate = new Date(`${year}-01-01T00:00:00.000Z`);
-  //     const endDate = new Date(`${year}-12-31T23:59:59.999Z`);
-  //     constraints.push(
-  //       and(
-  //         gte(verificationBatches.plannedDate, startDate),
-  //         lte(verificationBatches.plannedDate, endDate)
-  //       )
-  //     );
-  //   }
-
-  //   // 🔥 ИСПРАВЛЕНО: Прямая, надёжная фильтрация по системному полю типа партии
-  //   const targetType = type ?? 'verification';
-  //   constraints.push(eq(verificationBatches.type, targetType));
-
-  //   return await this.db.query.verificationBatches.findMany({
-  //     where: constraints.length > 0 ? and(...constraints) : undefined,
-  //     orderBy: (b, { desc }) => [desc(b.plannedDate)],
-  //     limit: limit, // 🔥 Передали в Drizzle (пропустит, если undefined)
-  //     offset: offset, // 🔥 Передали в Drizzle (пропустит, если undefined)
-  //     with: {
-  //       createdBy: true,
-  //       verificationOrganization: true,
-  //       devicesToBatches: {
-  //         with: {
-  //           device: {
-  //             columns: {
-  //               id: true,
-  //               name: true,
-  //               model: true,
-  //               serialNumber: true,
-  //             },
-  //             with: {
-  //               verifications: {
-  //                 orderBy: (v, { desc }) => [desc(v.date)],
-  //                 limit: 1,
-  //               },
-  //               arshinBuffers: {
-  //                 orderBy: (ab, { desc }) => [desc(ab.verificationDate)],
-  //               },
-  //             },
-  //           },
-  //         },
-  //       },
-  //     },
-  //   });
-  // }
-
   async getVerificationBatches(
     year?: number,
     status?: string,
-    type?: 'verification' | 'inspection',
+    type?: 'verification' | 'inspection' | 'repair',
     limit?: number,
     offset?: number
   ) {
@@ -1818,18 +935,36 @@ export class VerificationPlanningService {
       // 🔥 🔥 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Ищем документ под тип конкретного журнала
       let matchedVerification: any = null;
 
+      // if (targetType === 'verification') {
+      //   // Мы в Журнале ПОВЕРОК: ищем самый свежий документ, который НЕ является осмотром
+      //   matchedVerification = deviceVerifications.find(
+      //     (v) =>
+      //       v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+      //   );
+      // } else {
+      //   // Мы в Журнале ОСМОТРОВ: ищем самый свежий документ, который ЯВЛЯЕТСЯ осмотром
+      //   matchedVerification = deviceVerifications.find(
+      //     (v) =>
+      //       v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
+      //   );
+      // }
       if (targetType === 'verification') {
         // Мы в Журнале ПОВЕРОК: ищем самый свежий документ, который НЕ является осмотром
         matchedVerification = deviceVerifications.find(
           (v) =>
             v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
         );
-      } else {
+      } else if (targetType === 'inspection') {
         // Мы в Журнале ОСМОТРОВ: ищем самый свежий документ, который ЯВЛЯЕТСЯ осмотром
         matchedVerification = deviceVerifications.find(
           (v) =>
             v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
         );
+      } else if (targetType === 'repair') {
+        // 🌟 МЫ В ЖУРНАЛЕ РЕМОНТОВ: Ищем абсолютно самый свежий документ в истории СИ,
+        // так как ремонт может закрываться как Поверкой, так и Осмотром/Калибровкой
+        matchedVerification =
+          deviceVerifications.length > 0 ? deviceVerifications[0] : null;
       }
 
       // Если по какому-то прибору истории нужного типа еще нет, берем самую последнюю запись как фоллбэк
@@ -1885,26 +1020,94 @@ export class VerificationPlanningService {
       );
     }
 
-    await this.db
-      .delete(verificationBatches)
-      .where(eq(verificationBatches.id, id));
+    // await this.db
+    //   .delete(verificationBatches)
+    //   .where(eq(verificationBatches.id, id));
+
+    await this.db.transaction(async (tx) => {
+      if (batch.type === 'repair') {
+        // Вытягиваем все приборы из этой партии
+        const linkedDevices = await tx
+          .select()
+          .from(devicesToBatches)
+          .where(eq(devicesToBatches.batchId, id));
+
+        const [statusBroken] = await tx
+          .select({ id: statuses.id })
+          .from(statuses)
+          .where(eq(statuses.name, 'неисправен'))
+          .limit(1);
+
+        for (const link of linkedDevices) {
+          // Восстанавливаем оригинальный брак (например, "забракован"), который был до ремонта
+          const targetStatusId = link.previousStatusId || statusBroken?.id;
+
+          if (targetStatusId) {
+            await tx
+              .update(devices)
+              .set({ statusId: targetStatusId, updatedAt: new Date() })
+              .where(eq(devices.id, link.deviceId));
+          }
+
+          // Запускаем пересчет кэша, чтобы вернуть приборы в Журнал ремонта как «требующие внимания»
+          if (this.deviceService) {
+            await this.deviceService.updateMetrologyCache(tx, link.deviceId);
+          }
+        }
+      }
+
+      // Каскадно удаляем связи (хотя для devicesToBatches у вас стоит onDelete: cascade,
+      // явное удаление в рамках транзакции — это хорошая практика)
+      await tx.delete(devicesToBatches).where(eq(devicesToBatches.batchId, id));
+
+      // Удаляем саму партию
+      await tx
+        .delete(verificationBatches)
+        .where(eq(verificationBatches.id, id));
+    });
 
     return true;
   }
 
-  async getDraftBatchesByMonth(plannedMonth: string) {
+  // async getDraftBatchesByMonth(plannedMonth: string) {
+  //   return await this.db
+  //     .select({
+  //       id: verificationBatches.id,
+  //       number: verificationBatches.number,
+  //     })
+  //     .from(verificationBatches)
+  //     .where(
+  //       and(
+  //         eq(verificationBatches.status, 'draft'),
+  //         sql`to_char(${verificationBatches.plannedDate}, 'YYYY-MM') = ${plannedMonth}`
+  //       )
+  //     );
+  // }
+
+  async getDraftBatchesByMonth(
+    plannedMonth?: string,
+    type: 'verification' | 'inspection' | 'repair' = 'verification'
+  ) {
+    const conditions: (SQLWrapper | undefined)[] = [
+      eq(verificationBatches.status, 'draft'),
+      eq(verificationBatches.type, type),
+    ];
+
+    // Если передан месяц (для поверок/осмотров) — добавляем фильтр по датам
+    if (plannedMonth) {
+      conditions.push(
+        sql`to_char(${verificationBatches.plannedDate}, 'YYYY-MM') = ${plannedMonth}`
+      );
+    }
+
     return await this.db
       .select({
         id: verificationBatches.id,
         number: verificationBatches.number,
       })
       .from(verificationBatches)
-      .where(
-        and(
-          eq(verificationBatches.status, 'draft'),
-          sql`to_char(${verificationBatches.plannedDate}, 'YYYY-MM') = ${plannedMonth}`
-        )
-      );
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(verificationBatches.createdAt));
   }
 
   // async confirmArshinBufferRecord(bufferId: string, userId: string) {
@@ -2280,23 +1483,26 @@ export class VerificationPlanningService {
     if (!deviceExists) {
       throw new Error('Указанное оборудование не найдено в системе');
     }
+    if (input.protocolNumber) {
+      const normalizedProtocolNumber = input.protocolNumber
+        .trim()
+        .toLowerCase();
 
-    const normalizedProtocolNumber = input.protocolNumber.trim().toLowerCase();
+      const [existingVerification] = await tx
+        .select({ id: verifications.id })
+        .from(verifications)
+        .where(
+          and(
+            eq(verifications.deviceId, input.deviceId),
+            eq(verifications.protocolNumber, normalizedProtocolNumber)
+          )
+        );
 
-    const [existingVerification] = await tx
-      .select({ id: verifications.id })
-      .from(verifications)
-      .where(
-        and(
-          eq(verifications.deviceId, input.deviceId),
-          eq(verifications.protocolNumber, normalizedProtocolNumber)
-        )
-      );
-
-    if (existingVerification) {
-      throw new Error(
-        `Поверка с номером протокола "${input.protocolNumber}" для данного оборудования уже существует`
-      );
+      if (existingVerification) {
+        throw new Error(
+          `Поверка с номером протокола "${input.protocolNumber}" для данного оборудования уже существует`
+        );
+      }
     }
 
     const [verificationRecord] = await tx
@@ -2304,13 +1510,15 @@ export class VerificationPlanningService {
       .values({
         deviceId: input.deviceId,
         batchId: input.batchId ?? null,
-        protocolNumber: input.protocolNumber.trim().toLowerCase(),
+        protocolNumber: input.protocolNumber
+          ? input.protocolNumber.trim().toLowerCase()
+          : null,
         result: input.result.trim().toLowerCase(),
         date: input.date,
         validUntil: input.validUntil ?? null,
         documentUrl: input.documentUrl ?? null,
         metrologyControleTypeId: input.metrologyControleTypeId,
-        verificationOrganizationId: input.verificationOrganizationId,
+        verificationOrganizationId: input.verificationOrganizationId ?? null,
         comment: input.comment ?? null,
         cost:
           input.cost !== undefined && input.cost !== null
@@ -2323,28 +1531,28 @@ export class VerificationPlanningService {
       throw new Error('Не удалось сохранить данные поверки');
     }
 
-    let targetStatusId = deviceExists.statusId;
+    // let targetStatusId = deviceExists.statusId;
 
-    // Оптимизируем поиск статусов: убираем lower(trim) из левой части SQL, так как в БД всё в нижнем регистре
-    if (input.result === 'не годен') {
-      const [rejectedStatus] = await tx
-        .select({ id: statuses.id })
-        .from(statuses)
-        .where(eq(statuses.name, 'забракован'));
-      if (rejectedStatus) targetStatusId = rejectedStatus.id;
-    } else if (input.result === 'годен') {
-      const [activeStatus] = await tx
-        .select({ id: statuses.id })
-        .from(statuses)
-        .where(eq(statuses.name, 'исправен'));
-      if (activeStatus) targetStatusId = activeStatus.id;
-    }
+    // // Оптимизируем поиск статусов: убираем lower(trim) из левой части SQL, так как в БД всё в нижнем регистре
+    // if (input.result === 'не годен') {
+    //   const [rejectedStatus] = await tx
+    //     .select({ id: statuses.id })
+    //     .from(statuses)
+    //     .where(eq(statuses.name, 'забракован'));
+    //   if (rejectedStatus) targetStatusId = rejectedStatus.id;
+    // } else if (input.result === 'годен') {
+    //   const [activeStatus] = await tx
+    //     .select({ id: statuses.id })
+    //     .from(statuses)
+    //     .where(eq(statuses.name, 'исправен'));
+    //   if (activeStatus) targetStatusId = activeStatus.id;
+    // }
 
-    // Обновляем статус прибора
-    await tx
-      .update(devices)
-      .set({ statusId: targetStatusId, updatedAt: now, updatedById: userId })
-      .where(eq(devices.id, input.deviceId));
+    // // Обновляем статус прибора
+    // await tx
+    //   .update(devices)
+    //   .set({ statusId: targetStatusId, updatedAt: now, updatedById: userId })
+    //   .where(eq(devices.id, input.deviceId));
 
     if (this.deviceService) {
       await this.deviceService.updateMetrologyCache(tx, input.deviceId);
@@ -2392,5 +1600,737 @@ export class VerificationPlanningService {
         userId,
       });
     }
+  }
+
+  async createRepairBatch(
+    input: {
+      plannedDate: Date;
+      comment?: string | null | undefined;
+    },
+    currentUser: string
+  ) {
+    const year = input.plannedDate.getFullYear();
+    const startOfYear = new Date(`${year}-01-01T00:00:00.000Z`);
+    const endOfYear = new Date(`${year}-12-31T23:59:59.999Z`);
+
+    // Ищем последний ремонтный батч за этот год для инкремента номера
+    const [lastBatch] = await this.db
+      .select({ number: verificationBatches.number })
+      .from(verificationBatches)
+      .where(
+        and(
+          gte(verificationBatches.plannedDate, startOfYear),
+          lte(verificationBatches.plannedDate, endOfYear),
+          eq(verificationBatches.type, 'repair') // 🌟 Фильтруем строго по ремонту
+        )
+      )
+      .orderBy(desc(verificationBatches.createdAt))
+      .limit(1);
+
+    let nextSequenceNumber = 1;
+
+    if (lastBatch && lastBatch.number) {
+      const match = lastBatch.number.match(/\d+$/);
+      if (match) {
+        const lastSequence = parseInt(match[0], 10);
+        if (!isNaN(lastSequence)) {
+          nextSequenceNumber = lastSequence + 1;
+        }
+      }
+    }
+    const formattedSequence = String(nextSequenceNumber).padStart(3, '0');
+
+    const [newBatch] = await this.db
+      .insert(verificationBatches)
+      .values({
+        number: `Р-${year}/${formattedSequence}`, // 🌟 Префикс «Р» — ремонтная накладная
+        plannedDate: input.plannedDate,
+        verificationOrganizationId: null, // Для ремонта ЦСМ по умолчанию не нужен
+        comment: input.comment ?? null,
+        status: 'draft', // Создается как черновик, куда КИПиА накидывает приборы
+        type: 'repair', // 🌟 ЖЕСТКИЙ МАРКЕР: это ремонтная партия
+        createdById: currentUser,
+      })
+      .returning();
+
+    if (!newBatch) {
+      throw new Error('Не удалось создать ремонтную ведомость');
+    }
+
+    return newBatch;
+  }
+  async addDevicesToRepairBatch(
+    batchId: string,
+    deviceIds: string[],
+    userId: string
+  ): Promise<boolean> {
+    if (deviceIds.length === 0) return true;
+
+    let logsToRecord: any[] = [];
+    let recordedBatchNumber = '';
+    const now = new Date();
+
+    await this.db.transaction(async (tx) => {
+      // 1. Проверяем существование ремонтной партии
+      const [batch] = await tx
+        .select({
+          id: verificationBatches.id,
+          status: verificationBatches.status,
+          number: verificationBatches.number,
+        })
+        .from(verificationBatches)
+        .where(
+          and(
+            eq(verificationBatches.id, batchId),
+            eq(verificationBatches.type, 'repair')
+          )
+        );
+
+      if (!batch) {
+        throw new Error('Указанная ремонтная ведомость не найдена');
+      }
+      if (batch.status !== 'draft') {
+        throw new Error(
+          'Нельзя добавлять приборы в закрытую ремонтную накладную'
+        );
+      }
+
+      recordedBatchNumber = batch.number;
+
+      // 2. Вытаскиваем технические характеристики и текущий статус приборов (одним SELECT)
+      const devicesData = await tx
+        .select({
+          id: devices.id,
+          name: devices.name,
+          model: devices.model,
+          serialNumber: devices.serialNumber,
+          statusId: devices.statusId, // 🌟 Забираем текущий ID статуса (брак/неисправен)
+        })
+        .from(devices)
+        .where(inArray(devices.id, deviceIds));
+
+      logsToRecord = devicesData;
+
+      // Находим системный ID статуса «в ремонте»
+      const [repairStatusRow] = await tx
+        .select({ id: statuses.id })
+        .from(statuses)
+        .where(eq(statuses.name, 'в ремонте'));
+
+      if (!repairStatusRow) {
+        throw new Error(
+          'Системный статус "в ремонте" не найден в справочнике. Обратитесь к администратору.'
+        );
+      }
+
+      // 3. Чистим старые связи-черновики РЕМОНТНЫХ партий (если прибор перекидывают из ведомости в ведомость)
+      const repairDraftBatches = await tx
+        .select({ id: verificationBatches.id })
+        .from(verificationBatches)
+        .where(
+          and(
+            eq(verificationBatches.status, 'draft'),
+            eq(verificationBatches.type, 'repair')
+          )
+        );
+
+      const repairDraftBatchIds = repairDraftBatches.map((b) => b.id);
+
+      if (repairDraftBatchIds.length > 0) {
+        await tx
+          .delete(devicesToBatches)
+          .where(
+            and(
+              inArray(devicesToBatches.deviceId, deviceIds),
+              inArray(devicesToBatches.batchId, repairDraftBatchIds)
+            )
+          );
+      }
+
+      // 4. Массово вставляем связи и сохраняем предысторию поломки прибора
+      const linksToInsert = devicesData.map((dev) => ({
+        batchId: batchId,
+        deviceId: dev.id,
+        deviceStatus: 'in_repair', // 🌟 Статус внутри ремонтной партии
+        previousStatusId: dev.statusId, // 🌟 ЗАПОМИНАЕМ: прибор ушел в ремонт из статуса «забракован» или «неисправен»
+      }));
+
+      await tx.insert(devicesToBatches).values(linksToInsert);
+
+      // 5. Массово переводим приборы в статус «в ремонте»
+      await tx
+        .update(devices)
+        .set({
+          statusId: repairStatusRow.id,
+          updatedAt: now,
+        })
+        .where(inArray(devices.id, deviceIds));
+
+      // 6. Массово пинаем наш обновленный кэш для каждого прибора.
+      // Кэш увидит статус "в ремонте" + блокировку брака, занулит даты и оставит оранжевый чип!
+      if (this.deviceService) {
+        for (const dId of deviceIds) {
+          await this.deviceService.updateMetrologyCache(tx, dId);
+        }
+      }
+    });
+
+    // 7. ЗАПИСЬ В ЖУРНАЛ АУДИТА
+    // if (this.auditLogService && logsToRecord.length > 0) {
+    //   await Promise.all(
+    //     logsToRecord.map((logItem) =>
+    //       this.auditLogService!.logAction({
+    //         deviceId: logItem.id,
+    //         action: 'assign_repair_batch', // Кастомный экшен для ремонтов
+    //         newData: {
+    //           batchId,
+    //           batchNumber: recordedBatchNumber,
+    //           name: logItem.name,
+    //           model: logItem.model,
+    //           serialNumber: logItem.serialNumber,
+    //         },
+    //         userId,
+    //       })
+    //     )
+    //   );
+    // }
+
+    return true;
+  }
+
+  async removeDevicesFromRepairBatch(
+    batchId: string,
+    deviceIds: string[],
+    userId: string
+  ): Promise<boolean> {
+    if (deviceIds.length === 0) return true;
+
+    let logsToRecord: any[] = [];
+    let isBatchDeleted = false;
+    const now = new Date();
+
+    await this.db.transaction(async (tx) => {
+      // 1. Проверяем существование ремонтной партии
+      const [targetBatch] = await tx
+        .select({ status: verificationBatches.status })
+        .from(verificationBatches)
+        .where(
+          and(
+            eq(verificationBatches.id, batchId),
+            eq(verificationBatches.type, 'repair')
+          )
+        )
+        .limit(1);
+
+      if (!targetBatch) {
+        throw new Error('Ремонтная ведомость не найдена в системе.');
+      }
+
+      const devicesData = await tx
+        .select({
+          id: devices.id,
+          name: devices.name,
+          model: devices.model,
+          serialNumber: devices.serialNumber,
+        })
+        .from(devices)
+        .where(inArray(devices.id, deviceIds));
+
+      logsToRecord = devicesData;
+
+      // Получаем дефолтный статус поломки на случай, если снимок стерся
+      const [statusBroken] = await tx
+        .select({ id: statuses.id })
+        .from(statuses)
+        .where(eq(statuses.name, 'неисправен'))
+        .limit(1);
+
+      // 2. ОТКАТ СТАТУСОВ: Возвращаем приборам исходный вид брака, который был до ремонта
+      for (const deviceId of deviceIds) {
+        const [savedLink] = await tx
+          .select({ previousStatusId: devicesToBatches.previousStatusId })
+          .from(devicesToBatches)
+          .where(
+            and(
+              eq(devicesToBatches.batchId, batchId),
+              eq(devicesToBatches.deviceId, deviceId)
+            )
+          )
+          .limit(1);
+
+        // Восстанавливаем статус (например, "забракован"), который был до оранжевого чипа ремонта
+        const targetStatusId = savedLink?.previousStatusId || statusBroken?.id;
+
+        if (targetStatusId) {
+          await tx
+            .update(devices)
+            .set({ statusId: targetStatusId, updatedAt: now })
+            .where(eq(devices.id, deviceId));
+        }
+
+        // Пересчитываем кэш, чтобы вернуть даты в исходное состояние
+      }
+
+      // 3. Удаляем связь с ремонтной партией
+      await tx
+        .delete(devicesToBatches)
+        .where(
+          and(
+            eq(devicesToBatches.batchId, batchId),
+            inArray(devicesToBatches.deviceId, deviceIds)
+          )
+        );
+
+      // 4. ПРОВЕРКА НА ПУСТОТУ: Если накладная опустела — уничтожаем её
+      const [remaining] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(devicesToBatches)
+        .where(eq(devicesToBatches.batchId, batchId));
+
+      if (!remaining || remaining.count === 0) {
+        await tx
+          .delete(verificationBatches)
+          .where(eq(verificationBatches.id, batchId));
+
+        isBatchDeleted = true;
+      }
+    });
+
+    if (this.deviceService) {
+      for (const deviceId of deviceIds) {
+        // Вызываем метод кэширования, передавая стандартный db инстанс
+        await this.deviceService.updateMetrologyCache(this.db, deviceId);
+      }
+    }
+
+    // 5. ЗАПИСЬ В ЖУРНАЛ АУДИТА (Вне транзакции)
+    // if (this.auditLogService && logsToRecord.length > 0) {
+    //   await Promise.all(
+    //     logsToRecord.map((logItem) =>
+    //       this.auditLogService!.logAction({
+    //         deviceId: logItem.id,
+    //         action: 'remove_repair_batch',
+    //         oldData: {
+    //           batchId,
+    //           isBatchDeleted,
+    //           name: logItem.name,
+    //           model: logItem.model,
+    //           serialNumber: logItem.serialNumber,
+    //         },
+    //         userId,
+    //       })
+    //     )
+    //   );
+    // }
+
+    return true;
+  }
+
+  async updateRepairBatchStatus(
+    id: string,
+    status: 'draft' | 'sent' | 'completed'
+  ) {
+    const now = new Date();
+
+    return await this.db.transaction(async (tx) => {
+      // Проверяем существование именно ремонтного батча
+      const [currentBatch] = await tx
+        .select()
+        .from(verificationBatches)
+        .where(
+          and(
+            eq(verificationBatches.id, id),
+            eq(verificationBatches.type, 'repair')
+          )
+        )
+        .limit(1);
+
+      if (!currentBatch) {
+        throw new Error(
+          'Ремонтная ведомость для обновления статуса не найдена'
+        );
+      }
+
+      // Обновляем статус ведомости
+      const [updatedBatch] = await tx
+        .update(verificationBatches)
+        .set({
+          status,
+          updatedAt: now,
+        })
+        .where(eq(verificationBatches.id, id))
+        .returning();
+
+      // Для ремонтов при смене статуса накладной на 'sent' приборы уже находятся в мастерской (в ремонте),
+      // поэтому тяжелых вложенных циклов обновлений статусов СИ здесь не требуется.
+      return updatedBatch;
+    });
+  }
+
+  async getRepairDevices(args: {
+    limit: number;
+    offset: number;
+    filter?: any;
+  }) {
+    const { limit = 25, offset = 0, filter } = args;
+    const conditions = [];
+
+    // 1. Ищем ID проблемных статусов в базе данных
+    const repairStatuses = await this.db
+      .select({ id: statuses.id })
+      .from(statuses)
+      .where(
+        inArray(sql`lower(trim(${statuses.name}))`, [
+          'неисправен',
+          'забракован',
+          'в ремонте',
+        ])
+      );
+
+    const repairStatusIds = repairStatuses.map((s: any) => s.id);
+
+    // Если в базе вообще нет таких статусов (справочник пуст), возвращаем пустой массив
+    if (repairStatusIds.length === 0) {
+      return { items: [], totalCount: 0 };
+    }
+
+    // 2. ЖЕСТКОЕ УСЛОВИЕ: вытаскиваем только приборы с дефектами или в ремонте
+    conditions.push(inArray(devices.statusId, repairStatusIds));
+
+    // Текстовые фильтры из строки поиска Журнала ремонта
+    if (filter?.deviceName) {
+      conditions.push(ilike(devices.name, `%${filter.deviceName}%`));
+    }
+    if (filter?.serialNumber) {
+      conditions.push(ilike(devices.serialNumber, `%${filter.serialNumber}%`));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // 3. Подсчет общего количества дефектных приборов для пагинации на клиенте
+    const [countResult] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(devices)
+      .where(whereClause);
+
+    // 4. Запрос плоского списка приборов с джоинами локаций
+    const items = await this.db.query.devices.findMany({
+      where: whereClause,
+      limit,
+      offset,
+      orderBy: (d: any, { desc }: any) => [desc(d.updatedAt)],
+      columns: {
+        id: true,
+        name: true,
+        model: true,
+        grsiNumber: true,
+        serialNumber: true,
+        inventoryNumber: true,
+        cachedControl: true,
+        nextVerificationDate: true,
+        nextInspectionDate: true,
+      },
+      with: {
+        status: { columns: { name: true } },
+        verifications: {
+          where: (v: any, { eq }: any) => eq(v.result, 'не годен'),
+          orderBy: (v: any, { desc }: any) => [desc(v.date)],
+          limit: 1, // Берем строго самый свежий документ поломки
+        },
+        devicesToBatches: {
+          with: {
+            batch: {
+              columns: {
+                id: true,
+                status: true,
+                type: true,
+              },
+            },
+          },
+        },
+
+        productionSite: {
+          columns: { name: true },
+          with: {
+            city: { columns: { name: true } },
+            company: { columns: { name: true } },
+          },
+        },
+      },
+    });
+
+    // Формируем структуру ответа, которая строго соответствует нашей GraphQL-схеме PlanningPoolResponse
+    return {
+      items: items.map((d: any) => {
+        // 1. Ищем живую связь прибора с активным ремонтом в БД
+        const activeRepairLink = d.devicesToBatches?.find(
+          (rel: any) =>
+            rel.batch?.type === 'repair' &&
+            (rel.batch?.status === 'draft' || rel.batch?.status === 'sent')
+        );
+
+        //  2. АКТИВИРУЕМ: Извлекаем фактический текстовый статус прибора из БД
+        const currentStatusName = d.status?.name?.trim().toLowerCase() || '';
+
+        // 3. СВЕРХНАДЁЖНЫЙ ФЛАГ ЗАНЯТОСТИ:
+        // Прибор считается заблокированным ТОЛЬКО если у него есть активный линк
+        // И при этом его глобальный статус в системе равен "в ремонте"!
+        const isAssigned =
+          !!activeRepairLink && currentStatusName === 'в ремонте';
+
+        const lastBadVerification = d.verifications?.[0];
+        const actualDefectDate = lastBadVerification?.date
+          ? new Date(lastBadVerification.date).toISOString()
+          : d.createdAt
+          ? new Date(d.createdAt).toISOString()
+          : new Date().toISOString();
+
+        return {
+          id: d.id,
+          name: d.name,
+          model: d.model,
+          serialNumber: d.serialNumber,
+          validUntil: actualDefectDate,
+          lastControlDate: lastBadVerification?.date
+            ? new Date(lastBadVerification.date).toISOString().slice(0, 10)
+            : null,
+          suggestedMonth: '0000-00',
+
+          // Теперь, если статус сбросился в "неисправен", targetBatchId жестко станет null, и чекбокс оживет!
+          targetBatchId: isAssigned ? activeRepairLink.batchId : null,
+          isManualPlacement: isAssigned,
+
+          controlType: d.cachedControl || 'контроль',
+          isOverdue: false,
+          scheduleStatus: 'active',
+        };
+      }),
+      totalCount: countResult?.count ?? 0,
+    };
+  }
+
+  async bulkScrapDevices(
+    deviceIds: string[],
+    userId: string
+  ): Promise<boolean> {
+    if (deviceIds.length === 0) return true;
+    const now = new Date();
+
+    await this.db.transaction(async (tx) => {
+      // 1. Ищем ID статуса "списан" в БД (устойчиво к любому регистру: Списан / списан)
+      const [statusScrapped] = await tx
+        .select({ id: statuses.id })
+        .from(statuses)
+        .where(sql`lower(trim(${statuses.name})) = 'списан'`)
+        .limit(1);
+
+      if (!statusScrapped) {
+        throw new Error(
+          'Системный статус "списан" не найден в справочнике statuses.'
+        );
+      }
+
+      // 2. МАССОВОЕ ОБНОВЛЕНИЕ: Переводим приборы в статус "списан"
+      await tx
+        .update(devices)
+        .set({
+          statusId: statusScrapped.id,
+          updatedAt: now,
+          updatedById: userId,
+        })
+        .where(inArray(devices.id, deviceIds));
+
+      // 3. КАКАДНОЕ ОЧИЩЕНИЕ: Извлекаем приборы из всех активных черновиков (поверок, осмотров, ремонтов)
+      // Чтобы они не висели мертвым грузом в открытых накладных
+      await tx.delete(devicesToBatches).where(
+        and(
+          inArray(devicesToBatches.deviceId, deviceIds),
+          inArray(
+            devicesToBatches.batchId,
+            tx
+              .select({ id: verificationBatches.id })
+              .from(verificationBatches)
+              .where(inArray(verificationBatches.status, ['draft', 'sent']))
+          )
+        )
+      );
+    });
+
+    // 4. ПЕРЕСЧЕТ КЭША: Зануляем плановые даты МПИ/ТО, так как приборы списаны
+    if (this.deviceService) {
+      for (const deviceId of deviceIds) {
+        // Вызываем метод кэширования, передавая стандартный db инстанс
+        await this.deviceService.updateMetrologyCache(this.db, deviceId);
+      }
+    }
+
+    return true;
+  }
+
+  async getDeviceRepairHistory(deviceId: string) {
+    // 1. Извлекаем все ремонтные ведомости прибора
+    const repairLinks = await this.db.query.devicesToBatches.findMany({
+      where: (dtb: any, { eq }: any) => eq(dtb.deviceId, deviceId),
+      with: {
+        batch: {
+          with: {
+            createdBy: { columns: { firstName: true, lastName: true } },
+          },
+        },
+      },
+      orderBy: (dtb: any, { desc }: any) => [desc(dtb.createdAt)],
+    });
+
+    // 🌟 ФИКС: Безопасно фильтруем строго ремонтный контур силами JavaScript
+    const cleanRepairs = repairLinks.filter(
+      (link: any) => link.batch && link.batch.type === 'repair'
+    );
+
+    if (cleanRepairs.length === 0) return [];
+
+    // 2. Вытягиваем документы контроля, привязанные к этим ремонтным партиям
+    const batchIds = cleanRepairs.map((link: any) => link.batchId);
+    const linkedDocs = await this.db.query.verifications.findMany({
+      where: (v: any, { and, eq, inArray }: any) =>
+        and(eq(v.deviceId, deviceId), inArray(v.batchId, batchIds)),
+      with: { metrologyControleType: { columns: { name: true } } },
+    });
+
+    const docsMap = new Map(linkedDocs.map((doc: any) => [doc.batchId, doc]));
+
+    // // 3. Формируем чистый таймлайн ремонта для фронтенда
+    // return cleanRepairs.map((link: any) => {
+    //   const closingDoc = docsMap.get(link.batchId) as any;
+    //   const docResultClean = closingDoc?.result?.trim().toLowerCase() || '';
+
+    //   return {
+    //     batchId: link.batchId,
+    //     batchNumber: link.batch.number,
+    //     dateIn: new Date(link.createdAt).toLocaleDateString('ru-RU'), // Дата поломки/приемки
+    //     dateOut: closingDoc?.date
+    //       ? new Date(closingDoc.date).toLocaleDateString('ru-RU')
+    //       : 'В процессе',
+    //     master: link.batch.createdBy
+    //       ? `${
+    //           link.batch.createdBy.lastName
+    //         } ${link.batch.createdBy.firstName.slice(0, 1)}.`
+    //       : '—',
+    //     result: closingDoc
+    //       ? docResultClean === 'годен'
+    //         ? 'Исправен 🟢'
+    //         : 'Брак 🔴'
+    //       : 'В ремонте 🛠️',
+    //     closingDocType: closingDoc?.metrologyControleType?.name || '—',
+    //     comment: closingDoc?.comment || 'без примечаний',
+    //   };
+
+    const [dbDevice] = await this.db
+      .select({
+        statusName: statuses.name,
+      })
+      .from(devices)
+      .leftJoin(statuses, eq(devices.statusId, statuses.id))
+      .where(eq(devices.id, deviceId))
+      .limit(1);
+
+    // 3. 🌟 УМНЫЙ МАППИНГ: Учитываем статус списания для незакрытых ведомостей
+    // Сначала достаем текущий текстовый статус самого прибора из объекта items, полученного на Шаге 1
+    // (Подразумевается, что связь status.name у вас подтянута в d.status?.name)
+    const currentDeviceStatus = dbDevice?.statusName
+      ? dbDevice.statusName.trim().toLowerCase()
+      : '';
+    const isDeviceScrapped = currentDeviceStatus === 'списан';
+
+    // return cleanRepairs.map((link: any) => {
+    //   const closingDoc = docsMap.get(link.batchId) as any;
+    //   const docResultClean = closingDoc?.result?.trim().toLowerCase() || '';
+
+    //   let finalResult = 'В ремонте 🛠️';
+    //   let finalDateOut = 'В процессе';
+    //   let docTypeLabel = closingDoc?.metrologyControleType?.name || '—';
+    //   let finalComment = closingDoc?.comment || 'Без примечаний';
+
+    //   // 🌟 ИСТОРИЧЕСКИ ТОЧНЫЙ АЛГОРИТМ РАСПРЕДЕЛЕНИЯ СТАТУСОВ:
+    //   if (closingDoc) {
+    //     // КЕЙС 1: Ремонт ИЗ ПРОШЛОГО (или текущий) успешно закрыт документом.
+    //     // Выводим чистую историю: Исправен или Брак. Текущий статус Списан сюда НЕ имеет права лезть!
+    //     finalResult = docResultClean === 'годен' ? 'Исправен 🟢' : 'Брак 🔴';
+    //     finalDateOut = new Date(closingDoc.date).toLocaleDateString('ru-RU');
+    //   } else if (isDeviceScrapped) {
+    //     // КЕЙС 2: 🌟 Документа нет, НО прибор сейчас списан!
+    //     // Это значит, что данный конкретный (самый последний) ремонт прервался утилизацией СИ.
+    //     finalResult = 'Списан ❌';
+    //     finalDateOut = new Date().toLocaleDateString('ru-RU'); // День списания
+    //     docTypeLabel = 'Акт списания';
+    //     finalComment =
+    //       'Прибор признан неремонтопригодным и выведен из эксплуатации';
+    //   }
+
+    //   return {
+    //     batchId: link.batchId,
+    //     batchNumber: link.batch.number,
+    //     dateIn: new Date(link.createdAt).toLocaleDateString('ru-RU'),
+    //     dateOut: finalDateOut,
+    //     master: link.batch.createdBy
+    //       ? `${
+    //           link.batch.createdBy.lastName
+    //         } ${link.batch.createdBy.firstName.slice(0, 1)}.`
+    //       : '—',
+    //     result: finalResult,
+    //     closingDocType: docTypeLabel,
+    //     comment: finalComment,
+    //   };
+    return cleanRepairs.map((link: any) => {
+      const closingDoc = docsMap.get(link.batchId) as any;
+      const docResultClean = closingDoc?.result?.trim().toLowerCase() || '';
+
+      // 🌟 НАХОДИМ ТЕКУЩИЙ СТАТУС САМОЙ ВЕДОМОСТИ В БД ('draft' | 'sent' | 'completed')
+      const batchStatus = link.batch?.status?.trim().toLowerCase() || '';
+
+      let finalResult = 'В ремонте 🛠️';
+      let finalDateOut = 'В процессе';
+      let docTypeLabel = closingDoc?.metrologyControleType?.name || '—';
+      let finalComment = closingDoc?.comment || 'Без примечаний';
+
+      if (closingDoc) {
+        // Кейс 1: Ремонт успешно закрыт официальным документом контроля
+        finalResult = docResultClean === 'годен' ? 'Исправен 🟢' : 'Брак 🔴';
+        finalDateOut = new Date(closingDoc.date).toLocaleDateString('ru-RU');
+      } else if (
+        isDeviceScrapped &&
+        (batchStatus === 'draft' || batchStatus === 'sent')
+      ) {
+        // Кейс 2: 🌟 Списан может быть ТОЛЬКО активный ремонт, который шел прямо сейчас!
+        finalResult = 'Списан ❌';
+        finalDateOut = new Date().toLocaleDateString('ru-RU');
+        docTypeLabel = 'Акт списания';
+        finalComment = 'Прибор выведен из эксплуатации в процессе ремонта';
+      } else if (batchStatus === 'completed') {
+        // Кейс 3: 🌟 Ведомость закрыта в АРХИВ, но документ удален вручную.
+        // Раз ведомость закрыта, но прибор не вышел исправным — значит, исторически это был БРАК!
+        finalResult = 'Брак 🔴';
+        finalDateOut = link.batch?.updatedAt
+          ? new Date(link.batch.updatedAt).toLocaleDateString('ru-RU')
+          : new Date().toLocaleDateString('ru-RU');
+        docTypeLabel = 'Акт отбраковки';
+        finalComment =
+          'Документ контроля удален пользователем. Прибор зафиксирован в архиве как неисправный.';
+      }
+
+      return {
+        batchId: link.batchId,
+        batchNumber: link.batch.number,
+        dateIn: new Date(link.createdAt).toLocaleDateString('ru-RU'),
+        dateOut: finalDateOut,
+        master: link.batch.createdBy
+          ? `${
+              link.batch.createdBy.lastName
+            } ${link.batch.createdBy.firstName.slice(0, 1)}.`
+          : '—',
+        result: finalResult,
+        closingDocType: docTypeLabel,
+        comment: finalComment,
+      };
+    });
   }
 }

@@ -95,6 +95,70 @@ export const Query = {
     const planningService = new VerificationPlanningService(db);
     return await planningService.getDraftBatchesByMonth(plannedMonth);
   },
+
+  getRepairPlanningPool: async (
+    _: unknown,
+    { limit, offset }: { limit?: number; offset?: number },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: нужны права администратора/мастера КИПиА'
+      );
+    }
+
+    // 🌟 Создаем экземпляр сервиса приборов и вызываем созданный нами метод
+    const planningService = new VerificationPlanningService(db);
+    return await planningService.getRepairDevices({
+      limit: limit ?? 20,
+      offset: offset ?? 0,
+    });
+  },
+
+  // 2. Получить список всех ремонтных ведомостей (Вторая вкладка Журнала ремонта)
+  getRepairBatches: async (
+    _: unknown,
+    { year, status }: { year?: number; status?: string },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    const planningService = new VerificationPlanningService(db);
+
+    return await planningService.getVerificationBatches(year, status, 'repair');
+  },
+
+  // 3. Получить черновики ремонтных накладных для выпадающего списка
+  getRepairDraftBatches: async (
+    _: unknown,
+    __unknown: unknown,
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    // Извлекаем черновики партий с явной фильтрацией по типу 'repair'
+    const planningService = new VerificationPlanningService(db);
+    return await planningService.getDraftBatchesByMonth(undefined, 'repair');
+  },
+
+  getDeviceRepairHistory: async (
+    _: unknown,
+    { deviceId }: { deviceId: string },
+    { db, currentUser }: Context
+  ) => {
+    // Доступно всем авторизованным сотрудникам холдинга для просмотра
+    if (!currentUser) throw new Error('Не авторизован');
+
+    const planningService = new VerificationPlanningService(db);
+    return await planningService.getDeviceRepairHistory(deviceId);
+  },
 };
 
 export const Mutation = {
@@ -266,5 +330,146 @@ export const Mutation = {
       }
       throw err;
     }
+  },
+
+  // 1. Создать новую ремонтную ведомость по маске Р-ГОД/НОМЕР
+  createRepairBatch: async (
+    _: unknown,
+    { input }: { input: any },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    try {
+      const validatedInput = CreateVerificationBatchSchema.parse(input);
+      const planningService = new VerificationPlanningService(db);
+
+      return await planningService.createRepairBatch(
+        validatedInput,
+        currentUser.id
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new Error(JSON.stringify(formatZodErrors(err)));
+      }
+      throw err;
+    }
+  },
+
+  // 2. Направить выбранное оборудование в ремонт (Включаем оранжевый чип 🛠️)
+  addDevicesToRepairBatch: async (
+    _: unknown,
+    { batchId, deviceIds }: { batchId: string; deviceIds: string[] },
+    { db, currentUser }: Context
+  ): Promise<boolean> => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    const auditLogService = new DeviceAuditLogService(db);
+    const deviceService = new DeviceService(db); // Кэш-сервис
+
+    const planningService = new VerificationPlanningService(
+      db,
+      auditLogService,
+      deviceService
+    );
+    return await planningService.addDevicesToRepairBatch(
+      batchId,
+      deviceIds,
+      currentUser.id
+    );
+  },
+
+  // 3. Исключить оборудование из ремонта (С бережным восстановлением исходного брака)
+  removeDevicesFromRepairBatch: async (
+    _: unknown,
+    { batchId, deviceIds }: { batchId: string; deviceIds: string[] },
+    { db, currentUser }: Context
+  ): Promise<boolean> => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    const auditLogService = new DeviceAuditLogService(db);
+    const deviceService = new DeviceService(db);
+
+    const planningService = new VerificationPlanningService(
+      db,
+      auditLogService,
+      deviceService
+    );
+    return await planningService.removeDevicesFromRepairBatch(
+      batchId,
+      deviceIds,
+      currentUser.id
+    );
+  },
+
+  // 4. Переключить статус самой ремонтной ведомости ('draft' -> 'sent' -> 'completed')
+  updateRepairBatchStatus: async (
+    _: unknown,
+    { id, status }: { id: string; status: 'draft' | 'sent' | 'completed' },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    const validStatuses = ['draft', 'sent', 'completed'];
+    if (!validStatuses.includes(status)) {
+      throw new Error('Невалидный статус ремонтной ведомости');
+    }
+
+    const planningService = new VerificationPlanningService(db);
+    return await planningService.updateRepairBatchStatus(id, status);
+  },
+
+  // 5. Полностью удалить ремонтный черновик
+  deleteRepairBatch: async (
+    _: unknown,
+    { id }: { id: string },
+    { db, currentUser }: Context
+  ): Promise<boolean> => {
+    if (!currentUser) throw new Error('Не авторизован');
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    const planningService = new VerificationPlanningService(db);
+    return await planningService.deleteBatch(id); // Вызовет наш безопасный deleteBatch с откатом
+  },
+
+  bulkScrapDevices: async (
+    _: unknown,
+    { deviceIds }: { deviceIds: string[] },
+    { db, currentUser }: Context
+  ): Promise<boolean> => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    // Списание — строгая административная процедура
+    if (currentUser.role === 'user') {
+      throw new Error(
+        'Доступ запрещен: требуются права администратора/метролога'
+      );
+    }
+
+    if (!deviceIds || deviceIds.length === 0) return true;
+
+    const deviceService = new DeviceService(db);
+    const planningService = new VerificationPlanningService(
+      db,
+      undefined,
+      deviceService
+    );
+
+    // Вызываем созданный нами метод массового списания
+    return await planningService.bulkScrapDevices(deviceIds, currentUser.id);
   },
 };

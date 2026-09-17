@@ -1955,9 +1955,11 @@ export class DeviceService {
         isVoluntaryCalibration: devices.isVoluntaryCalibration,
         eqName: equipmentTypes.name,
         scopeName: scopes.name,
+        statusName: statuses.name,
       })
       .from(devices)
       .leftJoin(equipmentTypes, eq(devices.equipmentTypeId, equipmentTypes.id))
+      .leftJoin(statuses, eq(devices.statusId, statuses.id))
       .leftJoin(scopesToDevices, eq(scopesToDevices.deviceId, devices.id))
       .leftJoin(scopes, eq(scopesToDevices.scopeId, scopes.id))
       .where(eq(devices.id, deviceId));
@@ -1965,6 +1967,20 @@ export class DeviceService {
     if (!rows || rows.length === 0) return;
 
     const firstRow = rows[0];
+
+    if (firstRow.statusName === 'списан') {
+      await db
+        .update(devices)
+        .set({
+          nextVerificationDate: null,
+          nextInspectionDate: null,
+          // updatedAt: now,
+          // updatedById: userId
+        })
+        .where(eq(devices.id, deviceId));
+
+      return; // ВЫХОДИМ ИЗ МЕТОДА, дальнейшие проверки на "годен/не годен" игнорируются!
+    }
     const eqTypeName = firstRow.eqName
       ? firstRow.eqName.toLowerCase().trim()
       : '';
@@ -2036,7 +2052,12 @@ export class DeviceService {
     //   .limit(1);
 
     const [latestVerificationDoc] = await db
-      .select({ validUntil: verifications.validUntil })
+      .select({
+        date: verifications.date, // 🌟 Добавлено для сортировки по актуальности
+        validUntil: verifications.validUntil,
+        result: verifications.result, // 🌟 Добавлено для оценки годности
+        controlTypeName: metrologyControleTypes.name, // 🌟 Тянем тип прямо из БД
+      })
       .from(verifications)
       .leftJoin(
         metrologyControleTypes,
@@ -2051,9 +2072,14 @@ export class DeviceService {
       .orderBy(sql`${verifications.date} DESC NULLS LAST`)
       .limit(1);
 
-    // Б) Ищем последний документ ИМЕННО ОСМОТРА
+    // Б) Ищем самый свежий документ ИМЕННО ОСМОТРА
     const [latestInspectionDoc] = await db
-      .select({ validUntil: verifications.validUntil })
+      .select({
+        date: verifications.date,
+        validUntil: verifications.validUntil,
+        result: verifications.result,
+        controlTypeName: metrologyControleTypes.name,
+      })
       .from(verifications)
       .leftJoin(
         metrologyControleTypes,
@@ -2068,11 +2094,16 @@ export class DeviceService {
       .orderBy(sql`${verifications.date} DESC NULLS LAST`)
       .limit(1);
 
-    // В) Ищем документ Аттестации (только если это ИО, для полноты логики)
+    // В) Ищем самый свежий документ ИМЕННО АТТЕСТАЦИИ (для ИО)
     let latestAttestationDoc = null;
     if (eqTypeName === 'испытательное оборудование (ио)') {
       [latestAttestationDoc] = await db
-        .select({ validUntil: verifications.validUntil })
+        .select({
+          date: verifications.date,
+          validUntil: verifications.validUntil,
+          result: verifications.result,
+          controlTypeName: metrologyControleTypes.name,
+        })
         .from(verifications)
         .leftJoin(
           metrologyControleTypes,
@@ -2088,8 +2119,14 @@ export class DeviceService {
         .limit(1);
     }
 
+    // Г) Ищем самый свежий документ ИМЕННО КАЛИБРОВКИ
     const [latestCalibrationDoc] = await db
-      .select({ validUntil: verifications.validUntil })
+      .select({
+        date: verifications.date,
+        validUntil: verifications.validUntil,
+        result: verifications.result,
+        controlTypeName: metrologyControleTypes.name,
+      })
       .from(verifications)
       .leftJoin(
         metrologyControleTypes,
@@ -2104,79 +2141,360 @@ export class DeviceService {
       .orderBy(sql`${verifications.date} DESC NULLS LAST`)
       .limit(1);
 
+    const allHistoricalDocs = [
+      latestVerificationDoc,
+      latestCalibrationDoc,
+      latestInspectionDoc,
+      latestAttestationDoc,
+    ].filter((d): d is NonNullable<typeof d> => d !== null && d !== undefined);
+
+    // Сортируем: самый свежий по дате проведения документ будет ПЕРВЫМ
+    allHistoricalDocs.sort((a, b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    const absoluteLatestDoc = allHistoricalDocs[0] || null; // Абсолютно последнее событие
+    // Проверяем: сломан ли прибор ПРЯМО СЕЙЧАС (на основе САМОГО ПОСЛЕДНЕГО документа)
+    const resultText = absoluteLatestDoc?.result
+      ? absoluteLatestDoc.result.trim().toLowerCase()
+      : '';
+    const isCurrentlyBroken =
+      resultText === 'не годен' ||
+      resultText === 'неисправен' ||
+      resultText === 'брак';
+
+    // Определяем целевой документ для расчета плановых дат контроля
+    let mainDocForVerificationField =
+      eqTypeName === 'испытательное оборудование (ио)'
+        ? latestAttestationDoc
+        : targetControlName === 'калибровка'
+        ? latestCalibrationDoc
+        : latestVerificationDoc;
+
+    const isMainDocBroken =
+      mainDocForVerificationField?.result === 'не годен' ||
+      mainDocForVerificationField?.result === 'неисправен' ||
+      mainDocForVerificationField?.result === 'брак';
+
+    const isMainControlBlocked = isMainDocBroken;
+
     // 4. ИНТЕГРАЦИЯ ВАШЕГО МЕТОДА РАСЧЕТА СЛЕДУЮЩЕЙ ДАТЫ
     let nextVerificationDateStr: string | null = null;
 
-    // Определяем, какой документ является основным для этого поля
-    let mainDocForVerificationField = null;
+    // // Определяем, какой документ является основным для этого поля
+    // let mainDocForVerificationField = null;
 
-    if (eqTypeName === 'испытательное оборудование (ио)') {
-      mainDocForVerificationField = latestAttestationDoc;
-    } else if (targetControlName === 'калибровка') {
-      mainDocForVerificationField = latestCalibrationDoc; // Если кэш «калибровка» — приоритет у калибровочных документов
+    // if (eqTypeName === 'испытательное оборудование (ио)') {
+    //   mainDocForVerificationField = latestAttestationDoc;
+    // } else if (targetControlName === 'калибровка') {
+    //   mainDocForVerificationField = latestCalibrationDoc; // Если кэш «калибровка» — приоритет у калибровочных документов
+    // } else {
+    //   mainDocForVerificationField = latestVerificationDoc; // По умолчанию ищем поверку
+    // }
+
+    // const isMainDocRejected =
+    //   mainDocForVerificationField?.result === 'не годен' ||
+    //   mainDocForVerificationField?.result === 'неисправен' ||
+    //   mainDocForVerificationField?.result === 'брак';
+
+    // if (isMainDocRejected) {
+    //   // Если последний документ бракованный — дата СЛЕДУЮЩЕГО контроля ПРИНУДИТЕЛЬНО обнуляется!
+    //   nextVerificationDateStr = null;
+    // } else if (mainDocForVerificationField?.validUntil) {
+    //   // Если документ успешный и у него есть срок действия — берем его
+    //   nextVerificationDateStr = new Date(mainDocForVerificationField.validUntil)
+    //     .toISOString()
+    //     .slice(0, 10);
+    // } else if (
+    //   targetControlName === 'поверка' ||
+    //   targetControlName === 'аттестация' ||
+    //   targetControlName === 'калибровка'
+    // ) {
+    //   // Если документов вообще нет — считаем дефолт по МПИ (наша стандартная логика)
+    //   const baseDate = firstRow.receiptDate || firstRow.releaseDate;
+    //   if (baseDate && firstRow.verificationInterval) {
+    //     const nextDate = new Date(baseDate);
+    //     nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
+    //     nextVerificationDateStr = nextDate.toISOString().slice(0, 10);
+    //   } else {
+    //     const today = new Date();
+    //     nextVerificationDateStr = `${today.getFullYear()}-${String(
+    //       today.getMonth() + 1
+    //     ).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    //   }
+    // } else {
+    //   nextVerificationDateStr = null;
+    // }
+
+    // let nextInspectionDateStr: string | null = null;
+    // const isIndicatorOrVo =
+    //   eqTypeName === 'индикатор' ||
+    //   eqTypeName === 'вспомогательное оборудование (во)';
+
+    // const isInspectionDocRejected =
+    //   latestInspectionDoc?.result === 'не годен' ||
+    //   latestInspectionDoc?.result === 'неисправен';
+
+    // if (isInspectionDocRejected) {
+    //   // Если внутреннее ТО выявило критический дефект — плановый осмотр сбрасываем, прибор ждет ремонта
+    //   nextInspectionDateStr = null;
+    // } else if (latestInspectionDoc?.validUntil) {
+    //   nextInspectionDateStr = new Date(latestInspectionDoc.validUntil)
+    //     .toISOString()
+    //     .slice(0, 10);
+    // } else if (targetControlName === 'осмотр' || isIndicatorOrVo) {
+    //   const baseDate = firstRow.receiptDate || firstRow.releaseDate;
+    //   if (baseDate && firstRow.verificationInterval) {
+    //     const nextDate = new Date(baseDate);
+    //     nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
+    //     nextInspectionDateStr = nextDate.toISOString().slice(0, 10);
+    //   } else {
+    //     const today = new Date();
+    //     nextInspectionDateStr = `${today.getFullYear()}-${String(
+    //       today.getMonth() + 1
+    //     ).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    //   }
+    // } else {
+    //   nextInspectionDateStr = null;
+    // }
+
+    if (isCurrentlyBroken || isMainControlBlocked) {
+      nextVerificationDateStr = null; // Прибор сломан — дедлайн сгорает
     } else {
-      mainDocForVerificationField = latestVerificationDoc; // По умолчанию ищем поверку
-    }
+      // let mainDocForVerificationField =
+      //   eqTypeName === 'испытательное оборудование (ио)'
+      //     ? latestAttestationDoc
+      //     : targetControlName === 'калибровка'
+      //     ? latestCalibrationDoc
+      //     : latestVerificationDoc;
 
-    if (mainDocForVerificationField?.validUntil) {
-      nextVerificationDateStr = new Date(mainDocForVerificationField.validUntil)
-        .toISOString()
-        .slice(0, 10);
-    } else if (
-      targetControlName === 'поверка' ||
-      targetControlName === 'аттестация' ||
-      targetControlName === 'калибровка'
-    ) {
-      const baseDate = firstRow.receiptDate || firstRow.releaseDate;
-      if (baseDate && firstRow.verificationInterval) {
-        const nextDate = new Date(baseDate);
-        nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
-        nextVerificationDateStr = nextDate.toISOString().slice(0, 10);
-      } else {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        nextVerificationDateStr = `${year}-${month}-${day}`;
+      if (mainDocForVerificationField?.validUntil) {
+        nextVerificationDateStr = new Date(
+          mainDocForVerificationField.validUntil
+        )
+          .toISOString()
+          .slice(0, 10);
+      } else if (
+        targetControlName === 'поверка' ||
+        targetControlName === 'аттестация' ||
+        targetControlName === 'калибровка'
+      ) {
+        const baseDate = firstRow.receiptDate || firstRow.releaseDate;
+        if (baseDate && firstRow.verificationInterval) {
+          const nextDate = new Date(baseDate);
+          nextDate.setMonth(
+            nextDate.getMonth() + firstRow.verificationInterval
+          );
+          nextVerificationDateStr = nextDate.toISOString().slice(0, 10);
+        } else {
+          const today = new Date();
+          nextVerificationDateStr = `${today.getFullYear()}-${String(
+            today.getMonth() + 1
+          ).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        }
       }
-    } else {
-      nextVerificationDateStr = null;
     }
 
+    // -------------------------------------------------------------------------
+    // РАСЧЕТ: Дата следующего осмотра
+    // -------------------------------------------------------------------------
     let nextInspectionDateStr: string | null = null;
     const isIndicatorOrVo =
       eqTypeName === 'индикатор' ||
       eqTypeName === 'вспомогательное оборудование (во)';
 
-    if (latestInspectionDoc?.validUntil) {
-      nextInspectionDateStr = new Date(latestInspectionDoc.validUntil)
-        .toISOString()
-        .slice(0, 10);
-    } else if (targetControlName === 'осмотр' || isIndicatorOrVo) {
-      // 🔥 Считаем дефолтную дату ТОЛЬКО для Индикаторов и ВО!
-      const baseDate = firstRow.receiptDate || firstRow.releaseDate;
-      if (baseDate && firstRow.verificationInterval) {
-        const nextDate = new Date(baseDate);
-        nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
-        nextInspectionDateStr = nextDate.toISOString().slice(0, 10);
-      } else {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        nextInspectionDateStr = `${year}-${month}-${day}`;
-      }
+    if (isCurrentlyBroken) {
+      nextInspectionDateStr = null; // Прибор сломан — осмотр тоже сгорает
     } else {
-      // Для СИ, СК и ИО, которые еще ни разу не осматривались,
-      // оставляем null, чтобы они не лезли в календарь осмотров раньше времени.
-      nextInspectionDateStr = null;
+      if (latestInspectionDoc?.validUntil) {
+        nextInspectionDateStr = new Date(latestInspectionDoc.validUntil)
+          .toISOString()
+          .slice(0, 10);
+      } else if (targetControlName === 'осмотр' || isIndicatorOrVo) {
+        const baseDate = firstRow.receiptDate || firstRow.releaseDate;
+        if (baseDate && firstRow.verificationInterval) {
+          const nextDate = new Date(baseDate);
+          nextDate.setMonth(
+            nextDate.getMonth() + firstRow.verificationInterval
+          );
+          nextInspectionDateStr = nextDate.toISOString().slice(0, 10);
+        } else {
+          nextInspectionDateStr = new Date().toISOString().slice(0, 10);
+        }
+      }
     }
+
+    let finalStatusId = firstRow.statusId;
+
+    // // Собираем все найденные на Шаге 3 исторические документы
+    // const allDocs = [
+    //   latestVerificationDoc,
+    //   latestCalibrationDoc,
+    //   latestInspectionDoc,
+    //   latestAttestationDoc,
+    // ].filter(
+    //   (doc): doc is NonNullable<typeof doc> => doc !== null && doc !== undefined
+    // );
+
+    // if (allDocs.length > 0) {
+    //   allDocs.sort((a, b) => {
+    //     const dateA = a.date ? new Date(a.date).getTime() : 0;
+    //     const dateB = b.date ? new Date(b.date).getTime() : 0;
+    //     return dateB - dateA;
+    //   });
+
+    //   const absoluteLatest = allDocs[0]; // Наш самый свежий исторический документ
+    //   const resultText = absoluteLatest.result
+    //     ? absoluteLatest.result.trim().toLowerCase()
+    //     : '';
+    //   const docType = absoluteLatest.controlTypeName
+    //     ? absoluteLatest.controlTypeName.trim().toLowerCase()
+    //     : '';
+
+    //   let targetStatusName: string | null = null;
+
+    //   if (
+    //     resultText === 'не годен' ||
+    //     resultText === 'неисправен' ||
+    //     resultText === 'брак'
+    //   ) {
+    //     // Если последний по дате контроль завершился неудачно
+    //     if (docType === 'поверка') {
+    //       targetStatusName = 'забракован'; // Юридический статус для СИ
+    //     } else {
+    //       targetStatusName = 'неисправен'; // Для калибровок, аттестаций и ТО
+    //     }
+    //   } else if (
+    //     resultText === 'годен' ||
+    //     resultText === 'исправен' ||
+    //     resultText === 'соответствует'
+    //   ) {
+    //     // Если последний документ успешный, нам нужно «оживить» прибор,
+    //     // но только если он до этого числился сломанным или забракованным.
+
+    //     // const [currentStatus] = await db
+    //     //   .select({ name: statuses.name })
+    //     //   .from(statuses)
+    //     //   .where(eq(statuses.id, firstRow.statusId));
+
+    //     // const currentStatusName =
+    //     //   currentStatus?.name?.trim().toLowerCase() || '';
+
+    //     // Возвращаем в строй только если он был неисправен/забракован.
+    //     // Статусы вроде "Утерян" или "Длительное хранение" не перезаписываем!
+    //     const currentStatusName = firstRow.statusName
+    //       ? firstRow.statusName.trim().toLowerCase()
+    //       : '';
+
+    //     if (
+    //       currentStatusName === 'неисправен' ||
+    //       currentStatusName === 'забракован' ||
+    //       currentStatusName === 'на поверке (в цсм)'
+    //     ) {
+    //       targetStatusName = 'исправен';
+    //     }
+    //   }
+
+    if (absoluteLatestDoc) {
+      const docType = absoluteLatestDoc.controlTypeName
+        ? absoluteLatestDoc.controlTypeName.trim().toLowerCase()
+        : '';
+      let targetStatusName: string | null = null;
+
+      // if (isDeviceBroken) {
+      //   if (docType === 'поверка') {
+      //     targetStatusName = 'забракован';
+      //   } else {
+      //     targetStatusName = 'неисправен';
+      //   }
+      // } else if (
+      //   resultText === 'годен' ||
+      //   resultText === 'исправен' ||
+      //   resultText === 'соответствует'
+      // ) {
+      //   // const [currentStatus] = await db
+      //   //   .select({ name: statuses.name })
+      //   //   .from(statuses)
+      //   //   .where(eq(statuses.id, firstRow.statusId));
+
+      //   const currentStatusName = firstRow.statusName
+      //     ? firstRow.statusName.trim().toLowerCase()
+      //     : '';
+
+      //   if (
+      //     currentStatusName === 'неисправен' ||
+      //     currentStatusName === 'забракован' ||
+      //     currentStatusName === 'на поверке (в цсм)'
+      //   ) {
+      //     targetStatusName = 'исправен';
+      //   }
+      // }
+
+      const currentStatusName = firstRow.statusName
+        ? firstRow.statusName.trim().toLowerCase()
+        : '';
+
+      if (currentStatusName === 'в ремонте' && isMainControlBlocked) {
+        targetStatusName = 'в ремонте';
+      } else if (isCurrentlyBroken) {
+        // Если последний документ бракованный — жестко выставляем статус поломки
+        if (docType === 'поверка') {
+          targetStatusName = 'забракован';
+        } else {
+          targetStatusName = 'неисправен';
+        }
+      } else if (isMainControlBlocked) {
+        targetStatusName = 'в ремонте';
+      } else if (
+        resultText === 'годен' ||
+        resultText === 'исправен' ||
+        resultText === 'соответствует'
+      ) {
+        // ЗАЩИТА: Проверяем, вернул ли внесенный документ легитимность прибору
+        // Если прибору нужна государственная Поверка, а внесли просто внутренний Осмотр — прибор НЕ оживает!
+        const isDocLegitimate =
+          (targetControlName === 'поверка' && docType === 'поверка') ||
+          (targetControlName === 'калибровка' && docType === 'калибровка') ||
+          (targetControlName === 'осмотр' && docType === 'осмотр');
+
+        if (isDocLegitimate) {
+          // Рокировка происходит, только если прибор числился сломанным, забракованным или находился в процессе ремонта
+          if (
+            currentStatusName === 'неисправен' ||
+            currentStatusName === 'забракован' ||
+            currentStatusName === 'в ремонте' ||
+            currentStatusName === 'на поверке (в цсм)'
+          ) {
+            targetStatusName = 'исправен';
+          }
+        }
+      }
+
+      // Если статус требует автоматической корректировки — ищем его ID
+      if (targetStatusName && targetStatusName !== currentStatusName) {
+        const [statusRow] = await db
+          .select({ id: statuses.id })
+          .from(statuses)
+          .where(eq(statuses.name, targetStatusName)); // В БД всё в нижнем регистре
+
+        if (statusRow) {
+          finalStatusId = statusRow.id;
+        }
+      }
+    }
+
+    // =========================================================================
+    // Шаг 5. ФИНАЛЬНОЕ СОХРАНЕНИЕ КЭША И СТАТУСА ПРИБОРА
+    // ============================================================
 
     // Записываем стейт в карточку прибора
     await db
       .update(devices)
       .set({
         cachedControl: targetControlName,
+        statusId: finalStatusId,
         nextVerificationDate: nextVerificationDateStr, // Теперь сюда улетит чистая строка без багов
         nextInspectionDate: nextInspectionDateStr,
         updatedAt: new Date(),
