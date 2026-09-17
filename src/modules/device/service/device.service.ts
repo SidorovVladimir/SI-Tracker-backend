@@ -2178,7 +2178,28 @@ export class DeviceService {
       mainDocForVerificationField?.result === 'неисправен' ||
       mainDocForVerificationField?.result === 'брак';
 
-    const isMainControlBlocked = isMainDocBroken;
+    const activeBatchLinks = await db
+      .select({ id: devicesToBatches.id })
+      .from(devicesToBatches)
+      .innerJoin(
+        verificationBatches,
+        eq(devicesToBatches.batchId, verificationBatches.id)
+      )
+      .where(
+        and(
+          eq(devicesToBatches.deviceId, deviceId),
+          inArray(sql`lower(trim(${verificationBatches.status}))`, [
+            'draft',
+            'sent',
+          ])
+        )
+      )
+      .limit(1);
+
+    const isDeviceInActiveRepairBatch = activeBatchLinks.length > 0;
+
+    // const isMainControlBlocked = isMainDocBroken;
+    const isMainControlBlocked = isMainDocBroken || isDeviceInActiveRepairBatch;
 
     // 4. ИНТЕГРАЦИЯ ВАШЕГО МЕТОДА РАСЧЕТА СЛЕДУЮЩЕЙ ДАТЫ
     let nextVerificationDateStr: string | null = null;
