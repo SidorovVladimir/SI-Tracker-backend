@@ -110,6 +110,7 @@ type Query {
     limit: Int
     offset: Int
     controlTypeId: String
+    filter: DeviceFilterInput
   ): PlanningPoolResponse!
 
   # Получить статистику по месяцам на весь год
@@ -122,7 +123,11 @@ type Query {
   getDraftBatchesByMonth(plannedMonth: String!): [DraftBatchOption!]!
 
   # 🌟 2. ПОЛУЧИТЬ ПУЛ ДЕФЕКТНЫХ ПРИБОРОВ (Воронка Журнала ремонта)
-  getRepairPlanningPool(limit: Int, offset: Int): RepairPlanningPoolResponse!
+  getRepairPlanningPool(
+    limit: Int
+    offset: Int
+    filter: DeviceFilterInput
+  ): RepairPlanningPoolResponse!
 
   # 🌟 3. Получить черновики ремонтных ведомостей
   getRepairDraftBatches: [DraftBatchOption!]!

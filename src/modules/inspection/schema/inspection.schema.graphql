@@ -48,6 +48,7 @@ extend type Query {
     targetMonth: String!
     limit: Int!
     offset: Int!
+    filter: DeviceFilterInput
   ): InspectionPoolResponse!
 
   getInspectionCalendarSummary: [MonthlySummary!]!

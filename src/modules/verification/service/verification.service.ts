@@ -401,7 +401,8 @@ export class VerificationPlanningService {
     companyDefaultLeadTime = 30,
     limit = 20,
     offset = 0,
-    controlTypeId?: string
+    controlTypeId?: string,
+    filter?: any
   ) {
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(
@@ -599,11 +600,18 @@ export class VerificationPlanningService {
       };
     }
 
+    const conditions = [finalWhereClause];
+
+    if (filter?.serialNumber) {
+      conditions.push(ilike(devices.serialNumber, `%${filter.serialNumber}%`));
+    }
+
     // =========================================================================
     // ЧАСТЬ 4: ПОЛУЧЕНИЕ СТРОК (Тут жестко по finalWhereClause с лимитами)
     // =========================================================================
     const paginatedDevices = await this.db.query.devices.findMany({
-      where: finalWhereClause, // Вытягиваем только строки выбранного таба
+      // where: finalWhereClause, // Вытягиваем только строки выбранного таба
+      where: and(...conditions),
       limit,
       offset,
       orderBy: (d) => [asc(d.nextVerificationDate)],

@@ -10,10 +10,14 @@ export const Query = {
       targetMonth,
       limit,
       offset,
+      filter,
     }: {
       targetMonth: string;
       limit: number;
       offset: number;
+      filter?: {
+        serialNumber?: string;
+      };
     },
     { db, currentUser }: Context
   ) => {
@@ -22,7 +26,8 @@ export const Query = {
     return await new InspectionService(db).getInspectionPoolByMonth(
       targetMonth,
       limit,
-      offset
+      offset,
+      filter
     );
   },
 

@@ -19,12 +19,16 @@ export const Query = {
       limit,
       offset,
       controlTypeId,
+      filter,
     }: {
       targetMonth: string;
       companyDefaultLeadTime?: number;
       limit?: number;
       offset?: number;
       controlTypeId: string;
+      filter?: {
+        serialNumber?: string;
+      };
     },
     { db, currentUser }: Context
   ) => {
@@ -39,7 +43,8 @@ export const Query = {
       companyDefaultLeadTime ?? 30,
       limit ?? 20,
       offset ?? 0,
-      controlTypeId
+      controlTypeId,
+      filter
     );
   },
 
@@ -98,7 +103,17 @@ export const Query = {
 
   getRepairPlanningPool: async (
     _: unknown,
-    { limit, offset }: { limit?: number; offset?: number },
+    {
+      limit,
+      offset,
+      filter,
+    }: {
+      limit?: number;
+      offset?: number;
+      filter?: {
+        serialNumber?: string;
+      };
+    },
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
@@ -113,6 +128,7 @@ export const Query = {
     return await planningService.getRepairDevices({
       limit: limit ?? 20,
       offset: offset ?? 0,
+      filter,
     });
   },
 

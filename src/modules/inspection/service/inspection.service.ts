@@ -8,6 +8,7 @@ import {
   desc,
   notInArray,
   asc,
+  ilike,
 } from 'drizzle-orm';
 import { metrologyControleTypes } from '../../catalog/models/metrologyControlType.model';
 import { devices } from '../../device/models/device.model';
@@ -953,7 +954,12 @@ export class InspectionService {
     }));
   }
 
-  async getInspectionPoolByMonth(targetMonth: string, limit = 20, offset = 0) {
+  async getInspectionPoolByMonth(
+    targetMonth: string,
+    limit = 20,
+    offset = 0,
+    filter?: any
+  ) {
     const now = new Date();
     const currentMonthKey = `${now.getFullYear()}-${String(
       now.getMonth() + 1
@@ -1016,9 +1022,15 @@ export class InspectionService {
       return { items: [], totalCount: 0 };
     }
 
+    const conditions = [inArray(devices.id, targetDeviceIds)];
+
+    if (filter?.serialNumber) {
+      conditions.push(ilike(devices.serialNumber, `%${filter.serialNumber}%`));
+    }
+
     // 2. Получаем данные СТРОГО для текущей страницы (limit/offset)
     const pageDevices = await this.db.query.devices.findMany({
-      where: inArray(devices.id, targetDeviceIds),
+      where: and(...conditions),
       limit,
       offset,
       orderBy: (d) => [asc(d.nextInspectionDate)],
