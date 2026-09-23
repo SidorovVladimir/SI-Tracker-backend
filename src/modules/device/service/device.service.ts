@@ -1968,12 +1968,13 @@ export class DeviceService {
 
     const firstRow = rows[0];
 
-    if (firstRow.statusName === 'списан') {
+    if (firstRow.statusName === 'списан' || firstRow.statusName === 'утерян') {
       await db
         .update(devices)
         .set({
           nextVerificationDate: null,
           nextInspectionDate: null,
+          archived: true,
           // updatedAt: now,
           // updatedById: userId
         })
@@ -2166,13 +2167,20 @@ export class DeviceService {
       resultText === 'брак';
 
     // Определяем целевой документ для расчета плановых дат контроля
+    // let mainDocForVerificationField =
+    //   eqTypeName === 'испытательное оборудование (ио)'
+    //     ? latestAttestationDoc
+    //     : targetControlName === 'калибровка'
+    //     ? latestCalibrationDoc
+    //     : targetControlName === 'осмотр'
+    //     ? latestInspectionDoc
+    //     : latestVerificationDoc;
+
     let mainDocForVerificationField =
       eqTypeName === 'испытательное оборудование (ио)'
         ? latestAttestationDoc
         : targetControlName === 'калибровка'
         ? latestCalibrationDoc
-        : targetControlName === 'осмотр'
-        ? latestInspectionDoc // 🚀 СЮДА: Теперь берется свежий успешный осмотр!
         : latestVerificationDoc;
 
     const isMainDocBroken =
@@ -2497,6 +2505,46 @@ export class DeviceService {
           }
         }
       }
+      // const currentStatusName = firstRow.statusName
+      //   ? firstRow.statusName.trim().toLowerCase()
+      //   : '';
+
+      // // 1. СНАЧАЛА ПРОВЕРЯЕМ: Внесли ли документ, который ОЖИВЛЯЕТ прибор?
+      // const isGoodResult =
+      //   resultText === 'годен' ||
+      //   resultText === 'исправен' ||
+      //   resultText === 'соответствует';
+
+      // const isDocLegitimate =
+      //   (targetControlName === 'поверка' && docType === 'поверка') ||
+      //   (targetControlName === 'калибровка' && docType === 'калибровка') ||
+      //   (targetControlName === 'осмотр' && docType === 'осмотр');
+
+      // if (isGoodResult && isDocLegitimate) {
+      //   // Если документ легитимен и прибор годен — он становится исправным,
+      //   // даже если до этого он был сломан или в ремонте!
+      //   if (
+      //     currentStatusName === 'неисправен' ||
+      //     currentStatusName === 'забракован' ||
+      //     currentStatusName === 'в ремонте' ||
+      //     currentStatusName === 'на поверке (в цсм)'
+      //   ) {
+      //     targetStatusName = 'исправен';
+      //   }
+      // }
+      // // 2. ЕСЛИ ПРИБОР НЕ ОЖИЛ: Проверяем, не поломался ли он прямо сейчас?
+      // else if (isCurrentlyBroken) {
+      //   if (docType === 'поверка') {
+      //     targetStatusName = 'забракован';
+      //   } else {
+      //     targetStatusName = 'неисправен';
+      //   }
+      // }
+      // // 3. ЕСЛИ НЕ СЛОМАН И НЕ ОЖИЛ: Проверяем блокировки и текущий ремонт
+      // else if (isMainControlBlocked || currentStatusName === 'в ремонте') {
+      //   // Если он уже в ремонте или заблокирован главным контролем — оставляем/отправляем в ремонт
+      //   targetStatusName = 'в ремонте';
+      // }
 
       // Если статус требует автоматической корректировки — ищем его ID
       if (targetStatusName && targetStatusName !== currentStatusName) {
