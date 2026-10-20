@@ -5,13 +5,14 @@ import { users } from '../user/user.model';
 import { NotificationService } from '../notification/service/notification.service';
 import { auditLogQueue } from './queues/audit.queue';
 interface LogActionArgs {
-  deviceId: string;
+  deviceId?: string | null;
   action:
-    | 'create'
-    | 'update'
-    | 'delete'
-    | 'assign_batch'
-    | 'remove_batch'
+    | 'create' //-- Добавление нового СИ
+    | 'update' //-- Изменение карточки СИ
+    | 'delete' //-- Удаление СИ из системы
+    | 'create_batch' //-- Создание партии поверок
+    | 'assign_batch' //-- Добавление СИ в партию поверок
+    | 'remove_batch' //-- Удаление СИ из партии поверок
     | 'assign_repair_batch'
     | 'verify'
     | 'repair_batch_create' //-- Создание ремонтной ведомости
@@ -19,7 +20,6 @@ interface LogActionArgs {
     | 'repair_batch_remove_dev' //-- Исключение прибора из мастерской (наша корзина)
     | 'repair_batch_close' //-- Закрытие ведомости КИПиА
     | 'device_scrap' // -- Массовое или поштучное списание прибора
-    | 'inspection_batch_create' // -- Создание ведомости осмотров (ТО)
     | 'inspection_doc_save'; //-- Фиксация акта ТО
 
   oldData?: any | null;

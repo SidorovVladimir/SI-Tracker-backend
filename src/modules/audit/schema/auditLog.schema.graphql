@@ -2,14 +2,23 @@ enum AuditAction {
   create
   update
   delete
+  create_batch
   assign_batch
   remove_batch
+  assign_repair_batch
   verify
+  repair_batch_create
+  repair_batch_add_device
+  repair_batch_remove_dev
+  repair_batch_close
+  device_scrap
+  inspection_batch_create
+  inspection_doc_save
 }
 
 type AuditLog {
   id: ID!
-  deviceId: ID!
+  deviceId: ID
   action: AuditAction!
   description: String!
   oldData: String

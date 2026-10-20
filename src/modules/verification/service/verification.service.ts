@@ -107,6 +107,16 @@ export class VerificationPlanningService {
       throw new Error('Не удалось создать партию поверок');
     }
 
+    if (this.auditLogService) {
+      this.auditLogService!.logAction({
+        action: 'create_batch',
+        newData: {
+          batchNumber: newBatch.number,
+        },
+        userId: currentUser,
+      });
+    }
+
     return newBatch;
   }
 

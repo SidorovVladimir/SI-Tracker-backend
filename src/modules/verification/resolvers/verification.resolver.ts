@@ -191,7 +191,12 @@ export const Mutation = {
 
     try {
       const validatedInput = CreateVerificationBatchSchema.parse(input);
-      const planningService = new VerificationPlanningService(db);
+      const auditLogService = new DeviceAuditLogService(db);
+
+      const planningService = new VerificationPlanningService(
+        db,
+        auditLogService
+      );
 
       return await planningService.createBatch(validatedInput, currentUser.id);
     } catch (err) {
