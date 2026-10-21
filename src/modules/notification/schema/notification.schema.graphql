@@ -8,9 +8,13 @@ type SystemNotification {
   createdAt: String!
 }
 
+type SystemNotificationsResponse {
+  items: [SystemNotification!]!
+  totalCount: Int!
+}
+
 type Query {
-  # Получить последние 20 системных уведомлений пользователя
-  getSystemNotifications: [SystemNotification!]!
+  getSystemNotifications(limit: Int, offset: Int): SystemNotificationsResponse!
 
   # Точное количество непрочитанных СИСТЕМНЫХ алертов (для Badge на колокольчике)
   getUnreadNotificationsCount: Int!

@@ -4,7 +4,7 @@ import { NotificationService } from '../service/notification.service';
 export const Query = {
   getSystemNotifications: async (
     _: unknown,
-    __: unknown,
+    args: { limit?: number; offset?: number },
     { db, currentUser }: Context
   ) => {
     if (!currentUser) throw new Error('Не авторизован');
@@ -13,7 +13,16 @@ export const Query = {
         'Доступ запрещен: требуются права администратора/метролога'
       );
     }
-    return await new NotificationService(db).getNotifications(currentUser.id);
+
+    const limit = args.limit ?? 20;
+    const offset = args.offset ?? 0;
+    const result = await new NotificationService(db).getNotifications({
+      userId: currentUser.id,
+      limit,
+      offset,
+    });
+
+    return result;
   },
   getUnreadNotificationsCount: async (
     _: unknown,

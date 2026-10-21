@@ -11,15 +11,16 @@ interface LogActionArgs {
     | 'update' //-- Изменение карточки СИ
     | 'delete' //-- Удаление СИ из системы
     | 'create_batch' //-- Создание партии поверок
-    | 'assign_batch' //-- Добавление СИ в партию поверок
-    | 'remove_batch' //-- Удаление СИ из партии поверок
-    | 'assign_repair_batch'
-    | 'verify'
-    | 'repair_batch_create' //-- Создание ремонтной ведомости
-    | 'repair_batch_add_device' //-- Направление приборов в ремонт
-    | 'repair_batch_remove_dev' //-- Исключение прибора из мастерской (наша корзина)
-    | 'repair_batch_close' //-- Закрытие ведомости КИПиА
+    | 'delete_batch' //-- Удаление партии поверок
+    | 'assign_device_to_batch' //-- Добавление СИ в партию поверок
+    | 'remove_device_to_batch' //-- Удаление СИ из партии поверок
+    | 'verify' //-- Фиксация результатов контроля
+    | 'create_repair_batch' //-- Создание ремонтной ведомости
+    | 'assign_device_to_repair_batch' //-- Добавление СИ в ремонтную ведомость
+    | 'remove_device_to_repair_batch' //-- Исключение прибора из ремонтной ведомости
+    | 'delete_repair_batch' //-- Удаление ремонтной ведомости
     | 'device_scrap' // -- Массовое или поштучное списание прибора
+    | 'inspection_batch_create' //-- Создание ведомости осмотра
     | 'inspection_doc_save'; //-- Фиксация акта ТО
 
   oldData?: any | null;
@@ -49,9 +50,18 @@ export class DeviceAuditLogService {
         | 'create'
         | 'update'
         | 'delete'
-        | 'assign_batch'
-        | 'remove_batch'
-        | 'verify';
+        | 'create_batch'
+        | 'delete_batch'
+        | 'assign_device_to_batch'
+        | 'remove_device_to_batch'
+        | 'verify'
+        | 'create_repair_batch'
+        | 'assign_device_to_repair_batch'
+        | 'remove_device_to_repair_batch'
+        | 'delete_repair_batch'
+        | 'device_scrap'
+        | 'inspection_batch_create'
+        | 'inspection_doc_save';
     };
     limit: number;
     offset: number;

@@ -1,4 +1,5 @@
 import { Context } from '../../../context';
+import { DeviceAuditLogService } from '../../audit/auditLog.service';
 import { DeviceService } from '../../device/service/device.service';
 import { VerificationPlanningService } from '../../verification/service/verification.service';
 import { InspectionService } from '../service/inspection.service';
@@ -83,9 +84,13 @@ export const Mutation = {
     if (!currentUser) throw new Error('Не авторизован');
 
     const deviceService = new DeviceService(db);
+
+    const auditLogService = new DeviceAuditLogService(db);
+
     const inspectionService = new InspectionService(
       db,
       undefined,
+      auditLogService,
       deviceService
     );
     return await inspectionService.createBulkInspection(items, currentUser.id);

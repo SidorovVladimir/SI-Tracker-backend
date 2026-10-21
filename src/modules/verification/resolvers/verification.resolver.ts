@@ -286,8 +286,14 @@ export const Mutation = {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
 
-    const planningService = new VerificationPlanningService(db);
-    return await planningService.deleteBatch(id);
+    const auditLogService = new DeviceAuditLogService(db);
+
+    const planningService = new VerificationPlanningService(
+      db,
+      auditLogService
+    );
+
+    return await planningService.deleteBatch(id, currentUser.id);
   },
 
   confirmArshinBuffer: async (
@@ -366,7 +372,12 @@ export const Mutation = {
 
     try {
       const validatedInput = CreateVerificationBatchSchema.parse(input);
-      const planningService = new VerificationPlanningService(db);
+      const auditLogService = new DeviceAuditLogService(db);
+
+      const planningService = new VerificationPlanningService(
+        db,
+        auditLogService
+      );
 
       return await planningService.createRepairBatch(
         validatedInput,
@@ -463,8 +474,13 @@ export const Mutation = {
       throw new Error('Доступ запрещен: нужны права администратора');
     }
 
-    const planningService = new VerificationPlanningService(db);
-    return await planningService.deleteBatch(id); // Вызовет наш безопасный deleteBatch с откатом
+    const auditLogService = new DeviceAuditLogService(db);
+
+    const planningService = new VerificationPlanningService(
+      db,
+      auditLogService
+    );
+    return await planningService.deleteBatch(id, currentUser.id);
   },
 
   bulkScrapDevices: async (
@@ -483,10 +499,12 @@ export const Mutation = {
 
     if (!deviceIds || deviceIds.length === 0) return true;
 
+    const auditLogService = new DeviceAuditLogService(db);
+
     const deviceService = new DeviceService(db);
     const planningService = new VerificationPlanningService(
       db,
-      undefined,
+      auditLogService,
       deviceService
     );
 

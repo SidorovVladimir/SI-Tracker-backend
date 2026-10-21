@@ -43,15 +43,19 @@ export const createAuditWorker = () => {
           alertTitle = '📝 Изменение паспорта СИ';
           alertType = 'info';
         } else if (action === 'create_batch') {
-          description = `Сформирована новая партия для отправки в ЦСМ на поверку ${batchNumber}`;
+          description = `Сформирована новая партия для отправки в ЦСМ на поверку${batchNumber}`;
           alertTitle = '📋 Создана партия на поверку';
           alertType = 'success';
-        } else if (action === 'assign_batch') {
-          description = `Прибор ${deviceIdent} запланирован на отправку и добавлен в партию поверок ${batchNumber}`;
+        } else if (action === 'delete_batch') {
+          description = `Партия на отправку${batchNumber} удалена из системы`;
+          alertTitle = '🗑️ Удаление партии отправки';
+          alertType = 'warning';
+        } else if (action === 'assign_device_to_batch') {
+          description = `Прибор ${deviceIdent} запланирован на отправку и добавлен в партию поверок${batchNumber}`;
           alertTitle = '🚚 Планирование графиков';
           alertType = 'info';
-        } else if (action === 'remove_batch') {
-          description = `Прибор ${deviceIdent} исключен из партии отправки и вернулся в автоматический пул`;
+        } else if (action === 'remove_device_to_batch') {
+          description = `Прибор ${deviceIdent} исключен из партии отправки${batchNumber} и вернулся в автоматический пул`;
           alertTitle = '🔄 Сброс графика отправки';
           alertType = 'warning';
         } else if (action === 'verify') {
@@ -61,32 +65,32 @@ export const createAuditWorker = () => {
           description = `Успешно зафиксированы результаты контроля прибора ${deviceIdent}. Статус просрочки снят${docNum}`;
           alertTitle = '🔬 Сведения ФГИС Аршин';
           alertType = 'success';
-        } else if (action === 'assign_repair_batch') {
-          description = `Прибор ${deviceIdent} распределен в ремонтную партию${batchNumber}`;
+        } else if (action === 'assign_device_to_repair_batch') {
+          description = `Прибор ${deviceIdent} распределен в ремонтную ведомость${batchNumber}`;
           alertTitle = '🛠️ Назначение ремонта';
           alertType = 'info';
-        } else if (action === 'repair_batch_create') {
-          description = `Создана новая ремонтная ведомость ${batchNumber}`;
+        } else if (action === 'create_repair_batch') {
+          description = `Создана новая ремонтная ведомость${batchNumber}`;
           alertTitle = '📋 Новая ремонтная ведомость';
           alertType = 'success';
-        } else if (action === 'repair_batch_add_device') {
-          description = `Прибор ${deviceIdent} направлен в мастерскую по ведомости ${batchNumber}`;
-          alertTitle = '🔧 Отправка в мастерскую';
-          alertType = 'info';
-        } else if (action === 'repair_batch_remove_dev') {
-          description = `Прибор ${deviceIdent} исключен из ремонтной мастерской`;
+        } else if (action === 'delete_repair_batch') {
+          description = `Ремонтная ведомость${batchNumber} удалена из системы`;
+          alertTitle = '🗑️ Удаление ремонтной ведомости';
+          alertType = 'warning';
+        } else if (action === 'remove_device_to_repair_batch') {
+          description = `Прибор ${deviceIdent} исключен из ремонтной ведомости${batchNumber} и вернулся в очередь на ремонт`;
           alertTitle = '🗑️ Исключение из ремонта';
           alertType = 'warning';
-        } else if (action === 'repair_batch_close') {
-          description = `Ремонтная ведомость ${batchNumber} успешно закрыта. Статус оборудования обновлен`;
-          alertTitle = '✅ Ремонт завершен';
-          alertType = 'success';
         } else if (action === 'device_scrap') {
           description = `Прибор ${deviceIdent} официально списан и выведен из эксплуатации`;
           alertTitle = '🟥 Списание СИ';
           alertType = 'error';
+        } else if (action === 'inspection_batch_create') {
+          description = `Сформирована новая ведомость периодических осмотров${batchNumber}`;
+          alertTitle = '📋 Новая ведомость осмотров';
+          alertType = 'success';
         } else if (action === 'inspection_doc_save') {
-          description = `Зафиксирован и сохранен акт технического обслуживания (ТО) ${batchNumber} для прибора ${deviceIdent}`;
+          description = `Зафиксирован и сохранен акт технического обслуживания (ТО)${batchNumber} для прибора ${deviceIdent}`;
           alertTitle = '📄 Акт ТО сохранен';
           alertType = 'success';
         }
@@ -102,9 +106,10 @@ export const createAuditWorker = () => {
 
         const notificationActions: (typeof action)[] = [
           'create_batch',
-          'repair_batch_create',
+          'create_repair_batch',
           'device_scrap',
           'verify',
+          'inspection_batch_create',
         ];
 
         if (notificationActions.includes(action)) {

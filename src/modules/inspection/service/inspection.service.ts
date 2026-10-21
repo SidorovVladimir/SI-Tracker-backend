@@ -22,11 +22,13 @@ import {
   devicesToBatches,
 } from '../../verification/models/verification.model';
 import { DeviceService } from '../../device/service/device.service';
+import { DeviceAuditLogService } from '../../audit/auditLog.service';
 
 export class InspectionService {
   constructor(
     private db: DrizzleDB,
     private planningService?: VerificationPlanningService,
+    private auditLogService?: DeviceAuditLogService,
     private deviceService?: DeviceService
   ) {}
 
@@ -36,7 +38,25 @@ export class InspectionService {
   ) {
     if (!items.length) return false;
 
-    return await this.db.transaction(async (tx: any) => {
+    let devicesData: any[] = [];
+
+    if (this.auditLogService) {
+      const allIds = items.map((i) => i.deviceId);
+      devicesData = await this.db
+        .select({
+          id: devices.id,
+          name: devices.name,
+          model: devices.model,
+          serialNumber: devices.serialNumber,
+        })
+        .from(devices)
+        .where(inArray(devices.id, allIds));
+    }
+
+    let createdBatchNumber = '';
+    let createdBatchId = '';
+
+    await this.db.transaction(async (tx: any) => {
       // 1. ОПТИМИЗАЦИЯ СПРАВОЧНИКОВ: Прямой поиск по B-Tree индексу (в БД всё в нижнем регистре)
       const [inspectionType] = await tx
         .select({ id: metrologyControleTypes.id })
@@ -89,11 +109,13 @@ export class InspectionService {
       }
       const formattedSequence = String(nextSequenceNumber).padStart(3, '0');
 
+      createdBatchNumber = `О-${year}/${formattedSequence}`;
+
       // 3. Создаем закрытую партию осмотра
       const [newBatch] = await tx
         .insert(verificationBatches)
         .values({
-          number: `О-${year}/${formattedSequence}`,
+          number: createdBatchNumber,
           plannedDate: now,
           status: 'completed',
           type: 'inspection',
@@ -101,6 +123,8 @@ export class InspectionService {
           createdById: userId,
         })
         .returning({ id: verificationBatches.id });
+
+      createdBatchId = newBatch.id;
 
       const verificationValues = [];
       const devicesToBatchesValues = [];
@@ -176,6 +200,43 @@ export class InspectionService {
 
       return true;
     });
+
+    if (this.auditLogService && createdBatchId) {
+      await this.auditLogService.logAction({
+        action: 'inspection_batch_create',
+        newData: {
+          batchNumber: createdBatchNumber,
+        },
+        userId,
+      });
+
+      // 2. Параллельно записываем индивидуальные акты ТО для каждого прибора в их историю
+      if (devicesData.length > 0) {
+        await Promise.all(
+          devicesData.map((deviceItem) => {
+            const inputItem = items.find((i) => i.deviceId === deviceItem.id);
+            const isSuccess = inputItem ? inputItem.isSuccess : true;
+
+            return this.auditLogService!.logAction({
+              deviceId: deviceItem.id,
+              action: 'inspection_doc_save',
+              newData: {
+                batchNumber: createdBatchNumber,
+                name: deviceItem.name,
+                model: deviceItem.model,
+                serialNumber: deviceItem.serialNumber,
+                comment: isSuccess
+                  ? 'Годен (успешный осмотр)'
+                  : 'Не исправен (выявлен брак)',
+              },
+              userId,
+            });
+          })
+        );
+      }
+    }
+
+    return true;
   }
 
   async getInspectionBatchesArchive(

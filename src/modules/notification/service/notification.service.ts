@@ -38,36 +38,93 @@ export class NotificationService {
     return newAlert;
   }
 
-  async getNotifications(userId: string) {
-    const cleanUserId = userId.toLowerCase().trim();
+  // async getNotifications(userId: string) {
+  //   const cleanUserId = userId.toLowerCase().trim();
 
-    return await this.db
-      .select({
-        id: systemNotifications.id,
-        userId: systemNotifications.userId,
-        title: systemNotifications.title,
-        message: systemNotifications.message,
-        type: systemNotifications.type,
-        createdAt: systemNotifications.createdAt,
-        // Проверяем прочитано ли оно ИМЕННО ЭТИМ пользователем
-        isRead: sql<boolean>`CASE WHEN ${userNotificationStatuses.id} IS NOT NULL THEN true ELSE false END`,
-      })
-      .from(systemNotifications)
-      .leftJoin(
-        userNotificationStatuses,
-        and(
-          eq(userNotificationStatuses.notificationId, systemNotifications.id),
-          eq(userNotificationStatuses.userId, cleanUserId)
+  //   return await this.db
+  //     .select({
+  //       id: systemNotifications.id,
+  //       userId: systemNotifications.userId,
+  //       title: systemNotifications.title,
+  //       message: systemNotifications.message,
+  //       type: systemNotifications.type,
+  //       createdAt: systemNotifications.createdAt,
+  //       // Проверяем прочитано ли оно ИМЕННО ЭТИМ пользователем
+  //       isRead: sql<boolean>`CASE WHEN ${userNotificationStatuses.id} IS NOT NULL THEN true ELSE false END`,
+  //     })
+  //     .from(systemNotifications)
+  //     .leftJoin(
+  //       userNotificationStatuses,
+  //       and(
+  //         eq(userNotificationStatuses.notificationId, systemNotifications.id),
+  //         eq(userNotificationStatuses.userId, cleanUserId)
+  //       )
+  //     )
+  //     .where(
+  //       or(
+  //         eq(systemNotifications.userId, cleanUserId),
+  //         isNull(systemNotifications.userId)
+  //       )
+  //     )
+  //     .orderBy(desc(systemNotifications.createdAt))
+  //     .limit(20);
+  // }
+
+  async getNotifications(args: {
+    userId: string;
+    limit: number;
+    offset: number;
+  }) {
+    const cleanUserId = args.userId.toLowerCase().trim();
+
+    // 1. Формируем единое условие фильтрации (для общих и персональных алертов)
+    const whereClause = or(
+      eq(systemNotifications.userId, cleanUserId),
+      isNull(systemNotifications.userId)
+    );
+
+    // 2. Выполняем два параллельных запроса в базу данных
+    const [countResult, itemsRaw] = await Promise.all([
+      // Запрос 1: Быстрый подсчет общего числа доступных уведомлений
+      this.db
+        .select({
+          count: sql`count(${systemNotifications.id})`.mapWith(Number),
+        })
+        .from(systemNotifications)
+        .where(whereClause),
+
+      // Запрос 2: Постраничная выборка с джоином статусов прочтения
+      this.db
+        .select({
+          id: systemNotifications.id,
+          userId: systemNotifications.userId,
+          title: systemNotifications.title,
+          message: systemNotifications.message,
+          type: systemNotifications.type,
+          createdAt: systemNotifications.createdAt,
+          // Проверяем прочитано ли оно ИМЕННО ЭТИМ пользователем
+          isRead: sql<boolean>`CASE WHEN ${userNotificationStatuses.id} IS NOT NULL THEN true ELSE false END`,
+        })
+        .from(systemNotifications)
+        .leftJoin(
+          userNotificationStatuses,
+          and(
+            eq(userNotificationStatuses.notificationId, systemNotifications.id),
+            eq(userNotificationStatuses.userId, cleanUserId)
+          )
         )
-      )
-      .where(
-        or(
-          eq(systemNotifications.userId, cleanUserId),
-          isNull(systemNotifications.userId)
-        )
-      )
-      .orderBy(desc(systemNotifications.createdAt))
-      .limit(20);
+        .where(whereClause)
+        .orderBy(desc(systemNotifications.createdAt))
+        .limit(args.limit) // Динамический лимит вместо жестких 20
+        .offset(args.offset), // Смещение для страниц
+    ]);
+
+    const totalCount = countResult[0]?.count || 0;
+
+    return {
+      items: itemsRaw,
+      totalCount,
+    };
   }
 
   async getUnreadCount(userId: string): Promise<number> {

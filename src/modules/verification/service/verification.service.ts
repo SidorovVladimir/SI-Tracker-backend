@@ -203,7 +203,7 @@ export class VerificationPlanningService {
         logsToRecord.map((logItem) =>
           this.auditLogService!.logAction({
             deviceId: logItem.id,
-            action: 'assign_batch',
+            action: 'assign_device_to_batch',
             newData: {
               batchId,
               batchNumber: recordedBatchNumber,
@@ -229,11 +229,15 @@ export class VerificationPlanningService {
 
     let logsToRecord: any[] = [];
     let isBatchDeleted = false;
+    let batchNumber = '';
 
     // 1. АТОМАРНАЯ ТРАНЗАКЦИЯ (Только сверхбыстрые дисковые операции)
     await this.db.transaction(async (tx) => {
       const [targetBatch] = await tx
-        .select({ status: verificationBatches.status })
+        .select({
+          status: verificationBatches.status,
+          number: verificationBatches.number,
+        })
         .from(verificationBatches)
         .where(eq(verificationBatches.id, batchId))
         .limit(1);
@@ -241,6 +245,8 @@ export class VerificationPlanningService {
       if (!targetBatch) {
         throw new Error('Партия не найдена в системе.');
       }
+
+      batchNumber = targetBatch.number;
       const devicesData = await tx
         .select({
           id: devices.id,
@@ -309,6 +315,16 @@ export class VerificationPlanningService {
       }
     });
 
+    if (isBatchDeleted) {
+      this.auditLogService!.logAction({
+        action: 'delete_batch',
+        oldData: {
+          batchNumber,
+        },
+        userId,
+      });
+    }
+
     // ЗДЕСЬ ТРАНЗАКЦИЯ УСПЕШНО ЗАКРЫЛАСЬ, ВСЕ БЛОКИРОВКИ С ТАБЛИЦ СНЯТЫ!
 
     // 5. БЕЗОПАСНАЯ ЗАПИСЬ В ЖУРНАЛ АУДИТА ВНЕ ТРАНЗАКЦИИ (Параллельно через Promise.all)
@@ -317,10 +333,10 @@ export class VerificationPlanningService {
         logsToRecord.map((logItem) =>
           this.auditLogService!.logAction({
             deviceId: logItem.id,
-            action: 'remove_batch',
+            action: 'remove_device_to_batch',
             oldData: {
               batchId,
-              isBatchDeleted, // Передаем флаг, если партия была уничтожена за ненадобностью
+              batchNumber,
               name: logItem.name,
               model: logItem.model,
               serialNumber: logItem.serialNumber,
@@ -1022,7 +1038,7 @@ export class VerificationPlanningService {
     }));
   }
 
-  async deleteBatch(id: string): Promise<boolean> {
+  async deleteBatch(id: string, userId: string): Promise<boolean> {
     const [batch] = await this.db
       .select()
       .from(verificationBatches)
@@ -1083,6 +1099,26 @@ export class VerificationPlanningService {
         .delete(verificationBatches)
         .where(eq(verificationBatches.id, id));
     });
+
+    if (this.auditLogService) {
+      if (batch.type === 'repair') {
+        this.auditLogService!.logAction({
+          action: 'delete_repair_batch',
+          oldData: {
+            batchNumber: batch.number,
+          },
+          userId,
+        });
+      } else {
+        this.auditLogService!.logAction({
+          action: 'delete_batch',
+          oldData: {
+            batchNumber: batch.number,
+          },
+          userId,
+        });
+      }
+    }
 
     return true;
   }
@@ -1661,18 +1697,28 @@ export class VerificationPlanningService {
     const [newBatch] = await this.db
       .insert(verificationBatches)
       .values({
-        number: `Р-${year}/${formattedSequence}`, // 🌟 Префикс «Р» — ремонтная накладная
+        number: `Р-${year}/${formattedSequence}`,
         plannedDate: input.plannedDate,
-        verificationOrganizationId: null, // Для ремонта ЦСМ по умолчанию не нужен
+        verificationOrganizationId: null,
         comment: input.comment ?? null,
-        status: 'draft', // Создается как черновик, куда КИПиА накидывает приборы
-        type: 'repair', // 🌟 ЖЕСТКИЙ МАРКЕР: это ремонтная партия
+        status: 'draft',
+        type: 'repair',
         createdById: currentUser,
       })
       .returning();
 
     if (!newBatch) {
       throw new Error('Не удалось создать ремонтную ведомость');
+    }
+
+    if (this.auditLogService) {
+      this.auditLogService!.logAction({
+        action: 'create_repair_batch',
+        newData: {
+          batchNumber: newBatch.number,
+        },
+        userId: currentUser,
+      });
     }
 
     return newBatch;
@@ -1722,7 +1768,7 @@ export class VerificationPlanningService {
           name: devices.name,
           model: devices.model,
           serialNumber: devices.serialNumber,
-          statusId: devices.statusId, // 🌟 Забираем текущий ID статуса (брак/неисправен)
+          statusId: devices.statusId, // Забираем текущий ID статуса (брак/неисправен)
         })
         .from(devices)
         .where(inArray(devices.id, deviceIds));
@@ -1769,8 +1815,8 @@ export class VerificationPlanningService {
       const linksToInsert = devicesData.map((dev) => ({
         batchId: batchId,
         deviceId: dev.id,
-        deviceStatus: 'in_repair', // 🌟 Статус внутри ремонтной партии
-        previousStatusId: dev.statusId, // 🌟 ЗАПОМИНАЕМ: прибор ушел в ремонт из статуса «забракован» или «неисправен»
+        deviceStatus: 'in_repair', // Статус внутри ремонтной партии
+        previousStatusId: dev.statusId, // ЗАПОМИНАЕМ: прибор ушел в ремонт из статуса «забракован» или «неисправен»
       }));
 
       await tx.insert(devicesToBatches).values(linksToInsert);
@@ -1794,24 +1840,24 @@ export class VerificationPlanningService {
     });
 
     // 7. ЗАПИСЬ В ЖУРНАЛ АУДИТА
-    // if (this.auditLogService && logsToRecord.length > 0) {
-    //   await Promise.all(
-    //     logsToRecord.map((logItem) =>
-    //       this.auditLogService!.logAction({
-    //         deviceId: logItem.id,
-    //         action: 'assign_repair_batch', // Кастомный экшен для ремонтов
-    //         newData: {
-    //           batchId,
-    //           batchNumber: recordedBatchNumber,
-    //           name: logItem.name,
-    //           model: logItem.model,
-    //           serialNumber: logItem.serialNumber,
-    //         },
-    //         userId,
-    //       })
-    //     )
-    //   );
-    // }
+    if (this.auditLogService && logsToRecord.length > 0) {
+      await Promise.all(
+        logsToRecord.map((logItem) =>
+          this.auditLogService!.logAction({
+            deviceId: logItem.id,
+            action: 'assign_device_to_repair_batch',
+            newData: {
+              batchId,
+              batchNumber: recordedBatchNumber,
+              name: logItem.name,
+              model: logItem.model,
+              serialNumber: logItem.serialNumber,
+            },
+            userId,
+          })
+        )
+      );
+    }
 
     return true;
   }
@@ -1825,12 +1871,17 @@ export class VerificationPlanningService {
 
     let logsToRecord: any[] = [];
     let isBatchDeleted = false;
+
+    let batchNumber = '';
     const now = new Date();
 
     await this.db.transaction(async (tx) => {
       // 1. Проверяем существование ремонтной партии
       const [targetBatch] = await tx
-        .select({ status: verificationBatches.status })
+        .select({
+          status: verificationBatches.status,
+          number: verificationBatches.number,
+        })
         .from(verificationBatches)
         .where(
           and(
@@ -1843,6 +1894,8 @@ export class VerificationPlanningService {
       if (!targetBatch) {
         throw new Error('Ремонтная ведомость не найдена в системе.');
       }
+
+      batchNumber = targetBatch.number;
 
       const devicesData = await tx
         .select({
@@ -1921,25 +1974,34 @@ export class VerificationPlanningService {
       }
     }
 
-    // 5. ЗАПИСЬ В ЖУРНАЛ АУДИТА (Вне транзакции)
-    // if (this.auditLogService && logsToRecord.length > 0) {
-    //   await Promise.all(
-    //     logsToRecord.map((logItem) =>
-    //       this.auditLogService!.logAction({
-    //         deviceId: logItem.id,
-    //         action: 'remove_repair_batch',
-    //         oldData: {
-    //           batchId,
-    //           isBatchDeleted,
-    //           name: logItem.name,
-    //           model: logItem.model,
-    //           serialNumber: logItem.serialNumber,
-    //         },
-    //         userId,
-    //       })
-    //     )
-    //   );
-    // }
+    if (isBatchDeleted) {
+      this.auditLogService!.logAction({
+        action: 'delete_repair_batch',
+        oldData: {
+          batchNumber,
+        },
+        userId,
+      });
+    }
+
+    if (this.auditLogService && logsToRecord.length > 0) {
+      await Promise.all(
+        logsToRecord.map((logItem) =>
+          this.auditLogService!.logAction({
+            deviceId: logItem.id,
+            action: 'remove_device_to_repair_batch',
+            oldData: {
+              batchId,
+              batchNumber,
+              name: logItem.name,
+              model: logItem.model,
+              serialNumber: logItem.serialNumber,
+            },
+            userId,
+          })
+        )
+      );
+    }
 
     return true;
   }
@@ -2133,6 +2195,19 @@ export class VerificationPlanningService {
   ): Promise<boolean> {
     if (deviceIds.length === 0) return true;
     const now = new Date();
+    let logsToRecord: any[] = [];
+
+    if (this.auditLogService) {
+      logsToRecord = await this.db
+        .select({
+          id: devices.id,
+          name: devices.name,
+          model: devices.model,
+          serialNumber: devices.serialNumber,
+        })
+        .from(devices)
+        .where(inArray(devices.id, deviceIds));
+    }
 
     await this.db.transaction(async (tx) => {
       // 1. Ищем ID статуса "списан" в БД (устойчиво к любому регистру: Списан / списан)
@@ -2182,6 +2257,23 @@ export class VerificationPlanningService {
       }
     }
 
+    if (this.auditLogService && logsToRecord.length > 0) {
+      await Promise.all(
+        logsToRecord.map((logItem) =>
+          this.auditLogService!.logAction({
+            deviceId: logItem.id,
+            action: 'device_scrap',
+            oldData: {
+              name: logItem.name,
+              model: logItem.model,
+              serialNumber: logItem.serialNumber,
+            },
+            userId,
+          })
+        )
+      );
+    }
+
     return true;
   }
 
@@ -2199,7 +2291,7 @@ export class VerificationPlanningService {
       orderBy: (dtb: any, { desc }: any) => [desc(dtb.createdAt)],
     });
 
-    // 🌟 ФИКС: Безопасно фильтруем строго ремонтный контур силами JavaScript
+    //  ФИКС: Безопасно фильтруем строго ремонтный контур силами JavaScript
     const cleanRepairs = repairLinks.filter(
       (link: any) => link.batch && link.batch.type === 'repair'
     );
@@ -2251,7 +2343,7 @@ export class VerificationPlanningService {
       .where(eq(devices.id, deviceId))
       .limit(1);
 
-    // 3. 🌟 УМНЫЙ МАППИНГ: Учитываем статус списания для незакрытых ведомостей
+    // 3.  УМНЫЙ МАППИНГ: Учитываем статус списания для незакрытых ведомостей
     // Сначала достаем текущий текстовый статус самого прибора из объекта items, полученного на Шаге 1
     // (Подразумевается, что связь status.name у вас подтянута в d.status?.name)
     const currentDeviceStatus = dbDevice?.statusName
@@ -2302,7 +2394,7 @@ export class VerificationPlanningService {
       const closingDoc = docsMap.get(link.batchId) as any;
       const docResultClean = closingDoc?.result?.trim().toLowerCase() || '';
 
-      // 🌟 НАХОДИМ ТЕКУЩИЙ СТАТУС САМОЙ ВЕДОМОСТИ В БД ('draft' | 'sent' | 'completed')
+      // НАХОДИМ ТЕКУЩИЙ СТАТУС САМОЙ ВЕДОМОСТИ В БД ('draft' | 'sent' | 'completed')
       const batchStatus = link.batch?.status?.trim().toLowerCase() || '';
 
       let finalResult = 'В ремонте 🛠️';
