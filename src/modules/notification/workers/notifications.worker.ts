@@ -25,6 +25,7 @@ export const createNotificationWorker = () => {
                 payload.syncedCount === payload.totalCount
                   ? 'success'
                   : 'warning',
+              meta: payload.meta || null,
             });
             break;
           case 'arshin-sync-failed':
@@ -33,6 +34,7 @@ export const createNotificationWorker = () => {
               title: '⚠️ Синхронизация с Аршин завершилась с ошибками',
               message: `Произошел сбой при обработке партии. Проверьте логи или повторите попытку.`,
               type: 'error',
+              meta: payload.meta || null,
             });
             break;
           case 'import-complete':
@@ -41,6 +43,7 @@ export const createNotificationWorker = () => {
               title: '📦 Импорт завершен',
               message: `Импортировано ${payload.importedCount} приборов из Excel.`,
               type: 'success',
+              meta: payload.meta || null,
             });
             break;
           case 'import-failed':
@@ -49,6 +52,7 @@ export const createNotificationWorker = () => {
               title: '❌ Ошибка при импорте',
               message: `Не удалось завершить фоновую загрузку файла оборудования.`,
               type: 'error',
+              meta: payload.meta || null,
             });
             break;
           default:
@@ -59,6 +63,7 @@ export const createNotificationWorker = () => {
               type:
                 (payload.type as 'info' | 'success' | 'warning' | 'error') ||
                 'info',
+              meta: payload.meta || null,
             });
         }
       } catch (error: any) {

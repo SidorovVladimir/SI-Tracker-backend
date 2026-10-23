@@ -120,6 +120,8 @@ type Query {
   ): [MonthlySummary!]!
 
   getVerificationBatches(year: Int, status: String): [VerificationBatch!]!
+
+  getVerificationBatchByNumber(batchNumber: String!): VerificationBatch
   getDraftBatchesByMonth(plannedMonth: String!): [DraftBatchOption!]!
 
   # 🌟 2. ПОЛУЧИТЬ ПУЛ ДЕФЕКТНЫХ ПРИБОРОВ (Воронка Журнала ремонта)

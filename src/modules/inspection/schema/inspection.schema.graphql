@@ -53,6 +53,8 @@ extend type Query {
 
   getInspectionCalendarSummary: [MonthlySummary!]!
 
+  getInspectionBatchByNumber(batchNumber: String!): InspectionBatchItem
+
   getInspectionBatchesArchive(
     limit: Int!
     offset: Int!

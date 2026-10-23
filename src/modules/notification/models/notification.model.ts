@@ -6,6 +6,7 @@ import {
   boolean,
   index,
   varchar,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { users } from '../../user/user.model';
@@ -18,6 +19,7 @@ export const systemNotifications = pgTable(
     title: varchar('title', { length: 255 }).notNull(),
     message: text('message').notNull(),
     type: varchar('type', { length: 50 }).notNull().default('info'),
+    meta: jsonb('meta'),
     createdAt: timestamp('created_at', { withTimezone: true, precision: 3 })
       .notNull()
       .defaultNow(),

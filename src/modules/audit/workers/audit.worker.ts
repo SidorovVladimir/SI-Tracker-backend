@@ -120,6 +120,11 @@ export const createAuditWorker = () => {
               title: alertTitle,
               message: description,
               type: alertType,
+              meta: {
+                action,
+                deviceId: deviceId ?? null,
+                batchNumber: currentBatch ?? null,
+              },
             },
           });
         }

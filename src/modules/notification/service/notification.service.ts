@@ -15,6 +15,7 @@ export class NotificationService {
     title: string;
     message: string;
     type?: 'info' | 'success' | 'warning' | 'error';
+    meta?: Record<string, any> | null;
   }) {
     const [newAlert] = await this.db
       .insert(systemNotifications)
@@ -23,6 +24,7 @@ export class NotificationService {
         title: data.title,
         message: data.message,
         type: data.type || 'info',
+        meta: data.meta || null,
       })
       .returning();
 
@@ -102,6 +104,7 @@ export class NotificationService {
           message: systemNotifications.message,
           type: systemNotifications.type,
           createdAt: systemNotifications.createdAt,
+          meta: sql<string | null>`to_jsonb(${systemNotifications.meta})::text`,
           // Проверяем прочитано ли оно ИМЕННО ЭТИМ пользователем
           isRead: sql<boolean>`CASE WHEN ${userNotificationStatuses.id} IS NOT NULL THEN true ELSE false END`,
         })

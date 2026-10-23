@@ -28,6 +28,7 @@ import {
   verifications,
 } from '../models/verification.model';
 import { statuses } from '../../catalog/models/status.model';
+import { users } from '../../user/user.model';
 
 export interface CreateBatchInput {
   // number: string;
@@ -969,19 +970,6 @@ export class VerificationPlanningService {
       // 🔥 🔥 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Ищем документ под тип конкретного журнала
       let matchedVerification: any = null;
 
-      // if (targetType === 'verification') {
-      //   // Мы в Журнале ПОВЕРОК: ищем самый свежий документ, который НЕ является осмотром
-      //   matchedVerification = deviceVerifications.find(
-      //     (v) =>
-      //       v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
-      //   );
-      // } else {
-      //   // Мы в Журнале ОСМОТРОВ: ищем самый свежий документ, который ЯВЛЯЕТСЯ осмотром
-      //   matchedVerification = deviceVerifications.find(
-      //     (v) =>
-      //       v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
-      //   );
-      // }
       if (targetType === 'verification') {
         // Мы в Журнале ПОВЕРОК: ищем самый свежий документ, который НЕ является осмотром
         matchedVerification = deviceVerifications.find(
@@ -1036,6 +1024,142 @@ export class VerificationPlanningService {
       ...b,
       devicesToBatches: batchRelationsMap.get(b.id) || [],
     }));
+  }
+
+  async getVerificationBatchByNumber(batchNumber: string) {
+    const cleanNumber = batchNumber.trim();
+    const [batch] = await this.db
+      .select({
+        id: verificationBatches.id,
+        number: verificationBatches.number,
+        status: verificationBatches.status,
+        plannedDate: verificationBatches.plannedDate,
+        comment: verificationBatches.comment,
+        verificationOrganization: {
+          id: verificationOrganizations.id,
+          name: verificationOrganizations.name,
+        },
+        createdBy: {
+          id: users.id,
+          role: users.role,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        },
+      })
+      .from(verificationBatches)
+      .leftJoin(users, eq(verificationBatches.createdById, users.id))
+      .leftJoin(
+        verificationOrganizations,
+        eq(
+          verificationBatches.verificationOrganizationId,
+          verificationOrganizations.id
+        )
+      )
+      .where(
+        and(
+          eq(verificationBatches.number, cleanNumber),
+          eq(verificationBatches.type, 'verification')
+        )
+      )
+      .limit(1);
+
+    if (!batch) return null;
+
+    const relationsData = await this.db
+      .select({
+        batchId: devicesToBatches.batchId,
+        deviceToBatchId: devicesToBatches.id,
+        deviceStatus: devicesToBatches.deviceStatus,
+        createdAt: devicesToBatches.createdAt,
+        // Данные прибора
+        deviceId: devices.id,
+        deviceName: devices.name,
+        deviceModel: devices.model,
+        deviceSerialNumber: devices.serialNumber,
+      })
+      .from(devicesToBatches)
+      .innerJoin(devices, eq(devicesToBatches.deviceId, devices.id))
+      .where(eq(devicesToBatches.batchId, batch.id));
+
+    const uniqueDeviceIds = Array.from(
+      new Set(relationsData.map((r) => r.deviceId))
+    );
+
+    // ПОТОК 3: Параллельно вытаскиваем верификации и буфер только для нужных приборов
+    const [allVerifications, allArshinBuffers] = await Promise.all([
+      this.db.query.verifications.findMany({
+        where: inArray(verifications.deviceId, uniqueDeviceIds),
+        orderBy: (v, { desc }) => [desc(v.date)],
+        // 🔥 УВЕЛИЧИВАЕМ ЗАПАС: Берем последние 5 документов прибора, чтобы цеховые осмотры не затирали гоповерки
+        limit: uniqueDeviceIds.length * 5,
+        with: { metrologyControleType: true, verificationOrganization: true },
+      }),
+      this.db.query.arshinVerificationBuffer.findMany({
+        where: inArray(arshinVerificationBuffer.deviceId, uniqueDeviceIds),
+        orderBy: (ab, { desc }) => [desc(ab.verificationDate)],
+      }),
+    ]);
+
+    // Группируем верификации и буферы по deviceId в Map для O(1) доступа
+    const verificationsMap = new Map<string, typeof allVerifications>();
+    for (const v of allVerifications) {
+      if (!verificationsMap.has(v.deviceId))
+        verificationsMap.set(v.deviceId, []);
+      verificationsMap.get(v.deviceId)!.push(v);
+    }
+
+    const arshinMap = new Map<string, typeof allArshinBuffers>();
+    for (const ab of allArshinBuffers) {
+      if (!arshinMap.has(ab.deviceId)) arshinMap.set(ab.deviceId, []);
+      arshinMap.get(ab.deviceId)!.push(ab);
+    }
+
+    // ПОТОК 4: Собираем финальное дерево связей на стороне Node.js
+    const batchRelationsMap = new Map<string, any[]>();
+
+    for (const rel of relationsData) {
+      const deviceVerifications = verificationsMap.get(rel.deviceId) || [];
+
+      // 🔥 🔥 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Ищем документ под тип конкретного журнала
+      let matchedVerification = deviceVerifications.find(
+        (v) => v.metrologyControleType?.name?.toLowerCase().trim() !== 'осмотр'
+      );
+
+      // Если по какому-то прибору истории нужного типа еще нет, берем самую последнюю запись как фоллбэк
+      if (!matchedVerification && deviceVerifications.length > 0) {
+        matchedVerification = deviceVerifications[0];
+      }
+
+      const latestVerification = matchedVerification
+        ? [matchedVerification]
+        : [];
+      const deviceArshinBuffers = arshinMap.get(rel.deviceId) || [];
+
+      const deviceToBatchNode = {
+        id: rel.deviceToBatchId,
+        deviceId: rel.deviceId,
+        batchId: rel.batchId,
+        deviceStatus: rel.deviceStatus,
+        createdAt: rel.createdAt,
+        device: {
+          id: rel.deviceId,
+          name: rel.deviceName,
+          model: rel.deviceModel,
+          serialNumber: rel.deviceSerialNumber,
+          verifications: latestVerification, // Сюда улетит юридически чистый документ!
+          arshinBuffers: deviceArshinBuffers,
+        },
+      };
+
+      if (!batchRelationsMap.has(rel.batchId))
+        batchRelationsMap.set(rel.batchId, []);
+      batchRelationsMap.get(rel.batchId)!.push(deviceToBatchNode);
+    }
+
+    return {
+      ...batch,
+      devicesToBatches: batchRelationsMap.get(batch.id) || [],
+    };
   }
 
   async deleteBatch(id: string, userId: string): Promise<boolean> {

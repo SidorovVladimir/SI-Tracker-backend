@@ -4,6 +4,7 @@ type SystemNotification {
   title: String!
   message: String!
   type: String!
+  meta: String
   isRead: Boolean!
   createdAt: String!
 }

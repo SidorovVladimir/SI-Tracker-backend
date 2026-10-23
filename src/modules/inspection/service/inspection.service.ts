@@ -23,6 +23,7 @@ import {
 } from '../../verification/models/verification.model';
 import { DeviceService } from '../../device/service/device.service';
 import { DeviceAuditLogService } from '../../audit/auditLog.service';
+import { users } from '../../user/user.model';
 
 export class InspectionService {
   constructor(
@@ -511,6 +512,74 @@ export class InspectionService {
     return {
       items,
       totalCount,
+    };
+  }
+
+  async getInspectionBatchByNumber(batchNumber: string) {
+    const cleanNumber = batchNumber.trim();
+
+    const [batch] = await this.db
+      .select({
+        id: verificationBatches.id,
+        number: verificationBatches.number,
+        plannedDate: verificationBatches.plannedDate,
+        comment: verificationBatches.comment,
+        createdBy: {
+          id: users.id,
+          role: users.role,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        },
+      })
+      .from(verificationBatches)
+      .leftJoin(users, eq(verificationBatches.createdById, users.id))
+      .where(
+        and(
+          eq(verificationBatches.number, cleanNumber),
+          eq(verificationBatches.type, 'inspection')
+        )
+      )
+      .limit(1);
+
+    if (!batch) return null;
+
+    const rawLinks = await this.db
+      .select({
+        id: devicesToBatches.id,
+        deviceStatus: devicesToBatches.deviceStatus,
+        device: {
+          id: devices.id,
+          name: devices.name,
+          model: devices.model,
+          serialNumber: devices.serialNumber,
+        },
+      })
+      .from(devicesToBatches)
+      .leftJoin(devices, eq(devicesToBatches.deviceId, devices.id))
+      .where(eq(devicesToBatches.batchId, batch.id));
+
+    return {
+      id: batch.id,
+      number: batch.number,
+
+      date:
+        batch.plannedDate instanceof Date
+          ? batch.plannedDate.toISOString()
+          : new Date(batch.plannedDate).toISOString(),
+      comment: batch.comment,
+      createdBy: batch.createdBy,
+      devicesToBatches: rawLinks
+        .filter((link: any) => !!link?.device)
+        .map((link: any) => ({
+          id: link.id,
+          deviceStatus: link.deviceStatus,
+          device: {
+            id: link.device.id,
+            name: link.device.name,
+            model: link.device.model,
+            serialNumber: link.device.serialNumber,
+          },
+        })),
     };
   }
 }

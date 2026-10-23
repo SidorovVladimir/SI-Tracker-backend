@@ -32,6 +32,23 @@ export const Query = {
     );
   },
 
+  getInspectionBatchByNumber: async (
+    _: unknown,
+    { batchNumber }: { batchNumber: string },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    const planningService = new VerificationPlanningService(db);
+    const inspectionService = new InspectionService(db, planningService);
+
+    return await inspectionService.getInspectionBatchByNumber(batchNumber);
+  },
+
   getInspectionCalendarSummary: async (
     _: unknown,
     __: unknown,
