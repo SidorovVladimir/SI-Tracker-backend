@@ -49,6 +49,7 @@ type DeviceInBatch {
   name: String!
   model: String!
   serialNumber: String!
+  cachedControl: String!
   verifications: [ShortVerification!]
   arshinBuffers: [ArshinVerificationBufferItem!]
 }
@@ -122,6 +123,7 @@ type Query {
   getVerificationBatches(year: Int, status: String): [VerificationBatch!]!
 
   getVerificationBatchByNumber(batchNumber: String!): VerificationBatch
+  getRepairBatchByNumber(batchNumber: String!): VerificationBatch
   getDraftBatchesByMonth(plannedMonth: String!): [DraftBatchOption!]!
 
   # 🌟 2. ПОЛУЧИТЬ ПУЛ ДЕФЕКТНЫХ ПРИБОРОВ (Воронка Журнала ремонта)

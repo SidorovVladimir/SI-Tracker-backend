@@ -2002,22 +2002,6 @@ export class DeviceService {
 
     // 2. Вычисляем строгое название целевого контроля (Ваша логика)
     let targetControlName = 'осмотр';
-    // if (
-    //   eqTypeName === 'индикатор' ||
-    //   eqTypeName === 'вспомогательное оборудование (во)'
-    // ) {
-    //   targetControlName = 'осмотр';
-    // } else if (eqTypeName === 'средство измерений (си)') {
-    //   targetControlName = hasGrsi && !isNotGr ? 'поверка' : 'осмотр';
-    // } else if (eqTypeName === 'средство контроля (ск)') {
-    //   targetControlName = isNotGr
-    //     ? 'осмотр'
-    //     : hasGrsi
-    //     ? 'поверка'
-    //     : 'калибровка';
-    // } else if (eqTypeName === 'испытательное оборудование (ио)') {
-    //   targetControlName = isNotGr ? 'осмотр' : 'аттестация';
-    // }
 
     if (isSiOrSk) {
       if (firstRow.isVoluntaryCalibration) {
@@ -2034,23 +2018,6 @@ export class DeviceService {
       // Только индикаторы и ВО изначально считаются «простыми» и сразу планируются на осмотр
       targetControlName = 'осмотр';
     }
-
-    // 3. Ищем самый свежий документ этого контроля в истории
-    // const [latestTargetDoc] = await db
-    //   .select({ validUntil: verifications.validUntil })
-    //   .from(verifications)
-    //   .leftJoin(
-    //     metrologyControleTypes,
-    //     eq(verifications.metrologyControleTypeId, metrologyControleTypes.id)
-    //   )
-    //   .where(
-    //     and(
-    //       eq(verifications.deviceId, deviceId),
-    //       eq(metrologyControleTypes.name, targetControlName)
-    //     )
-    //   )
-    //   .orderBy(sql`${verifications.date} DESC NULLS LAST`)
-    //   .limit(1);
 
     const [latestVerificationDoc] = await db
       .select({
@@ -2158,6 +2125,7 @@ export class DeviceService {
 
     const absoluteLatestDoc = allHistoricalDocs[0] || null; // Абсолютно последнее событие
     // Проверяем: сломан ли прибор ПРЯМО СЕЙЧАС (на основе САМОГО ПОСЛЕДНЕГО документа)
+
     const resultText = absoluteLatestDoc?.result
       ? absoluteLatestDoc.result.trim().toLowerCase()
       : '';
@@ -2166,22 +2134,14 @@ export class DeviceService {
       resultText === 'неисправен' ||
       resultText === 'брак';
 
-    // Определяем целевой документ для расчета плановых дат контроля
-    // let mainDocForVerificationField =
-    //   eqTypeName === 'испытательное оборудование (ио)'
-    //     ? latestAttestationDoc
-    //     : targetControlName === 'калибровка'
-    //     ? latestCalibrationDoc
-    //     : targetControlName === 'осмотр'
-    //     ? latestInspectionDoc
-    //     : latestVerificationDoc;
-
     let mainDocForVerificationField =
       eqTypeName === 'испытательное оборудование (ио)'
         ? latestAttestationDoc
         : targetControlName === 'калибровка'
         ? latestCalibrationDoc
-        : latestVerificationDoc;
+        : targetControlName === 'поверка'
+        ? latestVerificationDoc
+        : latestInspectionDoc;
 
     const isMainDocBroken =
       mainDocForVerificationField?.result === 'не годен' ||
@@ -2211,99 +2171,27 @@ export class DeviceService {
 
     const isDeviceInActiveRepairBatch = activeRepairLinks.length > 0;
 
-    // const isMainControlBlocked = isMainDocBroken;
-    const isMainControlBlocked = isMainDocBroken || isDeviceInActiveRepairBatch;
+    // const isMainControlBlocked = isMainDocBroken || isDeviceInActiveRepairBatch;
+
+    // 1. Проверяем, зафиксирован ли легитимный годный результат по главному документу
+    const isMainDocHealthy = mainDocForVerificationField?.result
+      ? ['годен', 'исправен', 'соответствует'].includes(
+          mainDocForVerificationField.result.trim().toLowerCase()
+        )
+      : false;
+
+    // 2. Блокировка активна, если основной документ сломан ИЛИ прибор в активной ведомости ремонта.
+    // НО: если по главному документу уже получен свежий годный результат, ведомость ремонта больше НЕ блокирует прибор.
+    const isMainControlBlocked = isMainDocHealthy
+      ? false
+      : isMainDocBroken || isDeviceInActiveRepairBatch;
 
     // 4. ИНТЕГРАЦИЯ ВАШЕГО МЕТОДА РАСЧЕТА СЛЕДУЮЩЕЙ ДАТЫ
     let nextVerificationDateStr: string | null = null;
 
-    // // Определяем, какой документ является основным для этого поля
-    // let mainDocForVerificationField = null;
-
-    // if (eqTypeName === 'испытательное оборудование (ио)') {
-    //   mainDocForVerificationField = latestAttestationDoc;
-    // } else if (targetControlName === 'калибровка') {
-    //   mainDocForVerificationField = latestCalibrationDoc; // Если кэш «калибровка» — приоритет у калибровочных документов
-    // } else {
-    //   mainDocForVerificationField = latestVerificationDoc; // По умолчанию ищем поверку
-    // }
-
-    // const isMainDocRejected =
-    //   mainDocForVerificationField?.result === 'не годен' ||
-    //   mainDocForVerificationField?.result === 'неисправен' ||
-    //   mainDocForVerificationField?.result === 'брак';
-
-    // if (isMainDocRejected) {
-    //   // Если последний документ бракованный — дата СЛЕДУЮЩЕГО контроля ПРИНУДИТЕЛЬНО обнуляется!
-    //   nextVerificationDateStr = null;
-    // } else if (mainDocForVerificationField?.validUntil) {
-    //   // Если документ успешный и у него есть срок действия — берем его
-    //   nextVerificationDateStr = new Date(mainDocForVerificationField.validUntil)
-    //     .toISOString()
-    //     .slice(0, 10);
-    // } else if (
-    //   targetControlName === 'поверка' ||
-    //   targetControlName === 'аттестация' ||
-    //   targetControlName === 'калибровка'
-    // ) {
-    //   // Если документов вообще нет — считаем дефолт по МПИ (наша стандартная логика)
-    //   const baseDate = firstRow.receiptDate || firstRow.releaseDate;
-    //   if (baseDate && firstRow.verificationInterval) {
-    //     const nextDate = new Date(baseDate);
-    //     nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
-    //     nextVerificationDateStr = nextDate.toISOString().slice(0, 10);
-    //   } else {
-    //     const today = new Date();
-    //     nextVerificationDateStr = `${today.getFullYear()}-${String(
-    //       today.getMonth() + 1
-    //     ).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    //   }
-    // } else {
-    //   nextVerificationDateStr = null;
-    // }
-
-    // let nextInspectionDateStr: string | null = null;
-    // const isIndicatorOrVo =
-    //   eqTypeName === 'индикатор' ||
-    //   eqTypeName === 'вспомогательное оборудование (во)';
-
-    // const isInspectionDocRejected =
-    //   latestInspectionDoc?.result === 'не годен' ||
-    //   latestInspectionDoc?.result === 'неисправен';
-
-    // if (isInspectionDocRejected) {
-    //   // Если внутреннее ТО выявило критический дефект — плановый осмотр сбрасываем, прибор ждет ремонта
-    //   nextInspectionDateStr = null;
-    // } else if (latestInspectionDoc?.validUntil) {
-    //   nextInspectionDateStr = new Date(latestInspectionDoc.validUntil)
-    //     .toISOString()
-    //     .slice(0, 10);
-    // } else if (targetControlName === 'осмотр' || isIndicatorOrVo) {
-    //   const baseDate = firstRow.receiptDate || firstRow.releaseDate;
-    //   if (baseDate && firstRow.verificationInterval) {
-    //     const nextDate = new Date(baseDate);
-    //     nextDate.setMonth(nextDate.getMonth() + firstRow.verificationInterval);
-    //     nextInspectionDateStr = nextDate.toISOString().slice(0, 10);
-    //   } else {
-    //     const today = new Date();
-    //     nextInspectionDateStr = `${today.getFullYear()}-${String(
-    //       today.getMonth() + 1
-    //     ).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    //   }
-    // } else {
-    //   nextInspectionDateStr = null;
-    // }
-
     if (isCurrentlyBroken || isMainControlBlocked) {
       nextVerificationDateStr = null; // Прибор сломан — дедлайн сгорает
     } else {
-      // let mainDocForVerificationField =
-      //   eqTypeName === 'испытательное оборудование (ио)'
-      //     ? latestAttestationDoc
-      //     : targetControlName === 'калибровка'
-      //     ? latestCalibrationDoc
-      //     : latestVerificationDoc;
-
       if (mainDocForVerificationField?.validUntil) {
         nextVerificationDateStr = new Date(
           mainDocForVerificationField.validUntil
@@ -2362,109 +2250,11 @@ export class DeviceService {
 
     let finalStatusId = firstRow.statusId;
 
-    // // Собираем все найденные на Шаге 3 исторические документы
-    // const allDocs = [
-    //   latestVerificationDoc,
-    //   latestCalibrationDoc,
-    //   latestInspectionDoc,
-    //   latestAttestationDoc,
-    // ].filter(
-    //   (doc): doc is NonNullable<typeof doc> => doc !== null && doc !== undefined
-    // );
-
-    // if (allDocs.length > 0) {
-    //   allDocs.sort((a, b) => {
-    //     const dateA = a.date ? new Date(a.date).getTime() : 0;
-    //     const dateB = b.date ? new Date(b.date).getTime() : 0;
-    //     return dateB - dateA;
-    //   });
-
-    //   const absoluteLatest = allDocs[0]; // Наш самый свежий исторический документ
-    //   const resultText = absoluteLatest.result
-    //     ? absoluteLatest.result.trim().toLowerCase()
-    //     : '';
-    //   const docType = absoluteLatest.controlTypeName
-    //     ? absoluteLatest.controlTypeName.trim().toLowerCase()
-    //     : '';
-
-    //   let targetStatusName: string | null = null;
-
-    //   if (
-    //     resultText === 'не годен' ||
-    //     resultText === 'неисправен' ||
-    //     resultText === 'брак'
-    //   ) {
-    //     // Если последний по дате контроль завершился неудачно
-    //     if (docType === 'поверка') {
-    //       targetStatusName = 'забракован'; // Юридический статус для СИ
-    //     } else {
-    //       targetStatusName = 'неисправен'; // Для калибровок, аттестаций и ТО
-    //     }
-    //   } else if (
-    //     resultText === 'годен' ||
-    //     resultText === 'исправен' ||
-    //     resultText === 'соответствует'
-    //   ) {
-    //     // Если последний документ успешный, нам нужно «оживить» прибор,
-    //     // но только если он до этого числился сломанным или забракованным.
-
-    //     // const [currentStatus] = await db
-    //     //   .select({ name: statuses.name })
-    //     //   .from(statuses)
-    //     //   .where(eq(statuses.id, firstRow.statusId));
-
-    //     // const currentStatusName =
-    //     //   currentStatus?.name?.trim().toLowerCase() || '';
-
-    //     // Возвращаем в строй только если он был неисправен/забракован.
-    //     // Статусы вроде "Утерян" или "Длительное хранение" не перезаписываем!
-    //     const currentStatusName = firstRow.statusName
-    //       ? firstRow.statusName.trim().toLowerCase()
-    //       : '';
-
-    //     if (
-    //       currentStatusName === 'неисправен' ||
-    //       currentStatusName === 'забракован' ||
-    //       currentStatusName === 'на поверке (в цсм)'
-    //     ) {
-    //       targetStatusName = 'исправен';
-    //     }
-    //   }
-
     if (absoluteLatestDoc) {
       const docType = absoluteLatestDoc.controlTypeName
         ? absoluteLatestDoc.controlTypeName.trim().toLowerCase()
         : '';
       let targetStatusName: string | null = null;
-
-      // if (isDeviceBroken) {
-      //   if (docType === 'поверка') {
-      //     targetStatusName = 'забракован';
-      //   } else {
-      //     targetStatusName = 'неисправен';
-      //   }
-      // } else if (
-      //   resultText === 'годен' ||
-      //   resultText === 'исправен' ||
-      //   resultText === 'соответствует'
-      // ) {
-      //   // const [currentStatus] = await db
-      //   //   .select({ name: statuses.name })
-      //   //   .from(statuses)
-      //   //   .where(eq(statuses.id, firstRow.statusId));
-
-      //   const currentStatusName = firstRow.statusName
-      //     ? firstRow.statusName.trim().toLowerCase()
-      //     : '';
-
-      //   if (
-      //     currentStatusName === 'неисправен' ||
-      //     currentStatusName === 'забракован' ||
-      //     currentStatusName === 'на поверке (в цсм)'
-      //   ) {
-      //     targetStatusName = 'исправен';
-      //   }
-      // }
 
       const currentStatusName = firstRow.statusName
         ? firstRow.statusName.trim().toLowerCase()
@@ -2491,6 +2281,7 @@ export class DeviceService {
         const isDocLegitimate =
           (targetControlName === 'поверка' && docType === 'поверка') ||
           (targetControlName === 'калибровка' && docType === 'калибровка') ||
+          (targetControlName === 'аттестация' && docType === 'аттестация') ||
           (targetControlName === 'осмотр' && docType === 'осмотр');
 
         if (isDocLegitimate) {
@@ -2505,46 +2296,6 @@ export class DeviceService {
           }
         }
       }
-      // const currentStatusName = firstRow.statusName
-      //   ? firstRow.statusName.trim().toLowerCase()
-      //   : '';
-
-      // // 1. СНАЧАЛА ПРОВЕРЯЕМ: Внесли ли документ, который ОЖИВЛЯЕТ прибор?
-      // const isGoodResult =
-      //   resultText === 'годен' ||
-      //   resultText === 'исправен' ||
-      //   resultText === 'соответствует';
-
-      // const isDocLegitimate =
-      //   (targetControlName === 'поверка' && docType === 'поверка') ||
-      //   (targetControlName === 'калибровка' && docType === 'калибровка') ||
-      //   (targetControlName === 'осмотр' && docType === 'осмотр');
-
-      // if (isGoodResult && isDocLegitimate) {
-      //   // Если документ легитимен и прибор годен — он становится исправным,
-      //   // даже если до этого он был сломан или в ремонте!
-      //   if (
-      //     currentStatusName === 'неисправен' ||
-      //     currentStatusName === 'забракован' ||
-      //     currentStatusName === 'в ремонте' ||
-      //     currentStatusName === 'на поверке (в цсм)'
-      //   ) {
-      //     targetStatusName = 'исправен';
-      //   }
-      // }
-      // // 2. ЕСЛИ ПРИБОР НЕ ОЖИЛ: Проверяем, не поломался ли он прямо сейчас?
-      // else if (isCurrentlyBroken) {
-      //   if (docType === 'поверка') {
-      //     targetStatusName = 'забракован';
-      //   } else {
-      //     targetStatusName = 'неисправен';
-      //   }
-      // }
-      // // 3. ЕСЛИ НЕ СЛОМАН И НЕ ОЖИЛ: Проверяем блокировки и текущий ремонт
-      // else if (isMainControlBlocked || currentStatusName === 'в ремонте') {
-      //   // Если он уже в ремонте или заблокирован главным контролем — оставляем/отправляем в ремонт
-      //   targetStatusName = 'в ремонте';
-      // }
 
       // Если статус требует автоматической корректировки — ищем его ID
       if (targetStatusName && targetStatusName !== currentStatusName) {

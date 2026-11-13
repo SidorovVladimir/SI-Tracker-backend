@@ -918,6 +918,7 @@ export class VerificationPlanningService {
         deviceName: devices.name,
         deviceModel: devices.model,
         deviceSerialNumber: devices.serialNumber,
+        cachedControl: devices.cachedControl,
       })
       .from(devicesToBatches)
       .innerJoin(devices, eq(devicesToBatches.deviceId, devices.id))
@@ -983,7 +984,7 @@ export class VerificationPlanningService {
             v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
         );
       } else if (targetType === 'repair') {
-        // 🌟 МЫ В ЖУРНАЛЕ РЕМОНТОВ: Ищем абсолютно самый свежий документ в истории СИ,
+        //  МЫ В ЖУРНАЛЕ РЕМОНТОВ: Ищем абсолютно самый свежий документ в истории СИ,
         // так как ремонт может закрываться как Поверкой, так и Осмотром/Калибровкой
         matchedVerification =
           deviceVerifications.length > 0 ? deviceVerifications[0] : null;
@@ -1010,7 +1011,8 @@ export class VerificationPlanningService {
           name: rel.deviceName,
           model: rel.deviceModel,
           serialNumber: rel.deviceSerialNumber,
-          verifications: latestVerification, // Сюда улетит юридически чистый документ!
+          cachedControl: rel.cachedControl,
+          verifications: latestVerification,
           arshinBuffers: deviceArshinBuffers,
         },
       };
@@ -2415,7 +2417,6 @@ export class VerificationPlanningService {
       orderBy: (dtb: any, { desc }: any) => [desc(dtb.createdAt)],
     });
 
-    //  ФИКС: Безопасно фильтруем строго ремонтный контур силами JavaScript
     const cleanRepairs = repairLinks.filter(
       (link: any) => link.batch && link.batch.type === 'repair'
     );
@@ -2431,33 +2432,6 @@ export class VerificationPlanningService {
     });
 
     const docsMap = new Map(linkedDocs.map((doc: any) => [doc.batchId, doc]));
-
-    // // 3. Формируем чистый таймлайн ремонта для фронтенда
-    // return cleanRepairs.map((link: any) => {
-    //   const closingDoc = docsMap.get(link.batchId) as any;
-    //   const docResultClean = closingDoc?.result?.trim().toLowerCase() || '';
-
-    //   return {
-    //     batchId: link.batchId,
-    //     batchNumber: link.batch.number,
-    //     dateIn: new Date(link.createdAt).toLocaleDateString('ru-RU'), // Дата поломки/приемки
-    //     dateOut: closingDoc?.date
-    //       ? new Date(closingDoc.date).toLocaleDateString('ru-RU')
-    //       : 'В процессе',
-    //     master: link.batch.createdBy
-    //       ? `${
-    //           link.batch.createdBy.lastName
-    //         } ${link.batch.createdBy.firstName.slice(0, 1)}.`
-    //       : '—',
-    //     result: closingDoc
-    //       ? docResultClean === 'годен'
-    //         ? 'Исправен 🟢'
-    //         : 'Брак 🔴'
-    //       : 'В ремонте 🛠️',
-    //     closingDocType: closingDoc?.metrologyControleType?.name || '—',
-    //     comment: closingDoc?.comment || 'без примечаний',
-    //   };
-
     const [dbDevice] = await this.db
       .select({
         statusName: statuses.name,
@@ -2475,50 +2449,10 @@ export class VerificationPlanningService {
       : '';
     const isDeviceScrapped = currentDeviceStatus === 'списан';
 
-    // return cleanRepairs.map((link: any) => {
-    //   const closingDoc = docsMap.get(link.batchId) as any;
-    //   const docResultClean = closingDoc?.result?.trim().toLowerCase() || '';
-
-    //   let finalResult = 'В ремонте 🛠️';
-    //   let finalDateOut = 'В процессе';
-    //   let docTypeLabel = closingDoc?.metrologyControleType?.name || '—';
-    //   let finalComment = closingDoc?.comment || 'Без примечаний';
-
-    //   // 🌟 ИСТОРИЧЕСКИ ТОЧНЫЙ АЛГОРИТМ РАСПРЕДЕЛЕНИЯ СТАТУСОВ:
-    //   if (closingDoc) {
-    //     // КЕЙС 1: Ремонт ИЗ ПРОШЛОГО (или текущий) успешно закрыт документом.
-    //     // Выводим чистую историю: Исправен или Брак. Текущий статус Списан сюда НЕ имеет права лезть!
-    //     finalResult = docResultClean === 'годен' ? 'Исправен 🟢' : 'Брак 🔴';
-    //     finalDateOut = new Date(closingDoc.date).toLocaleDateString('ru-RU');
-    //   } else if (isDeviceScrapped) {
-    //     // КЕЙС 2: 🌟 Документа нет, НО прибор сейчас списан!
-    //     // Это значит, что данный конкретный (самый последний) ремонт прервался утилизацией СИ.
-    //     finalResult = 'Списан ❌';
-    //     finalDateOut = new Date().toLocaleDateString('ru-RU'); // День списания
-    //     docTypeLabel = 'Акт списания';
-    //     finalComment =
-    //       'Прибор признан неремонтопригодным и выведен из эксплуатации';
-    //   }
-
-    //   return {
-    //     batchId: link.batchId,
-    //     batchNumber: link.batch.number,
-    //     dateIn: new Date(link.createdAt).toLocaleDateString('ru-RU'),
-    //     dateOut: finalDateOut,
-    //     master: link.batch.createdBy
-    //       ? `${
-    //           link.batch.createdBy.lastName
-    //         } ${link.batch.createdBy.firstName.slice(0, 1)}.`
-    //       : '—',
-    //     result: finalResult,
-    //     closingDocType: docTypeLabel,
-    //     comment: finalComment,
-    //   };
     return cleanRepairs.map((link: any) => {
       const closingDoc = docsMap.get(link.batchId) as any;
       const docResultClean = closingDoc?.result?.trim().toLowerCase() || '';
 
-      // НАХОДИМ ТЕКУЩИЙ СТАТУС САМОЙ ВЕДОМОСТИ В БД ('draft' | 'sent' | 'completed')
       const batchStatus = link.batch?.status?.trim().toLowerCase() || '';
 
       let finalResult = 'В ремонте 🛠️';
@@ -2566,5 +2500,130 @@ export class VerificationPlanningService {
         comment: finalComment,
       };
     });
+  }
+
+  async getRepairBatchByNumber(batchNumber: string) {
+    const cleanNumber = batchNumber.trim();
+    const [batch] = await this.db
+      .select({
+        id: verificationBatches.id,
+        number: verificationBatches.number,
+        status: verificationBatches.status,
+        plannedDate: verificationBatches.plannedDate,
+        comment: verificationBatches.comment,
+
+        createdBy: {
+          id: users.id,
+          role: users.role,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        },
+      })
+      .from(verificationBatches)
+      .leftJoin(users, eq(verificationBatches.createdById, users.id))
+      .where(
+        and(
+          eq(verificationBatches.number, cleanNumber),
+          eq(verificationBatches.type, 'repair')
+        )
+      )
+      .limit(1);
+
+    if (!batch) return null;
+
+    const relationsData = await this.db
+      .select({
+        batchId: devicesToBatches.batchId,
+        deviceToBatchId: devicesToBatches.id,
+        deviceStatus: devicesToBatches.deviceStatus,
+        createdAt: devicesToBatches.createdAt,
+        // Данные прибора
+        deviceId: devices.id,
+        deviceName: devices.name,
+        deviceModel: devices.model,
+        deviceSerialNumber: devices.serialNumber,
+      })
+      .from(devicesToBatches)
+      .innerJoin(devices, eq(devicesToBatches.deviceId, devices.id))
+      .where(eq(devicesToBatches.batchId, batch.id));
+
+    const uniqueDeviceIds = Array.from(
+      new Set(relationsData.map((r) => r.deviceId))
+    );
+
+    // ПОТОК 3: Параллельно вытаскиваем верификации и буфер только для нужных приборов
+    const [allVerifications, allArshinBuffers] = await Promise.all([
+      this.db.query.verifications.findMany({
+        where: inArray(verifications.deviceId, uniqueDeviceIds),
+        orderBy: (v, { desc }) => [desc(v.date)],
+        // 🔥 УВЕЛИЧИВАЕМ ЗАПАС: Берем последние 5 документов прибора, чтобы цеховые осмотры не затирали гоповерки
+        limit: uniqueDeviceIds.length * 5,
+        with: { metrologyControleType: true, verificationOrganization: true },
+      }),
+      this.db.query.arshinVerificationBuffer.findMany({
+        where: inArray(arshinVerificationBuffer.deviceId, uniqueDeviceIds),
+        orderBy: (ab, { desc }) => [desc(ab.verificationDate)],
+      }),
+    ]);
+
+    // Группируем верификации и буферы по deviceId в Map для O(1) доступа
+    const verificationsMap = new Map<string, typeof allVerifications>();
+    for (const v of allVerifications) {
+      if (!verificationsMap.has(v.deviceId))
+        verificationsMap.set(v.deviceId, []);
+      verificationsMap.get(v.deviceId)!.push(v);
+    }
+
+    const arshinMap = new Map<string, typeof allArshinBuffers>();
+    for (const ab of allArshinBuffers) {
+      if (!arshinMap.has(ab.deviceId)) arshinMap.set(ab.deviceId, []);
+      arshinMap.get(ab.deviceId)!.push(ab);
+    }
+
+    // ПОТОК 4: Собираем финальное дерево связей на стороне Node.js
+    const batchRelationsMap = new Map<string, any[]>();
+
+    for (const rel of relationsData) {
+      const deviceVerifications = verificationsMap.get(rel.deviceId) || [];
+
+      // 🔥 🔥 ГЛАВНОЕ ИСПРАВЛЕНИЕ: Ищем документ под тип конкретного журнала
+      let matchedVerification =
+        deviceVerifications.length > 0 ? deviceVerifications[0] : null;
+
+      // Если по какому-то прибору истории нужного типа еще нет, берем самую последнюю запись как фоллбэк
+      if (!matchedVerification && deviceVerifications.length > 0) {
+        matchedVerification = deviceVerifications[0];
+      }
+
+      const latestVerification = matchedVerification
+        ? [matchedVerification]
+        : [];
+      const deviceArshinBuffers = arshinMap.get(rel.deviceId) || [];
+
+      const deviceToBatchNode = {
+        id: rel.deviceToBatchId,
+        deviceId: rel.deviceId,
+        batchId: rel.batchId,
+        deviceStatus: rel.deviceStatus,
+        createdAt: rel.createdAt,
+        device: {
+          id: rel.deviceId,
+          name: rel.deviceName,
+          model: rel.deviceModel,
+          serialNumber: rel.deviceSerialNumber,
+          verifications: latestVerification,
+          arshinBuffers: deviceArshinBuffers,
+        },
+      };
+
+      if (!batchRelationsMap.has(rel.batchId))
+        batchRelationsMap.set(rel.batchId, []);
+      batchRelationsMap.get(rel.batchId)!.push(deviceToBatchNode);
+    }
+
+    return {
+      ...batch,
+      devicesToBatches: batchRelationsMap.get(batch.id) || [],
+    };
   }
 }

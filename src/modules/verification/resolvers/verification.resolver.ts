@@ -101,6 +101,22 @@ export const Query = {
 
     return await planningService.getVerificationBatchByNumber(batchNumber);
   },
+
+  getRepairBatchByNumber: async (
+    _: unknown,
+    { batchNumber }: { batchNumber: string },
+    { db, currentUser }: Context
+  ) => {
+    if (!currentUser) throw new Error('Не авторизован');
+
+    if (currentUser.role === 'user') {
+      throw new Error('Доступ запрещен: нужны права администратора');
+    }
+
+    const planningService = new VerificationPlanningService(db);
+
+    return await planningService.getRepairBatchByNumber(batchNumber);
+  },
   getDraftBatchesByMonth: async (
     _: unknown,
     { plannedMonth }: { plannedMonth: string },
