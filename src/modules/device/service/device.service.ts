@@ -787,18 +787,78 @@ export class DeviceService {
 
       // 4. Синхронизация верификаций (удаление лишних)
       const dbVerifications = await tx
-        .select({ id: verifications.id })
+        .select({ id: verifications.id, batchId: verifications.batchId })
         .from(verifications)
         .where(eq(verifications.deviceId, id));
-      const dbIds = dbVerifications.map((v) => v.id);
+
+      // const dbIds = dbVerifications.map((v) => v.id);
 
       const incomingIds = (input.verifications || [])
         .map((v: any) => v.id)
         .filter(Boolean) as string[];
 
-      const idsToDelete = dbIds.filter((dbId) => !incomingIds.includes(dbId));
+      const docsToDelete = dbVerifications.filter(
+        (dbV) => !incomingIds.includes(dbV.id)
+      );
 
-      if (idsToDelete.length > 0) {
+      // const idsToDelete = dbIds.filter((dbId) => !incomingIds.includes(dbId));
+
+      // if (idsToDelete.length > 0) {
+      //   await tx
+      //     .delete(verifications)
+      //     .where(inArray(verifications.id, idsToDelete));
+      // }
+
+      if (docsToDelete.length > 0) {
+        const idsToDelete = docsToDelete.map((d) => d.id);
+
+        // Проверяем, были ли среди удаленных поверок те, что закрывали открытые ремонтные ведомости
+        const affectedBatchIds = Array.from(
+          new Set(
+            docsToDelete
+              .map((d) => d.batchId)
+              .filter((bId): bId is string => Boolean(bId))
+          )
+        );
+
+        if (affectedBatchIds.length > 0) {
+          // Ищем среди этих ведомостей те, которые еще не закрыты (draft или sent)
+          const openBatches = await tx
+            .select({
+              id: verificationBatches.id,
+              type: verificationBatches.type,
+            })
+            .from(verificationBatches)
+            .where(
+              and(
+                inArray(verificationBatches.id, affectedBatchIds),
+                inArray(sql`lower(trim(${verificationBatches.status}))`, [
+                  'draft',
+                  'sent',
+                ])
+              )
+            );
+
+          // Возвращаем прибор обратно в работу по каждой такой открытой ведомости
+          for (const batch of openBatches) {
+            const rollbackStatus =
+              batch.type.trim().toLowerCase() === 'repair'
+                ? 'in_repair'
+                : 'selected';
+
+            await tx
+              .update(devicesToBatches)
+              .set({ deviceStatus: rollbackStatus })
+              .where(
+                and(
+                  eq(devicesToBatches.batchId, batch.id),
+                  eq(devicesToBatches.deviceId, id)
+                )
+              );
+          }
+        }
+
+        // Удаляем сами поверки
         await tx
           .delete(verifications)
           .where(inArray(verifications.id, idsToDelete));
@@ -1825,7 +1885,7 @@ export class DeviceService {
 
       const archiveRecords = await this.db
         .select({
-          id: devicesToBatches.id,
+          id: devices.id,
           name: devices.name,
           model: devices.model,
           serialNumber: devices.serialNumber,
@@ -1948,6 +2008,7 @@ export class DeviceService {
     // 1. Забираем характеристики прибора за один проход
     const rows = await db
       .select({
+        statusId: devices.statusId,
         grsiNumber: devices.grsiNumber,
         releaseDate: devices.releaseDate,
         receiptDate: devices.receiptDate,
@@ -2022,6 +2083,7 @@ export class DeviceService {
     const [latestVerificationDoc] = await db
       .select({
         date: verifications.date, // 🌟 Добавлено для сортировки по актуальности
+        createdAt: verifications.createdAt,
         validUntil: verifications.validUntil,
         result: verifications.result, // 🌟 Добавлено для оценки годности
         controlTypeName: metrologyControleTypes.name, // 🌟 Тянем тип прямо из БД
@@ -2037,13 +2099,16 @@ export class DeviceService {
           eq(metrologyControleTypes.name, 'поверка')
         )
       )
-      .orderBy(sql`${verifications.date} DESC NULLS LAST`)
+      .orderBy(
+        sql`${verifications.date} DESC NULLS LAST, ${verifications.createdAt} DESC`
+      )
       .limit(1);
 
     // Б) Ищем самый свежий документ ИМЕННО ОСМОТРА
     const [latestInspectionDoc] = await db
       .select({
         date: verifications.date,
+        createdAt: verifications.createdAt,
         validUntil: verifications.validUntil,
         result: verifications.result,
         controlTypeName: metrologyControleTypes.name,
@@ -2059,7 +2124,9 @@ export class DeviceService {
           eq(metrologyControleTypes.name, 'осмотр')
         )
       )
-      .orderBy(sql`${verifications.date} DESC NULLS LAST`)
+      .orderBy(
+        sql`${verifications.date} DESC NULLS LAST, ${verifications.createdAt} DESC`
+      )
       .limit(1);
 
     // В) Ищем самый свежий документ ИМЕННО АТТЕСТАЦИИ (для ИО)
@@ -2068,6 +2135,7 @@ export class DeviceService {
       [latestAttestationDoc] = await db
         .select({
           date: verifications.date,
+          createdAt: verifications.createdAt,
           validUntil: verifications.validUntil,
           result: verifications.result,
           controlTypeName: metrologyControleTypes.name,
@@ -2083,7 +2151,9 @@ export class DeviceService {
             eq(metrologyControleTypes.name, 'аттестация')
           )
         )
-        .orderBy(sql`${verifications.date} DESC NULLS LAST`)
+        .orderBy(
+          sql`${verifications.date} DESC NULLS LAST, ${verifications.createdAt} DESC`
+        )
         .limit(1);
     }
 
@@ -2091,6 +2161,7 @@ export class DeviceService {
     const [latestCalibrationDoc] = await db
       .select({
         date: verifications.date,
+        createdAt: verifications.createdAt,
         validUntil: verifications.validUntil,
         result: verifications.result,
         controlTypeName: metrologyControleTypes.name,
@@ -2106,7 +2177,9 @@ export class DeviceService {
           eq(metrologyControleTypes.name, 'калибровка')
         )
       )
-      .orderBy(sql`${verifications.date} DESC NULLS LAST`)
+      .orderBy(
+        sql`${verifications.date} DESC NULLS LAST, ${verifications.createdAt} DESC`
+      )
       .limit(1);
 
     const allHistoricalDocs = [
@@ -2116,11 +2189,25 @@ export class DeviceService {
       latestAttestationDoc,
     ].filter((d): d is NonNullable<typeof d> => d !== null && d !== undefined);
 
+    const getDayTimestamp = (d: Date | string | null | undefined) => {
+      if (!d) return 0;
+      const dateObj = new Date(d);
+      return new Date(
+        dateObj.getFullYear(),
+        dateObj.getMonth(),
+        dateObj.getDate()
+      ).getTime();
+    };
+
     // Сортируем: самый свежий по дате проведения документ будет ПЕРВЫМ
     allHistoricalDocs.sort((a, b) => {
-      const dateA = a.date ? new Date(a.date).getTime() : 0;
-      const dateB = b.date ? new Date(b.date).getTime() : 0;
-      return dateB - dateA;
+      const dayA = getDayTimestamp(a.date);
+      const dayB = getDayTimestamp(b.date);
+      if (dayB !== dayA) return dayB - dayA;
+
+      const createdA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const createdB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return createdB - createdA;
     });
 
     const absoluteLatestDoc = allHistoricalDocs[0] || null; // Абсолютно последнее событие
@@ -2129,10 +2216,13 @@ export class DeviceService {
     const resultText = absoluteLatestDoc?.result
       ? absoluteLatestDoc.result.trim().toLowerCase()
       : '';
-    const isCurrentlyBroken =
-      resultText === 'не годен' ||
-      resultText === 'неисправен' ||
-      resultText === 'брак';
+    // const isCurrentlyBroken =
+    //   resultText === 'не годен' ||
+    //   resultText === 'неисправен' ||
+    //   resultText === 'брак';
+    const isCurrentlyBroken = ['не годен', 'неисправен', 'брак'].includes(
+      resultText
+    );
 
     let mainDocForVerificationField =
       eqTypeName === 'испытательное оборудование (ио)'
@@ -2143,10 +2233,10 @@ export class DeviceService {
         ? latestVerificationDoc
         : latestInspectionDoc;
 
-    const isMainDocBroken =
-      mainDocForVerificationField?.result === 'не годен' ||
-      mainDocForVerificationField?.result === 'неисправен' ||
-      mainDocForVerificationField?.result === 'брак';
+    // const isMainDocBroken =
+    //   mainDocForVerificationField?.result === 'не годен' ||
+    //   mainDocForVerificationField?.result === 'неисправен' ||
+    //   mainDocForVerificationField?.result === 'брак';
 
     const activeRepairLinks = await db
       .select({ id: devicesToBatches.id })
@@ -2164,32 +2254,38 @@ export class DeviceService {
             'sent',
           ]),
 
-          eq(sql`lower(trim(${verificationBatches.type}))`, 'repair')
+          eq(sql`lower(trim(${verificationBatches.type}))`, 'repair'),
+          ne(
+            sql`lower(trim(coalesce(${devicesToBatches.deviceStatus}, '')))`,
+            'returned'
+          )
         )
       )
       .limit(1);
 
-    const isDeviceInActiveRepairBatch = activeRepairLinks.length > 0;
+    // const isDeviceInActiveRepairBatch = activeRepairLinks.length > 0;
+    const isUnderRepair = activeRepairLinks.length > 0;
 
     // const isMainControlBlocked = isMainDocBroken || isDeviceInActiveRepairBatch;
 
     // 1. Проверяем, зафиксирован ли легитимный годный результат по главному документу
-    const isMainDocHealthy = mainDocForVerificationField?.result
-      ? ['годен', 'исправен', 'соответствует'].includes(
-          mainDocForVerificationField.result.trim().toLowerCase()
-        )
-      : false;
+    // const isMainDocHealthy = mainDocForVerificationField?.result
+    //   ? ['годен', 'исправен', 'соответствует'].includes(
+    //       mainDocForVerificationField.result.trim().toLowerCase()
+    //     )
+    //   : false;
 
     // 2. Блокировка активна, если основной документ сломан ИЛИ прибор в активной ведомости ремонта.
     // НО: если по главному документу уже получен свежий годный результат, ведомость ремонта больше НЕ блокирует прибор.
-    const isMainControlBlocked = isMainDocHealthy
-      ? false
-      : isMainDocBroken || isDeviceInActiveRepairBatch;
+    // const isMainControlBlocked = isMainDocHealthy
+    //   ? false
+    //   : isMainDocBroken || isDeviceInActiveRepairBatch;
 
     // 4. ИНТЕГРАЦИЯ ВАШЕГО МЕТОДА РАСЧЕТА СЛЕДУЮЩЕЙ ДАТЫ
     let nextVerificationDateStr: string | null = null;
 
-    if (isCurrentlyBroken || isMainControlBlocked) {
+    // if (isCurrentlyBroken || isMainControlBlocked) {
+    if (isCurrentlyBroken || isUnderRepair) {
       nextVerificationDateStr = null; // Прибор сломан — дедлайн сгорает
     } else {
       if (mainDocForVerificationField?.validUntil) {
@@ -2227,7 +2323,8 @@ export class DeviceService {
       eqTypeName === 'индикатор' ||
       eqTypeName === 'вспомогательное оборудование (во)';
 
-    if (isCurrentlyBroken) {
+    // if (isCurrentlyBroken) {
+    if (isCurrentlyBroken || isUnderRepair) {
       nextInspectionDateStr = null; // Прибор сломан — осмотр тоже сгорает
     } else {
       if (latestInspectionDoc?.validUntil) {
@@ -2249,35 +2346,67 @@ export class DeviceService {
     }
 
     let finalStatusId = firstRow.statusId;
+    let targetStatusName: string | null = null;
 
-    if (absoluteLatestDoc) {
+    const currentStatusName = firstRow.statusName
+      ? firstRow.statusName.trim().toLowerCase()
+      : '';
+
+    // if (absoluteLatestDoc) {
+    // const docType = absoluteLatestDoc.controlTypeName
+    //   ? absoluteLatestDoc.controlTypeName.trim().toLowerCase()
+    //   : '';
+
+    // if (currentStatusName === 'в ремонте' && isMainControlBlocked) {
+    //   targetStatusName = 'в ремонте';
+    // } else if (isCurrentlyBroken) {
+    //   // Если последний документ бракованный — жестко выставляем статус поломки
+    //   if (docType === 'поверка') {
+    //     targetStatusName = 'забракован';
+    //   } else {
+    //     targetStatusName = 'неисправен';
+    //   }
+    // } else if (isMainControlBlocked) {
+    //   targetStatusName = 'в ремонте';
+    // } else if (
+    //   resultText === 'годен' ||
+    //   resultText === 'исправен' ||
+    //   resultText === 'соответствует'
+    // ) {
+    //   // ЗАЩИТА: Проверяем, вернул ли внесенный документ легитимность прибору
+    //   // Если прибору нужна государственная Поверка, а внесли просто внутренний Осмотр — прибор НЕ оживает!
+    //   const isDocLegitimate =
+    //     (targetControlName === 'поверка' && docType === 'поверка') ||
+    //     (targetControlName === 'калибровка' && docType === 'калибровка') ||
+    //     (targetControlName === 'аттестация' && docType === 'аттестация') ||
+    //     (targetControlName === 'осмотр' && docType === 'осмотр');
+
+    //   if (isDocLegitimate) {
+    //     // Рокировка происходит, только если прибор числился сломанным, забракованным или находился в процессе ремонта
+    //     if (
+    //       currentStatusName === 'неисправен' ||
+    //       currentStatusName === 'забракован' ||
+    //       currentStatusName === 'в ремонте' ||
+    //       currentStatusName === 'на поверке (в цсм)'
+    //     ) {
+    //       targetStatusName = 'исправен';
+    //     }
+    //   }
+    // }
+
+    if (isUnderRepair) {
+      // ПРИОРИТЕТ 1: Пока есть открытая ведомость ремонта — прибор жестко "в ремонте"
+      targetStatusName = 'в ремонте';
+    } else if (absoluteLatestDoc) {
       const docType = absoluteLatestDoc.controlTypeName
         ? absoluteLatestDoc.controlTypeName.trim().toLowerCase()
         : '';
-      let targetStatusName: string | null = null;
 
-      const currentStatusName = firstRow.statusName
-        ? firstRow.statusName.trim().toLowerCase()
-        : '';
-
-      if (currentStatusName === 'в ремонте' && isMainControlBlocked) {
-        targetStatusName = 'в ремонте';
-      } else if (isCurrentlyBroken) {
-        // Если последний документ бракованный — жестко выставляем статус поломки
-        if (docType === 'поверка') {
-          targetStatusName = 'забракован';
-        } else {
-          targetStatusName = 'неисправен';
-        }
-      } else if (isMainControlBlocked) {
-        targetStatusName = 'в ремонте';
-      } else if (
-        resultText === 'годен' ||
-        resultText === 'исправен' ||
-        resultText === 'соответствует'
-      ) {
-        // ЗАЩИТА: Проверяем, вернул ли внесенный документ легитимность прибору
-        // Если прибору нужна государственная Поверка, а внесли просто внутренний Осмотр — прибор НЕ оживает!
+      if (isCurrentlyBroken) {
+        // ПРИОРИТЕТ 2: Ремонта нет, последний документ — брак
+        targetStatusName = docType === 'поверка' ? 'забракован' : 'неисправен';
+      } else if (['годен', 'исправен', 'соответствует'].includes(resultText)) {
+        // ПРИОРИТЕТ 3: Ремонта нет, последний документ — годен
         const isDocLegitimate =
           (targetControlName === 'поверка' && docType === 'поверка') ||
           (targetControlName === 'калибровка' && docType === 'калибровка') ||
@@ -2285,28 +2414,29 @@ export class DeviceService {
           (targetControlName === 'осмотр' && docType === 'осмотр');
 
         if (isDocLegitimate) {
-          // Рокировка происходит, только если прибор числился сломанным, забракованным или находился в процессе ремонта
           if (
-            currentStatusName === 'неисправен' ||
-            currentStatusName === 'забракован' ||
-            currentStatusName === 'в ремонте' ||
-            currentStatusName === 'на поверке (в цсм)'
+            [
+              'неисправен',
+              'забракован',
+              'в ремонте',
+              'на поверке (в цсм)',
+            ].includes(currentStatusName)
           ) {
             targetStatusName = 'исправен';
           }
         }
       }
+    }
 
-      // Если статус требует автоматической корректировки — ищем его ID
-      if (targetStatusName && targetStatusName !== currentStatusName) {
-        const [statusRow] = await db
-          .select({ id: statuses.id })
-          .from(statuses)
-          .where(eq(statuses.name, targetStatusName)); // В БД всё в нижнем регистре
+    // Если статус требует автоматической корректировки — ищем его ID
+    if (targetStatusName && targetStatusName !== currentStatusName) {
+      const [statusRow] = await db
+        .select({ id: statuses.id })
+        .from(statuses)
+        .where(eq(statuses.name, targetStatusName)); // В БД всё в нижнем регистре
 
-        if (statusRow) {
-          finalStatusId = statusRow.id;
-        }
+      if (statusRow) {
+        finalStatusId = statusRow.id;
       }
     }
 

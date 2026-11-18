@@ -96,10 +96,8 @@ type DeviceRepairHistoryNode {
   batchId: ID!
   batchNumber: String!
   dateIn: String!
-  dateOut: String!
   master: String!
   result: String!
-  closingDocType: String!
   comment: String!
 }
 

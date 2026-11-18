@@ -937,9 +937,9 @@ export class VerificationPlanningService {
     const [allVerifications, allArshinBuffers] = await Promise.all([
       this.db.query.verifications.findMany({
         where: inArray(verifications.deviceId, uniqueDeviceIds),
-        orderBy: (v, { desc }) => [desc(v.date)],
+        orderBy: (v, { desc }) => [desc(v.date), desc(v.createdAt)],
         // 🔥 УВЕЛИЧИВАЕМ ЗАПАС: Берем последние 5 документов прибора, чтобы цеховые осмотры не затирали гоповерки
-        limit: uniqueDeviceIds.length * 5,
+        // limit: uniqueDeviceIds.length * 5,
         with: { metrologyControleType: true, verificationOrganization: true },
       }),
       this.db.query.arshinVerificationBuffer.findMany({
@@ -984,10 +984,17 @@ export class VerificationPlanningService {
             v.metrologyControleType?.name?.toLowerCase().trim() === 'осмотр'
         );
       } else if (targetType === 'repair') {
+        // 🌟 Сначала ищем документ, который закрыл ИМЕННО ЭТУ ремонтную ведомость
+        matchedVerification = deviceVerifications.find(
+          (v) => v.batchId === rel.batchId
+        );
         //  МЫ В ЖУРНАЛЕ РЕМОНТОВ: Ищем абсолютно самый свежий документ в истории СИ,
         // так как ремонт может закрываться как Поверкой, так и Осмотром/Калибровкой
-        matchedVerification =
-          deviceVerifications.length > 0 ? deviceVerifications[0] : null;
+        if (!matchedVerification && deviceVerifications.length > 0) {
+          matchedVerification = deviceVerifications[0];
+        }
+        // matchedVerification =
+        //   deviceVerifications.length > 0 ? deviceVerifications[0] : null;
       }
 
       // Если по какому-то прибору истории нужного типа еще нет, берем самую последнюю запись как фоллбэк
@@ -1184,14 +1191,66 @@ export class VerificationPlanningService {
     //   .delete(verificationBatches)
     //   .where(eq(verificationBatches.id, id));
 
+    // await this.db.transaction(async (tx) => {
+    //   if (batch.type === 'repair') {
+    //     // Вытягиваем все приборы из этой партии
+    //     const linkedDevices = await tx
+    //       .select()
+    //       .from(devicesToBatches)
+    //       .where(eq(devicesToBatches.batchId, id));
+
+    //     const [statusBroken] = await tx
+    //       .select({ id: statuses.id })
+    //       .from(statuses)
+    //       .where(eq(statuses.name, 'неисправен'))
+    //       .limit(1);
+
+    //     for (const link of linkedDevices) {
+    //       // Восстанавливаем оригинальный брак (например, "забракован"), который был до ремонта
+    //       const targetStatusId = link.previousStatusId || statusBroken?.id;
+
+    //       if (targetStatusId) {
+    //         await tx
+    //           .update(devices)
+    //           .set({ statusId: targetStatusId, updatedAt: new Date() })
+    //           .where(eq(devices.id, link.deviceId));
+    //       }
+
+    //       // Запускаем пересчет кэша, чтобы вернуть приборы в Журнал ремонта как «требующие внимания»
+    //       if (this.deviceService) {
+    //         await this.deviceService.updateMetrologyCache(tx, link.deviceId);
+    //       }
+    //     }
+    //   }
+
+    //   // Каскадно удаляем связи (хотя для devicesToBatches у вас стоит onDelete: cascade,
+    //   // явное удаление в рамках транзакции — это хорошая практика)
+    //   await tx.delete(devicesToBatches).where(eq(devicesToBatches.batchId, id));
+
+    //   // Удаляем саму партию
+    //   await tx
+    //     .delete(verificationBatches)
+    //     .where(eq(verificationBatches.id, id));
+    // });
+
     await this.db.transaction(async (tx) => {
+      let linkedDevices: any[] = [];
+
       if (batch.type === 'repair') {
-        // Вытягиваем все приборы из этой партии
-        const linkedDevices = await tx
+        linkedDevices = await tx
           .select()
           .from(devicesToBatches)
           .where(eq(devicesToBatches.batchId, id));
+      }
 
+      // 1. СНАЧАЛА удаляем связи и саму партию из БД!
+      await tx.delete(devicesToBatches).where(eq(devicesToBatches.batchId, id));
+      await tx
+        .delete(verificationBatches)
+        .where(eq(verificationBatches.id, id));
+
+      // 2. И ТОЛЬКО ПОТОМ откатываем статусы и пересчитываем кеш
+      if (batch.type === 'repair' && linkedDevices.length > 0) {
         const [statusBroken] = await tx
           .select({ id: statuses.id })
           .from(statuses)
@@ -1199,7 +1258,6 @@ export class VerificationPlanningService {
           .limit(1);
 
         for (const link of linkedDevices) {
-          // Восстанавливаем оригинальный брак (например, "забракован"), который был до ремонта
           const targetStatusId = link.previousStatusId || statusBroken?.id;
 
           if (targetStatusId) {
@@ -1209,21 +1267,12 @@ export class VerificationPlanningService {
               .where(eq(devices.id, link.deviceId));
           }
 
-          // Запускаем пересчет кэша, чтобы вернуть приборы в Журнал ремонта как «требующие внимания»
+          // Теперь ведомости в БД уже нет, и updateMetrologyCache отработает чисто!
           if (this.deviceService) {
             await this.deviceService.updateMetrologyCache(tx, link.deviceId);
           }
         }
       }
-
-      // Каскадно удаляем связи (хотя для devicesToBatches у вас стоит onDelete: cascade,
-      // явное удаление в рамках транзакции — это хорошая практика)
-      await tx.delete(devicesToBatches).where(eq(devicesToBatches.batchId, id));
-
-      // Удаляем саму партию
-      await tx
-        .delete(verificationBatches)
-        .where(eq(verificationBatches.id, id));
     });
 
     if (this.auditLogService) {
@@ -1519,15 +1568,15 @@ export class VerificationPlanningService {
           );
 
         if (batchId) {
-          await tx
-            .update(devicesToBatches)
-            .set({ deviceStatus: 'returned' })
-            .where(
-              and(
-                eq(devicesToBatches.deviceId, deviceId),
-                eq(devicesToBatches.batchId, batchId)
-              )
-            );
+          // await tx
+          //   .update(devicesToBatches)
+          //   .set({ deviceStatus: 'returned' })
+          //   .where(
+          //     and(
+          //       eq(devicesToBatches.deviceId, deviceId),
+          //       eq(devicesToBatches.batchId, batchId)
+          //     )
+          //   );
 
           await tx
             .delete(arshinVerificationBuffer)
@@ -1733,6 +1782,17 @@ export class VerificationPlanningService {
     //   .update(devices)
     //   .set({ statusId: targetStatusId, updatedAt: now, updatedById: userId })
     //   .where(eq(devices.id, input.deviceId));
+    if (input.batchId) {
+      await tx
+        .update(devicesToBatches)
+        .set({ deviceStatus: 'returned' })
+        .where(
+          and(
+            eq(devicesToBatches.batchId, input.batchId),
+            eq(devicesToBatches.deviceId, input.deviceId)
+          )
+        );
+    }
 
     if (this.deviceService) {
       await this.deviceService.updateMetrologyCache(tx, input.deviceId);
@@ -1959,9 +2019,14 @@ export class VerificationPlanningService {
       // 6. Массово пинаем наш обновленный кэш для каждого прибора.
       // Кэш увидит статус "в ремонте" + блокировку брака, занулит даты и оставит оранжевый чип!
       if (this.deviceService) {
-        for (const dId of deviceIds) {
-          await this.deviceService.updateMetrologyCache(tx, dId);
-        }
+        // for (const dId of deviceIds) {
+        //   await this.deviceService.updateMetrologyCache(tx, dId);
+        // }
+        await Promise.all(
+          deviceIds.map((dId) =>
+            this.deviceService!.updateMetrologyCache(tx, dId)
+          )
+        );
       }
     });
 
@@ -2020,8 +2085,11 @@ export class VerificationPlanningService {
       if (!targetBatch) {
         throw new Error('Ремонтная ведомость не найдена в системе.');
       }
-
-      batchNumber = targetBatch.number;
+      if (targetBatch.status === 'completed')
+        throw (
+          (new Error('Нельзя удалять приборы из закрытой ведомости'),
+          (batchNumber = targetBatch.number))
+        );
 
       const devicesData = await tx
         .select({
@@ -2100,7 +2168,7 @@ export class VerificationPlanningService {
       }
     }
 
-    if (isBatchDeleted) {
+    if (this.auditLogService && isBatchDeleted) {
       this.auditLogService!.logAction({
         action: 'delete_repair_batch',
         oldData: {
@@ -2240,10 +2308,16 @@ export class VerificationPlanningService {
         status: { columns: { name: true } },
         verifications: {
           where: (v: any, { eq }: any) => eq(v.result, 'не годен'),
-          orderBy: (v: any, { desc }: any) => [desc(v.date)],
+          orderBy: (v: any, { desc }: any) => [desc(v.date), desc(v.createdAt)],
           limit: 1, // Берем строго самый свежий документ поломки
         },
         devicesToBatches: {
+          where: (dtb: any, { ne }: any) => ne(dtb.deviceStatus, 'returned'),
+          columns: {
+            id: true,
+            batchId: true,
+            deviceStatus: true,
+          },
           with: {
             batch: {
               columns: {
@@ -2272,7 +2346,8 @@ export class VerificationPlanningService {
         const activeRepairLink = d.devicesToBatches?.find(
           (rel: any) =>
             rel.batch?.type === 'repair' &&
-            (rel.batch?.status === 'draft' || rel.batch?.status === 'sent')
+            (rel.batch?.status === 'draft' || rel.batch?.status === 'sent') &&
+            rel.deviceStatus?.trim().toLowerCase() !== 'returned'
         );
 
         //  2. АКТИВИРУЕМ: Извлекаем фактический текстовый статус прибора из БД
@@ -2424,14 +2499,31 @@ export class VerificationPlanningService {
     if (cleanRepairs.length === 0) return [];
 
     // 2. Вытягиваем документы контроля, привязанные к этим ремонтным партиям
-    const batchIds = cleanRepairs.map((link: any) => link.batchId);
-    const linkedDocs = await this.db.query.verifications.findMany({
-      where: (v: any, { and, eq, inArray }: any) =>
-        and(eq(v.deviceId, deviceId), inArray(v.batchId, batchIds)),
-      with: { metrologyControleType: { columns: { name: true } } },
+    // const batchIds = cleanRepairs.map((link: any) => link.batchId);
+    // const linkedDocs = await this.db.query.verifications.findMany({
+    //   where: (v: any, { and, eq, inArray }: any) =>
+    //     and(eq(v.deviceId, deviceId), inArray(v.batchId, batchIds)),
+    //   with: { metrologyControleType: { columns: { name: true } } },
+    // });
+
+    // const docsMap = new Map(linkedDocs.map((doc: any) => [doc.batchId, doc]));
+
+    const allDeviceDocs = await this.db.query.verifications.findMany({
+      where: (v: any, { eq }: any) => eq(v.deviceId, deviceId),
+      orderBy: (v: any, { desc }: any) => [desc(v.date)],
     });
 
-    const docsMap = new Map(linkedDocs.map((doc: any) => [doc.batchId, doc]));
+    // Карта закрывающих документов (привязанных к конкретной ремонтной ведомости)
+    const closingDocsMap = new Map(
+      allDeviceDocs
+        .filter((doc: any) => doc.batchId)
+        .map((doc: any) => [doc.batchId, doc])
+    );
+
+    // Список всех документов с браком (отсортирован от новых к старым)
+    const defectDocs = allDeviceDocs.filter(
+      (doc: any) => doc.result?.trim().toLowerCase() !== 'годен'
+    );
     const [dbDevice] = await this.db
       .select({
         statusName: statuses.name,
@@ -2450,54 +2542,103 @@ export class VerificationPlanningService {
     const isDeviceScrapped = currentDeviceStatus === 'списан';
 
     return cleanRepairs.map((link: any) => {
-      const closingDoc = docsMap.get(link.batchId) as any;
+      const closingDoc = closingDocsMap.get(link.batchId) as any;
       const docResultClean = closingDoc?.result?.trim().toLowerCase() || '';
 
       const batchStatus = link.batch?.status?.trim().toLowerCase() || '';
 
-      let finalResult = 'В ремонте 🛠️';
-      let finalDateOut = 'В процессе';
-      let docTypeLabel = closingDoc?.metrologyControleType?.name || '—';
-      let finalComment = closingDoc?.comment || 'Без примечаний';
+      // let finalResult = 'В ремонте 🛠️';
+      // let finalDateOut = 'В процессе';
+      // let docTypeLabel = closingDoc?.metrologyControleType?.name || '—';
+      // let finalComment = closingDoc?.comment || 'Без примечаний';
+
+      // if (closingDoc) {
+      //   // Кейс 1: Ремонт успешно закрыт официальным документом контроля
+      //   finalResult = docResultClean === 'годен' ? 'Исправен 🟢' : 'Брак 🔴';
+      //   finalDateOut = new Date(closingDoc.date).toLocaleDateString('ru-RU');
+      // } else if (
+      //   isDeviceScrapped &&
+      //   (batchStatus === 'draft' || batchStatus === 'sent')
+      // ) {
+      //   // Кейс 2: 🌟 Списан может быть ТОЛЬКО активный ремонт, который шел прямо сейчас!
+      //   finalResult = 'Списан ❌';
+      //   finalDateOut = new Date().toLocaleDateString('ru-RU');
+      //   docTypeLabel = 'Акт списания';
+      //   finalComment = 'Прибор выведен из эксплуатации в процессе ремонта';
+      // } else if (batchStatus === 'completed') {
+      //   // Кейс 3: 🌟 Ведомость закрыта в АРХИВ, но документ удален вручную.
+      //   // Раз ведомость закрыта, но прибор не вышел исправным — значит, исторически это был БРАК!
+      //   finalResult = 'Брак 🔴';
+      //   finalDateOut = link.batch?.updatedAt
+      //     ? new Date(link.batch.updatedAt).toLocaleDateString('ru-RU')
+      //     : new Date().toLocaleDateString('ru-RU');
+      //   docTypeLabel = 'Акт отбраковки';
+      //   finalComment =
+      //     'Документ контроля удален пользователем. Прибор зафиксирован в архиве как неисправный.';
+      // }
+
+      // return {
+      //   batchId: link.batchId,
+      //   batchNumber: link.batch.number,
+      //   dateIn: new Date(link.createdAt).toLocaleDateString('ru-RU'),
+      //   dateOut: finalDateOut,
+      //   master: link.batch.createdBy
+      //     ? `${
+      //         link.batch.createdBy.lastName
+      //       } ${link.batch.createdBy.firstName.slice(0, 1)}.`
+      //     : '—',
+      //   result: finalResult,
+      //   closingDocType: docTypeLabel,
+      //   comment: finalComment,
+      // };
+
+      // 🌟 Ищем документ о браке, который стал причиной этого ремонта
+      // Берем последний брак, произошедший ДО (или в день) создания ведомости
+      const linkCreatedTime = new Date(link.createdAt).getTime();
+      const triggerDefectDoc = defectDocs.find((doc: any) => {
+        // Исключаем сам закрывающий документ текущей ведомости, если он тоже оказался браком
+        if (doc.batchId === link.batchId) return false;
+        return new Date(doc.date).getTime() <= linkCreatedTime;
+      });
+
+      // 2. Проверяем наличие и самого документа, и его даты (triggerDefectDoc?.date)
+      const rawDefectDate = triggerDefectDoc?.date ?? link.createdAt;
+      const actualDefectDate = new Date(rawDefectDate).toLocaleDateString(
+        'ru-RU'
+      );
+
+      let statusLabel = 'В ремонте 🛠️';
+      let comment =
+        closingDoc?.comment ||
+        link.batch?.comment ||
+        triggerDefectDoc?.comment ||
+        'Без примечаний';
 
       if (closingDoc) {
-        // Кейс 1: Ремонт успешно закрыт официальным документом контроля
-        finalResult = docResultClean === 'годен' ? 'Исправен 🟢' : 'Брак 🔴';
-        finalDateOut = new Date(closingDoc.date).toLocaleDateString('ru-RU');
+        statusLabel = docResultClean === 'годен' ? 'Исправен 🟢' : 'Брак 🔴';
       } else if (
         isDeviceScrapped &&
         (batchStatus === 'draft' || batchStatus === 'sent')
       ) {
-        // Кейс 2: 🌟 Списан может быть ТОЛЬКО активный ремонт, который шел прямо сейчас!
-        finalResult = 'Списан ❌';
-        finalDateOut = new Date().toLocaleDateString('ru-RU');
-        docTypeLabel = 'Акт списания';
-        finalComment = 'Прибор выведен из эксплуатации в процессе ремонта';
+        statusLabel = 'Списан ❌';
+        comment = 'Прибор выведен из эксплуатации в процессе ремонта';
       } else if (batchStatus === 'completed') {
-        // Кейс 3: 🌟 Ведомость закрыта в АРХИВ, но документ удален вручную.
-        // Раз ведомость закрыта, но прибор не вышел исправным — значит, исторически это был БРАК!
-        finalResult = 'Брак 🔴';
-        finalDateOut = link.batch?.updatedAt
-          ? new Date(link.batch.updatedAt).toLocaleDateString('ru-RU')
-          : new Date().toLocaleDateString('ru-RU');
-        docTypeLabel = 'Акт отбраковки';
-        finalComment =
-          'Документ контроля удален пользователем. Прибор зафиксирован в архиве как неисправный.';
+        statusLabel = 'Брак 🔴';
+        comment =
+          'Документ контроля удален. Зафиксирован в архиве как неисправный.';
       }
 
       return {
         batchId: link.batchId,
         batchNumber: link.batch.number,
-        dateIn: new Date(link.createdAt).toLocaleDateString('ru-RU'),
-        dateOut: finalDateOut,
+        dateIn: actualDefectDate,
         master: link.batch.createdBy
           ? `${
               link.batch.createdBy.lastName
             } ${link.batch.createdBy.firstName.slice(0, 1)}.`
           : '—',
-        result: finalResult,
-        closingDocType: docTypeLabel,
-        comment: finalComment,
+        result: statusLabel,
+        comment,
       };
     });
   }
