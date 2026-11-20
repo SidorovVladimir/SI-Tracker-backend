@@ -62,9 +62,21 @@ export const createAuditWorker = () => {
           const docNum = newData?.protocolNumber
             ? ` (Свидетельство/Протокол: ${newData.protocolNumber})`
             : '';
-          description = `Успешно зафиксированы результаты контроля прибора ${deviceIdent}. Статус просрочки снят${docNum}`;
-          alertTitle = '🔬 Сведения ФГИС Аршин';
-          alertType = 'success';
+
+          const res = newData?.result
+            ? newData.result.trim().toLowerCase()
+            : '';
+          const isBroken = ['не годен', 'негоден'].includes(res);
+
+          if (isBroken) {
+            description = `Зафиксирован брак по результатам контроля прибора ${deviceIdent}${docNum}. Оборудование переведено в статус забракованного.`;
+            alertTitle = '⚠️ Сведения ФГИС Аршин: Брак';
+            alertType = 'warning';
+          } else {
+            description = `Успешно зафиксированы результаты контроля прибора ${deviceIdent}. Статус просрочки снят${docNum}`;
+            alertTitle = '🔬 Сведения ФГИС Аршин';
+            alertType = 'success';
+          }
         } else if (action === 'assign_device_to_repair_batch') {
           description = `Прибор ${deviceIdent} распределен в ремонтную ведомость${batchNumber}`;
           alertTitle = '🛠️ Назначение ремонта';
