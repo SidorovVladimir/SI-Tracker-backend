@@ -2683,6 +2683,7 @@ export class VerificationPlanningService {
         deviceName: devices.name,
         deviceModel: devices.model,
         deviceSerialNumber: devices.serialNumber,
+        cachedControl: devices.cachedControl,
       })
       .from(devicesToBatches)
       .innerJoin(devices, eq(devicesToBatches.deviceId, devices.id))
@@ -2752,6 +2753,7 @@ export class VerificationPlanningService {
           name: rel.deviceName,
           model: rel.deviceModel,
           serialNumber: rel.deviceSerialNumber,
+          cachedControl: rel.cachedControl,
           verifications: latestVerification,
           arshinBuffers: deviceArshinBuffers,
         },

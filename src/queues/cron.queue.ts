@@ -27,4 +27,14 @@ export async function scheduleCronJobs() {
       jobId: 'repeatable:clean-chat',
     }
   );
+
+  // 2. Очистка логов (каждый день в 03:00)
+  await cronQueue.add(
+    'clean-logs',
+    {},
+    {
+      repeat: { pattern: '0 3 * * *' },
+      jobId: 'repeatable:clean-logs',
+    }
+  );
 }

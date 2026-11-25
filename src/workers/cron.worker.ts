@@ -46,6 +46,25 @@ export const createCronWorker = () => {
         );
         return { success: true };
       }
+
+      if (job.name === 'clean-logs') {
+        console.log(
+          '[BullMQ Cron] Запуск регламентной очистки старых логов...'
+        );
+        const { deviceAuditLogs } = await import(
+          '../modules/audit/auditLog.model'
+        );
+
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() - 90); // 90 дней
+
+        await db
+          .delete(deviceAuditLogs)
+          .where(lt(deviceAuditLogs.createdAt, expiryDate));
+
+        console.log('[BullMQ Cron] Очистка логов успешно завершена.');
+        return { success: true };
+      }
     },
     {
       connection: redisForQueue as any,
