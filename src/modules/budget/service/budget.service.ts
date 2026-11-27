@@ -260,14 +260,20 @@ export class BudgetService {
       const targetMonth = currentRow.months[monthNum - 1];
 
       if (targetMonth) {
-        targetMonth.totalCost += monthTotal;
+        targetMonth.totalCost = Number(
+          (targetMonth.totalCost + monthTotal).toFixed(2)
+        );
       }
 
-      currentRow.totalYearCost += monthTotal;
+      currentRow.totalYearCost = Number(
+        (currentRow.totalYearCost + monthTotal).toFixed(2)
+      );
     }
 
     const finalRows = Array.from(rowsMap.values());
-    const grandTotal = finalRows.reduce((sum, r) => sum + r.totalYearCost, 0);
+    const grandTotal = Number(
+      finalRows.reduce((sum, r) => sum + r.totalYearCost, 0).toFixed(2)
+    );
 
     return {
       targetYear,
